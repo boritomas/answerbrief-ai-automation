@@ -1,41 +1,44 @@
 You are working in the `boritomas/answerbrief-ai-automation` repo.
 
 Goal:
-Review the current repo and make the MVP buildable as a clean Next.js app for AnswerBrief AI.
+Set up the first production-ready MVP workflow for AnswerBrief AI using Stripe Payment Links first, not custom Stripe Checkout.
 
 Business context:
-AnswerBrief AI is a small service that provides role-specific interview prep for telecom, federal, finance, audit, compliance, operations, product, and leadership candidates.
+AnswerBrief AI sells role-specific interview prep packages for telecom and regulated-career candidates.
 
-Product promise:
-Resume + job posting in. Interview brief out.
+Packages:
 
-First task:
-Audit the repo structure and fix anything that prevents the app from installing, building, or running locally.
+* Quick Prep: $99
+* Full Interview Brief: $249
+* Premium Prep: $499
 
-Please do the following:
+Task:
+Update the app so the package buttons can use Stripe Payment Links from environment variables.
 
-1. Inspect the file structure.
-2. Confirm this is a valid Next.js app.
-3. Fix any broken imports, server action issues, TypeScript errors, package issues, or routing problems.
-4. Keep the site simple.
-5. Do not add complex architecture.
-6. Do not add paid services beyond Stripe placeholders.
-7. Keep all secrets in environment variables.
-8. Do not commit any real API keys.
-9. Keep the business guardrails:
+Requirements:
 
-   * No Verizon confidential material
-   * No employer-confidential customer uploads
-   * No job guarantee language
-   * No collection of SSNs, passwords, bank data, or sensitive documents
+1. Keep the current package cards.
+2. Add environment variables for:
+
+   * NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK
+   * NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK
+   * NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK
+3. Update the package buttons so each one links to the right environment variable.
+4. If an environment variable is missing, show a disabled-looking button that says “Payment link coming soon.”
+5. Keep the Stripe Checkout API route in place for future use, but do not make it the primary MVP path.
+6. Update `.env.example`.
+7. Update README with clear setup instructions.
+8. Do not add real Stripe keys.
+9. Do not remove privacy or guardrail language.
+10. Confirm `npm run build` works.
 
 Acceptance criteria:
 
-* `npm install` works
-* `npm run build` works
-* Home page loads
-* Package cards display correctly
-* Stripe checkout route exists but uses environment variables
-* Privacy page exists
-* README explains local setup
-* Any changes are opened as a pull request with a short summary of what changed
+* Home page loads.
+* Package cards display.
+* Buttons use Payment Link environment variables.
+* Missing links do not break the page.
+* `.env.example` includes the new variables.
+* README explains how to add Stripe Payment Links.
+* Open a PR with a short summary of what changed.
+
