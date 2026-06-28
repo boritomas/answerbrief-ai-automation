@@ -17,7 +17,7 @@ It includes:
 
 1. Customer lands on the website.
 2. Customer picks a package.
-3. Customer pays through Stripe Checkout or a Stripe Payment Link.
+3. Customer pays through a Stripe Payment Link.
 4. Payment success triggers the next-step email.
 5. Customer completes intake and uploads allowed materials.
 6. AnswerBrief AI creates the interview prep package.
@@ -44,8 +44,9 @@ Open http://localhost:3000.
 
 ## Stripe setup
 
-Start with Stripe Payment Links if you want the lowest-effort MVP.
-Use the included Checkout route when you are ready to connect the site buttons directly to Stripe.
+Start with Stripe Payment Links for the MVP. The package buttons read their Payment Link URLs from public environment variables, so the site can go live without custom Checkout logic.
+
+The included Checkout API route is still available for a future custom Stripe Checkout flow, but it is not the primary MVP path.
 
 Required environment variables:
 
@@ -53,7 +54,18 @@ Required environment variables:
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
+NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK=
+NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK=
+NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK=
 ```
+
+In Stripe, create one Payment Link for each package:
+
+- Quick Prep - $99
+- Full Interview Brief - $249
+- Premium Prep - $499
+
+Paste those URLs into `.env.local`. If a Payment Link variable is blank, the matching package card will show `Payment link coming soon` instead of sending customers to a broken URL.
 
 ## Codex use
 

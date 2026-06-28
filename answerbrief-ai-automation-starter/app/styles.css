@@ -34,6 +34,11 @@ h1 { font-size: clamp(2.4rem, 6vw, 5rem); line-height: 1; max-width: 980px; marg
 }
 .primary { background: #111; color: #fff; }
 .secondary { border: 1px solid #111; color: #111; background: #fff; }
+.disabled {
+  background: #e5e5e2;
+  color: #666;
+  cursor: not-allowed;
+}
 section { padding: 64px 7%; }
 .problem, .focus { max-width: 900px; }
 h2 { font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.05; margin: 0 0 20px; }
