@@ -33,7 +33,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
       <section className="hero compact">
         <p className="eyebrow">Admin</p>
         <h1>Order tracker</h1>
-        <p className="subhead">Paid orders, intake status, and prep workspace links.</p>
+        <p className="subhead">Paid orders, intake status, and customer Drive workspaces.</p>
       </section>
       <section>
         <div className="table-wrap">
@@ -45,13 +45,14 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                 <th>Status</th>
                 <th>Created</th>
                 <th>Delivery</th>
-                <th>Workspace</th>
+                <th>Drive folder</th>
+                <th>Drive status</th>
               </tr>
             </thead>
             <tbody>
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={6}>No orders yet.</td>
+                  <td colSpan={7}>No orders yet.</td>
                 </tr>
               ) : orders.map((order) => (
                 <tr key={order.id}>
@@ -61,10 +62,11 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                   <td>{formatDate(order.createdAt)}</td>
                   <td>{order.deliveryDate || 'TBD'}</td>
                   <td>
-                    {order.prepWorkspaceUrl ? (
-                      <a href={order.prepWorkspaceUrl}>Open</a>
+                    {order.driveFolderUrl || order.prepWorkspaceUrl ? (
+                      <a href={order.driveFolderUrl || order.prepWorkspaceUrl}>Open</a>
                     ) : 'Not set'}
                   </td>
+                  <td>{order.driveError || (order.driveFolderUrl ? 'Ready' : 'Not configured')}</td>
                 </tr>
               ))}
             </tbody>

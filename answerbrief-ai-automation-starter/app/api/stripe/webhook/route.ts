@@ -50,10 +50,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // TODO:
-    // 1. Create customer Drive folder.
-    // 2. Upload customer materials into an AI-ready knowledge store.
-    // 3. Notify owner.
+    // TODO: Notify owner and upload customer materials into an AI-ready knowledge store.
   }
 
   return NextResponse.json({ received: true });

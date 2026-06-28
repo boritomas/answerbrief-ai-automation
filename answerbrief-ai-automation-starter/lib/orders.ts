@@ -2,6 +2,12 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { Intake } from './intake-schema';
+import {
+  buildCustomerFolderName,
+  buildProvisionalFolderName,
+  createCustomerDriveWorkspace,
+  renameDriveFolder,
+} from './google-drive';
 
 export type OrderStatus =
   | 'Paid'
@@ -19,6 +25,9 @@ export type Order = {
   deliveryDate?: string;
   stripeSessionId?: string;
   prepWorkspaceUrl?: string;
+  driveFolderId?: string;
+  driveFolderUrl?: string;
+  driveError?: string;
   intake?: Intake;
   intakeSubmittedAt?: string;
 };
@@ -79,6 +88,8 @@ export async function createPaidOrder({
     prepWorkspaceUrl: process.env.PREP_INTERVIEW_WORKSPACE_URL,
   };
 
+  await attachDriveWorkspace(order);
+
   orders.push(order);
   await writeOrders(orders);
 
@@ -108,6 +119,8 @@ export async function saveOrderIntake(orderId: string | undefined, intake: Intak
   order.intakeSubmittedAt = now;
   order.status = 'In Progress';
 
+  await renameOrderDriveWorkspace(order);
+
   await writeOrders(orders);
 
   return order;
@@ -129,4 +142,55 @@ function estimateDeliveryDate() {
   const deliveryDate = new Date();
   deliveryDate.setDate(deliveryDate.getDate() + 3);
   return deliveryDate.toISOString().slice(0, 10);
+}
+
+async function attachDriveWorkspace(order: Order) {
+  try {
+    const folderName = buildProvisionalFolderName(
+      order.customerEmail,
+      order.packageName,
+      order.createdAt
+    );
+    const folder = await createCustomerDriveWorkspace(folderName);
+
+    if (!folder) {
+      return;
+    }
+
+    order.driveFolderId = folder.id;
+    order.driveFolderUrl = folder.webViewLink;
+    order.prepWorkspaceUrl = folder.webViewLink;
+    order.driveError = undefined;
+  } catch (error) {
+    order.driveError = getErrorMessage(error);
+  }
+}
+
+async function renameOrderDriveWorkspace(order: Order) {
+  if (!order.driveFolderId || !order.intake) {
+    return;
+  }
+
+  try {
+    const folderName = buildCustomerFolderName(
+      order.intake.name,
+      order.intake.targetRole,
+      order.createdAt
+    );
+    const folder = await renameDriveFolder(order.driveFolderId, folderName);
+
+    if (!folder) {
+      return;
+    }
+
+    order.driveFolderUrl = folder.webViewLink;
+    order.prepWorkspaceUrl = folder.webViewLink;
+    order.driveError = undefined;
+  } catch (error) {
+    order.driveError = getErrorMessage(error);
+  }
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Unknown Google Drive error';
 }

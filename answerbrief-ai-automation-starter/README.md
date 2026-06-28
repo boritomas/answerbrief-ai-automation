@@ -59,6 +59,9 @@ NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK=
 NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK=
 ADMIN_DASHBOARD_PASSWORD=
 PREP_INTERVIEW_WORKSPACE_URL=
+GOOGLE_SERVICE_ACCOUNT_EMAIL=
+GOOGLE_PRIVATE_KEY=
+GOOGLE_DRIVE_ROOT_FOLDER_ID=
 ```
 
 In Stripe, create one Payment Link for each package:
@@ -80,7 +83,33 @@ Stripe sends paid orders to `app/api/stripe/webhook/route.ts`. When a `checkout.
 
 For local development, order and intake records are stored in `data/orders.json`. The `data` folder is ignored by git so customer details are not committed.
 
-Set `PREP_INTERVIEW_WORKSPACE_URL` to the workspace you use for prep operations, such as a ChatGPT Project URL, Google Drive folder, or internal tracker. The app stores that link on new orders so the admin tracker can point you back to the prep workspace. ChatGPT Projects do not currently expose a direct app API for programmatically filing customer materials inside a personal ChatGPT folder, so this URL is a bridge until you add Google Drive or OpenAI file storage.
+Set `PREP_INTERVIEW_WORKSPACE_URL` to the workspace you use for prep operations, such as a ChatGPT Project URL, Google Drive folder, or internal tracker. The app stores that link on new orders so the admin tracker can point you back to the prep workspace. ChatGPT Projects do not currently expose a direct app API for programmatically filing customer materials inside a personal ChatGPT folder, so this URL is a bridge until you add OpenAI file storage.
+
+## Google Drive customer folders
+
+For production file tracking, connect a Google service account to Drive and set:
+
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_PRIVATE_KEY`
+- `GOOGLE_DRIVE_ROOT_FOLDER_ID`
+
+Create a root Drive folder named `AnswerBrief AI`, share that folder with the service account email, and paste the root folder ID into `GOOGLE_DRIVE_ROOT_FOLDER_ID`.
+
+When Drive is configured, paid orders create a provisional customer folder under the root folder. The app also creates:
+
+- `01 Intake`
+- `02 Source Materials`
+- `03 Working Files`
+- `04 Final Delivery`
+- `05 Follow Up`
+
+When the customer submits intake, the app renames the customer folder to:
+
+```text
+Customer Name - Target Role - YYYY-MM-DD
+```
+
+The order tracker stores and displays the customer Drive folder URL.
 
 For local testing only, open the intake form directly at:
 
