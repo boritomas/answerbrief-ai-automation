@@ -7,7 +7,10 @@ export default function SuccessPage() {
         <p className="subhead">
           Check your email for the next steps. You will receive instructions to submit your resume, job posting, interview date, and notes.
         </p>
-        <a className="button primary" href="/">Back to home</a>
+        <div className="cta-row">
+          <a className="button primary" href="/intake">Open intake form</a>
+          <a className="button secondary" href="/">Back to home</a>
+        </div>
       </section>
     </main>
   );

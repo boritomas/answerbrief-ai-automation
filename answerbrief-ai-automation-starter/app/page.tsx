@@ -1,23 +1,10 @@
 import { packages, PackageKey } from '@/lib/packages';
 
-async function createCheckout(formData: FormData) {
-  'use server';
-
-  const packageKey = formData.get('packageKey') as PackageKey;
-  const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/checkout`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ packageKey }),
-  });
-
-  const data = await response.json();
-
-  if (!data.url) {
-    throw new Error('Checkout session was not created.');
-  }
-
-  return data.url;
-}
+const paymentLinks: Record<PackageKey, string | undefined> = {
+  'quick-prep': process.env.NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK,
+  'full-interview-brief': process.env.NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK,
+  'premium-prep': process.env.NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK,
+};
 
 export default function Home() {
   return (
@@ -27,7 +14,7 @@ export default function Home() {
         <nav>
           <a href="#how">How it works</a>
           <a href="#packages">Packages</a>
-          <a href="#intake">Get started</a>
+          <a href="#intake">After payment</a>
         </nav>
       </header>
 
@@ -39,7 +26,7 @@ export default function Home() {
         </p>
         <div className="cta-row">
           <a className="button primary" href="#packages">View packages</a>
-          <a className="button secondary" href="#intake">Request a prep package</a>
+          <a className="button secondary" href="#how">How it works</a>
         </div>
       </section>
 
@@ -79,6 +66,7 @@ export default function Home() {
           {(Object.keys(packages) as PackageKey[]).map((key) => {
             const pkg = packages[key];
             const isFeatured = key === 'full-interview-brief';
+            const paymentLink = paymentLinks[key];
 
             return (
               <article key={key} className={isFeatured ? 'featured' : ''}>
@@ -88,13 +76,11 @@ export default function Home() {
                 <ul>
                   {pkg.deliverables.map((item) => <li key={item}>{item}</li>)}
                 </ul>
-                <form action={async () => {
-                  'use server';
-                  const url = await createCheckout(new FormData());
-                }}>
-                  <input type="hidden" name="packageKey" value={key} />
-                </form>
-                <a className="button primary" href={`/api/checkout?packageKey=${key}`}>Buy {pkg.name}</a>
+                {paymentLink ? (
+                  <a className="button primary" href={paymentLink}>Buy {pkg.name}</a>
+                ) : (
+                  <span className="button disabled" aria-disabled="true">Payment link coming soon</span>
+                )}
               </article>
             );
           })}
@@ -102,8 +88,8 @@ export default function Home() {
       </section>
 
       <section id="intake">
-        <h2>Request a prep package</h2>
-        <p>After payment, send the customer to your intake form. Start with Google Forms or Typeform for MVP speed.</p>
+        <h2>After payment</h2>
+        <p>After checkout, you receive a private intake link by email so your prep workflow can start automatically.</p>
         <p className="fine-print">Do not upload confidential employer documents unless you have permission to use them.</p>
       </section>
 

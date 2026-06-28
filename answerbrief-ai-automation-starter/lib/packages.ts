@@ -4,6 +4,7 @@ export const packages = {
   'quick-prep': {
     name: 'Quick Prep',
     priceUsd: 99,
+    paymentLinkEnv: 'NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK',
     description: 'Best for candidates who need a fast role-readiness review.',
     deliverables: [
       'Resume + job posting review',
@@ -15,6 +16,7 @@ export const packages = {
   'full-interview-brief': {
     name: 'Full Interview Brief',
     priceUsd: 249,
+    paymentLinkEnv: 'NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK',
     description: 'Best for serious interviews where preparation matters.',
     deliverables: [
       'Full role-readiness brief',
@@ -27,6 +29,7 @@ export const packages = {
   'premium-prep': {
     name: 'Premium Prep',
     priceUsd: 499,
+    paymentLinkEnv: 'NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK',
     description: 'Best for panel interviews, leadership interviews, or career pivots.',
     deliverables: [
       'Full Interview Brief',
