@@ -14,7 +14,7 @@ export default function Home() {
         <nav>
           <a href="#how">How it works</a>
           <a href="#packages">Packages</a>
-          <a href="#intake">Get started</a>
+          <a href="/intake">Intake</a>
         </nav>
       </header>
 
@@ -26,7 +26,7 @@ export default function Home() {
         </p>
         <div className="cta-row">
           <a className="button primary" href="#packages">View packages</a>
-          <a className="button secondary" href="#intake">Request a prep package</a>
+          <a className="button secondary" href="/intake">Submit intake</a>
         </div>
       </section>
 
@@ -89,7 +89,8 @@ export default function Home() {
 
       <section id="intake">
         <h2>Request a prep package</h2>
-        <p>After payment, send the customer to your intake form. Start with Google Forms or Typeform for MVP speed.</p>
+        <p>After payment, the customer receives a secure intake link so the prep workflow can start automatically.</p>
+        <a className="button secondary" href="/intake">Open intake form</a>
         <p className="fine-print">Do not upload confidential employer documents unless you have permission to use them.</p>
       </section>
 

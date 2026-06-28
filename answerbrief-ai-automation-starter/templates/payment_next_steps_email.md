@@ -6,6 +6,9 @@ Thanks for your order.
 
 Next step: send the materials we need to build your interview prep package.
 
+Intake form:
+{{intakeUrl}}
+
 Please provide:
 
 1. Your current resume

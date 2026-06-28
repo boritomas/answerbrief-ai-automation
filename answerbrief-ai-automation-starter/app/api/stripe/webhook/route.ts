@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { sendNextStepsEmail } from '@/lib/email';
+import { createPaidOrder, getIntakeUrl } from '@/lib/orders';
+import { packages } from '@/lib/packages';
+
+export const runtime = 'nodejs';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2024-06-20',
@@ -29,21 +33,42 @@ export async function POST(request: NextRequest) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     const customerEmail = session.customer_details?.email;
-    const packageName = session.metadata?.package || 'Interview Prep Package';
+    const packageName = getPackageName(session);
 
     if (customerEmail) {
+      const order = await createPaidOrder({
+        customerEmail,
+        packageName,
+        stripeSessionId: session.id,
+      });
+      const intakeUrl = getIntakeUrl(order.id, customerEmail);
+
       await sendNextStepsEmail({
         to: customerEmail,
         packageName,
+        intakeUrl,
       });
     }
 
     // TODO:
-    // 1. Create order row in tracker.
-    // 2. Create customer Drive folder.
-    // 3. Send intake form link.
-    // 4. Notify owner.
+    // 1. Create customer Drive folder.
+    // 2. Upload customer materials into an AI-ready knowledge store.
+    // 3. Notify owner.
   }
 
   return NextResponse.json({ received: true });
+}
+
+function getPackageName(session: Stripe.Checkout.Session) {
+  const metadataPackage = session.metadata?.package;
+
+  if (metadataPackage) {
+    return metadataPackage;
+  }
+
+  const matchingPackage = Object.values(packages).find((pkg) => {
+    return session.amount_total === pkg.priceUsd * 100;
+  });
+
+  return matchingPackage?.name || 'Interview Prep Package';
 }
