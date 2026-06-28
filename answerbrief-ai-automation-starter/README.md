@@ -62,6 +62,10 @@ PREP_INTERVIEW_WORKSPACE_URL=
 GOOGLE_SERVICE_ACCOUNT_EMAIL=
 GOOGLE_PRIVATE_KEY=
 GOOGLE_DRIVE_ROOT_FOLDER_ID=
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
+GMAIL_REFRESH_TOKEN=
+GMAIL_SENDER_EMAIL=
 ```
 
 In Stripe, create one Payment Link for each package:
@@ -110,6 +114,19 @@ Customer Name - Target Role - YYYY-MM-DD
 ```
 
 The order tracker stores and displays the customer Drive folder URL.
+
+## Gmail next-step emails
+
+The payment webhook sends the customer their private intake link with Gmail when these variables are set:
+
+- `GMAIL_CLIENT_ID`
+- `GMAIL_CLIENT_SECRET`
+- `GMAIL_REFRESH_TOKEN`
+- `GMAIL_SENDER_EMAIL`
+
+Use a Google OAuth client with Gmail API access and a refresh token for the sender account. The token must include permission to send mail. Do not commit those values; keep them in `.env.local` or your production host's secret manager.
+
+If Gmail is not configured, the app logs the next-step email and intake link to the server console so local testing still works.
 
 For local testing only, open the intake form directly at:
 
