@@ -82,11 +82,13 @@ For local development, order and intake records are stored in `data/orders.json`
 
 Set `PREP_INTERVIEW_WORKSPACE_URL` to the workspace you use for prep operations, such as a ChatGPT Project URL, Google Drive folder, or internal tracker. The app stores that link on new orders so the admin tracker can point you back to the prep workspace. ChatGPT Projects do not currently expose a direct app API for programmatically filing customer materials inside a personal ChatGPT folder, so this URL is a bridge until you add Google Drive or OpenAI file storage.
 
-Open the intake form at:
+For local testing only, open the intake form directly at:
 
 ```text
 http://localhost:3000/intake
 ```
+
+In production, customers should normally reach intake from the payment success flow or the next-steps email after Stripe confirms payment.
 
 Open the local admin order tracker at:
 
