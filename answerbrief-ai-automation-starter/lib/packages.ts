@@ -3,9 +3,10 @@ export type PackageKey = 'quick-prep' | 'full-interview-brief' | 'premium-prep';
 export const packages = {
   'quick-prep': {
     name: 'Quick Prep',
-    priceUsd: 99,
+    priceUsd: 49,
+    cta: 'Start Quick Prep',
     paymentLinkEnv: 'NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK',
-    description: 'Best for candidates who need a fast role-readiness review.',
+    description: 'A focused role-specific prep snapshot for one upcoming interview.',
     deliverables: [
       'Resume + job posting review',
       'Opening pitch',
@@ -15,9 +16,11 @@ export const packages = {
   },
   'full-interview-brief': {
     name: 'Full Interview Brief',
-    priceUsd: 249,
+    priceUsd: 149,
+    cta: 'Get Full Interview Brief',
+    badge: 'Most Popular',
     paymentLinkEnv: 'NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK',
-    description: 'Best for serious interviews where preparation matters.',
+    description: 'The main offer and best-value package for serious interviews.',
     deliverables: [
       'Full role-readiness brief',
       'STAR story bank',
@@ -28,9 +31,10 @@ export const packages = {
   },
   'premium-prep': {
     name: 'Premium Prep',
-    priceUsd: 499,
+    priceUsd: 299,
+    cta: 'Book Premium Prep',
     paymentLinkEnv: 'NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK',
-    description: 'Best for panel interviews, leadership interviews, or career pivots.',
+    description: 'A deeper prep package for higher-stakes interviews or candidates who want extra support.',
     deliverables: [
       'Full Interview Brief',
       'Mock interview script',

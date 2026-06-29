@@ -8,9 +8,9 @@ AnswerBrief AI sells role-specific interview prep packages for telecom and regul
 
 Packages:
 
-* Quick Prep: $99
-* Full Interview Brief: $249
-* Premium Prep: $499
+* Quick Prep: $49
+* Full Interview Brief: $149
+* Premium Prep: $299
 
 Task:
 Update the app so the package buttons can use Stripe Payment Links from environment variables.
@@ -41,4 +41,3 @@ Acceptance criteria:
 * `.env.example` includes the new variables.
 * README explains how to add Stripe Payment Links.
 * Open a PR with a short summary of what changed.
-

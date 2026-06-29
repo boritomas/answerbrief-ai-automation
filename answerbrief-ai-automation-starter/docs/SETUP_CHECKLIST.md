@@ -14,9 +14,9 @@
 ## Stripe
 
 - [ ] Create products:
-  - Quick Prep - $99
-  - Full Interview Brief - $249
-  - Premium Prep - $499
+  - Quick Prep - $49
+  - Full Interview Brief - $149
+  - Premium Prep - $299
 - [ ] Enable receipts
 - [ ] Add branding
 - [ ] Create Payment Links

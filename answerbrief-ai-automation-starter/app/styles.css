@@ -49,6 +49,16 @@ article { background: #fff; padding: 28px; border: 1px solid #ddd; border-radius
 .pricing { background: #fff; }
 .price { font-size: 2rem; font-weight: 700; margin: 10px 0; }
 .featured { border: 2px solid #111; }
+.badge {
+  display: inline-block;
+  background: #111;
+  color: #fff;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 700;
+  margin: 0 0 10px;
+  padding: 4px 10px;
+}
 form { display: grid; gap: 14px; max-width: 720px; }
 label { display: grid; gap: 6px; font-weight: 700; }
 input, textarea, select {

@@ -70,9 +70,9 @@ GMAIL_SENDER_EMAIL=
 
 In Stripe, create one Payment Link for each package:
 
-- Quick Prep - $99
-- Full Interview Brief - $249
-- Premium Prep - $499
+- Quick Prep - $49
+- Full Interview Brief - $149
+- Premium Prep - $299
 
 Paste those URLs into `.env.local`. If a Payment Link variable is blank, the matching package card will show `Payment link coming soon` instead of sending customers to a broken URL.
 

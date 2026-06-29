@@ -70,6 +70,7 @@ export default function Home() {
 
             return (
               <article key={key} className={isFeatured ? 'featured' : ''}>
+                {'badge' in pkg ? <p className="badge">{pkg.badge}</p> : null}
                 <h3>{pkg.name}</h3>
                 <p className="price">${pkg.priceUsd}</p>
                 <p>{pkg.description}</p>
@@ -77,7 +78,7 @@ export default function Home() {
                   {pkg.deliverables.map((item) => <li key={item}>{item}</li>)}
                 </ul>
                 {paymentLink ? (
-                  <a className="button primary" href={paymentLink}>Buy {pkg.name}</a>
+                  <a className="button primary" href={paymentLink}>{pkg.cta}</a>
                 ) : (
                   <span className="button disabled" aria-disabled="true">Payment link coming soon</span>
                 )}
