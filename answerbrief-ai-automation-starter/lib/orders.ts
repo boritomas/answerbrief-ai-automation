@@ -55,7 +55,10 @@ type NewOrder = {
   stripeSessionId?: string;
 };
 
-const ordersFile = path.join(process.cwd(), 'data', 'orders.json');
+const ordersFile = process.env.ORDER_STORE_PATH ||
+  (process.env.VERCEL
+    ? path.join('/tmp', 'answerbrief-orders.json')
+    : path.join(process.cwd(), 'data', 'orders.json'));
 
 async function readOrders(): Promise<Order[]> {
   try {

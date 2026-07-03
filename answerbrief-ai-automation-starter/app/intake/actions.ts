@@ -70,7 +70,7 @@ async function getUploads(formData: FormData) {
   for (const [label, field] of uploadFields) {
     const value = formData.get(field);
 
-    if (!(value instanceof File) || value.size === 0) {
+    if (!isUploadFile(value) || value.size === 0) {
       continue;
     }
 
@@ -87,4 +87,14 @@ async function getUploads(formData: FormData) {
   }
 
   return uploads;
+}
+
+function isUploadFile(value: FormDataEntryValue | null): value is File {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    'arrayBuffer' in value &&
+    'name' in value &&
+    'size' in value
+  );
 }
