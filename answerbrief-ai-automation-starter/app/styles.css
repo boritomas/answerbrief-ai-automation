@@ -150,6 +150,19 @@ th {
   padding: 24px;
 }
 .guardrails h3 { margin-top: 0; }
+.fit-check-page {
+  display: grid;
+  grid-template-columns: minmax(260px, .7fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.fit-check-panel {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 14px;
+  padding: 24px;
+}
+.fit-check-panel h2 { font-size: 2rem; }
 .faq { background: #fff; }
 .faq-grid {
   display: grid;
@@ -173,6 +186,6 @@ footer { padding: 32px 7%; border-top: 1px solid #ddd; background: #fff; color: 
 @media (max-width: 850px) {
   .nav { display: block; }
   .nav nav { margin-top: 14px; flex-wrap: wrap; }
-  .cards, .price-cards, .split-list, .faq-grid, .fit-check { grid-template-columns: 1fr; }
+  .cards, .price-cards, .split-list, .faq-grid, .fit-check, .fit-check-page { grid-template-columns: 1fr; }
   .faq-grid article { min-height: auto; }
 }

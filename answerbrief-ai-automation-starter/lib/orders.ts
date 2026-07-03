@@ -96,7 +96,11 @@ export async function createPaidOrder({
   return order;
 }
 
-export async function saveOrderIntake(orderId: string | undefined, intake: Intake) {
+export async function saveOrderIntake(
+  orderId: string | undefined,
+  intake: Intake,
+  packageName = 'Interview Prep Package'
+) {
   const orders = await readOrders();
   const now = new Date().toISOString();
   let order = orderId ? orders.find((item) => item.id === orderId) : undefined;
@@ -105,7 +109,7 @@ export async function saveOrderIntake(orderId: string | undefined, intake: Intak
     order = {
       id: randomUUID(),
       customerEmail: intake.email,
-      packageName: 'Interview Prep Package',
+      packageName,
       status: 'Intake Pending',
       createdAt: now,
       deliveryDate: estimateDeliveryDate(),
@@ -118,6 +122,10 @@ export async function saveOrderIntake(orderId: string | undefined, intake: Intak
   order.intake = intake;
   order.intakeSubmittedAt = now;
   order.status = 'In Progress';
+
+  if (!order.driveFolderId) {
+    await attachDriveWorkspace(order);
+  }
 
   await renameOrderDriveWorkspace(order);
 

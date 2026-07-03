@@ -85,10 +85,16 @@ The homepage includes a lightweight free lead-generation offer:
 Free Interview Fit Check
 ```
 
-Create a simple intake form for this offer using the tool of choice, such as Google Forms, Tally, Typeform, or a future internal AnswerBrief form. The CTA reads from:
+The app includes a built-in `/fit-check` form for this offer. The homepage CTA reads from:
 
 ```bash
 NEXT_PUBLIC_FREE_FIT_CHECK_LINK=
+```
+
+Recommended production value:
+
+```bash
+NEXT_PUBLIC_FREE_FIT_CHECK_LINK=https://answerbrief-ai-automation-riwu.vercel.app/fit-check
 ```
 
 If the variable is blank, the homepage shows `Fit check link coming soon` so the page does not break.
