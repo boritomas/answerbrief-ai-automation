@@ -16,8 +16,8 @@ It includes:
 ## Recommended MVP flow
 
 1. Customer lands on the website.
-2. Customer picks a package.
-3. Customer pays through a Stripe Payment Link.
+2. Customer can start with a free Interview Fit Check or pick a paid package.
+3. Customer pays through a Stripe Payment Link when they choose a paid package.
 4. Payment success triggers the next-step email.
 5. Customer completes the intake form and submits allowed materials.
 6. AnswerBrief AI creates the interview prep package.
@@ -57,6 +57,7 @@ NEXT_PUBLIC_BASE_URL=http://localhost:3000
 NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK=
 NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK=
 NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK=
+NEXT_PUBLIC_FREE_FIT_CHECK_LINK=
 ADMIN_DASHBOARD_PASSWORD=
 PREP_INTERVIEW_WORKSPACE_URL=
 GOOGLE_SERVICE_ACCOUNT_EMAIL=
@@ -75,6 +76,39 @@ In Stripe, create one Payment Link for each package:
 - Premium Prep - $299
 
 Paste those URLs into `.env.local`. If a Payment Link variable is blank, the matching package card will show `Payment link coming soon` instead of sending customers to a broken URL.
+
+## Free Interview Fit Check setup
+
+The homepage includes a lightweight free lead-generation offer:
+
+```text
+Free Interview Fit Check
+```
+
+Create a simple intake form for this offer using the tool of choice, such as Google Forms, Tally, Typeform, or a future internal AnswerBrief form. The CTA reads from:
+
+```bash
+NEXT_PUBLIC_FREE_FIT_CHECK_LINK=
+```
+
+If the variable is blank, the homepage shows `Fit check link coming soon` so the page does not break.
+
+The free fit check should collect only the minimum useful context:
+
+- Resume
+- Target role or job posting
+- Optional interview notes
+
+Do not request SSNs, passwords, bank data, confidential employer files, or sensitive personal documents.
+
+## Closed-loop learning
+
+Use the free fit check and paid delivery workflow to improve AnswerBrief AI over time:
+
+- Track what candidates ask for
+- Track which package they choose
+- Ask what helped after delivery
+- Use feedback to improve packages, pricing, and messaging
 
 ## Order and intake automation
 

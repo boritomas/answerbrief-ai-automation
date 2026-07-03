@@ -70,6 +70,22 @@ article { background: #fff; padding: 28px; border: 1px solid #ddd; border-radius
   margin: 0 0 10px;
   padding: 4px 10px;
 }
+.fit-check {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, .6fr);
+  gap: 28px;
+  align-items: center;
+  background: #efefeb;
+}
+.fit-check > div {
+  max-width: 820px;
+}
+.fit-check-action {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 14px;
+  padding: 24px;
+}
 form { display: grid; gap: 14px; max-width: 720px; }
 label { display: grid; gap: 6px; font-weight: 700; }
 input, textarea, select {
@@ -157,6 +173,6 @@ footer { padding: 32px 7%; border-top: 1px solid #ddd; background: #fff; color: 
 @media (max-width: 850px) {
   .nav { display: block; }
   .nav nav { margin-top: 14px; flex-wrap: wrap; }
-  .cards, .price-cards, .split-list, .faq-grid { grid-template-columns: 1fr; }
+  .cards, .price-cards, .split-list, .faq-grid, .fit-check { grid-template-columns: 1fr; }
   .faq-grid article { min-height: auto; }
 }

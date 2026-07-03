@@ -23,6 +23,7 @@ Requirements:
    * NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK
    * NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK
    * NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK
+   * NEXT_PUBLIC_FREE_FIT_CHECK_LINK
 3. Update the package buttons so each one links to the right environment variable.
 4. If an environment variable is missing, show a disabled-looking button that says “Payment link coming soon.”
 5. Keep the Stripe Checkout API route in place for future use, but do not make it the primary MVP path.

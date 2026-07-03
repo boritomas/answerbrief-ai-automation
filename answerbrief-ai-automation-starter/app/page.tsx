@@ -6,6 +6,8 @@ const paymentLinks: Record<PackageKey, string | undefined> = {
   'premium-prep': process.env.NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK,
 };
 
+const freeFitCheckLink = process.env.NEXT_PUBLIC_FREE_FIT_CHECK_LINK;
+
 export default function Home() {
   return (
     <main>
@@ -85,6 +87,26 @@ export default function Home() {
               <li>Final 24-hour interview prep sheet</li>
             </ul>
           </article>
+        </div>
+      </section>
+
+      <section className="fit-check">
+        <div>
+          <p className="eyebrow">Free Interview Fit Check</p>
+          <h2>Not ready to buy yet? Start with a free Interview Fit Check.</h2>
+          <p>
+            Send your resume and target role. We'll send back a short review with 3 likely interview focus areas, 2 questions you should prepare for, and 1 weak spot to tighten.
+          </p>
+        </div>
+        <div className="fit-check-action">
+          {freeFitCheckLink ? (
+            <a className="button primary" href={freeFitCheckLink}>Get Free Fit Check</a>
+          ) : (
+            <span className="button disabled" aria-disabled="true">Fit check link coming soon</span>
+          )}
+          <p className="fine-print">
+            Do not upload SSNs, passwords, bank data, or confidential employer documents.
+          </p>
         </div>
       </section>
 
