@@ -99,7 +99,7 @@ NEXT_PUBLIC_FREE_FIT_CHECK_LINK=https://answerbrief-ai-automation-riwu.vercel.ap
 
 If the variable is blank, the homepage shows `Fit check link coming soon` so the page does not break.
 
-The free fit check should collect only the minimum useful context:
+The free fit check collects only the minimum useful context:
 
 - Resume
 - Target role or job posting
@@ -153,7 +153,7 @@ When the customer submits intake, the app renames the customer folder to:
 Customer Name - Target Role - YYYY-MM-DD
 ```
 
-The order tracker stores and displays the customer Drive folder URL.
+The intake and fit check forms also accept optional resume, job posting, and interview notes uploads. Each file can be up to 10 MB. When Drive is configured, uploaded files are saved to the customer Drive folder and shown in the admin order tracker.
 
 ## Gmail next-step emails
 

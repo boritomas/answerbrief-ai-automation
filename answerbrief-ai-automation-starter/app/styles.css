@@ -95,6 +95,9 @@ input, textarea, select {
   border-radius: 8px;
   font: inherit;
 }
+input[type="file"] {
+  background: #fff;
+}
 textarea { min-height: 120px; }
 .intake-form {
   background: #fff;
@@ -138,6 +141,10 @@ th, td {
 }
 th {
   background: #efefeb;
+}
+.table-list {
+  margin: 0;
+  padding-left: 18px;
 }
 .fine-print { font-size: .9rem; color: #555; margin-top: 16px; }
 .process-cards { margin-top: 24px; }

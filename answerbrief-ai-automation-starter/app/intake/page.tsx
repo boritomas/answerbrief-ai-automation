@@ -66,6 +66,19 @@ export default function IntakePage({ searchParams }: IntakePageProps) {
             </select>
           </label>
           <label>
+            Resume file
+            <input name="resumeFile" type="file" accept=".pdf,.doc,.docx,.txt" />
+          </label>
+          <label>
+            Job posting file
+            <input name="jobPostingFile" type="file" accept=".pdf,.doc,.docx,.txt" />
+          </label>
+          <label>
+            Interview notes file
+            <input name="notesFile" type="file" accept=".pdf,.doc,.docx,.txt" />
+          </label>
+          <p className="fine-print">Uploads are optional. PDF, Word, or text files work best. Maximum 10 MB per file.</p>
+          <label>
             Notes
             <textarea
               name="notes"

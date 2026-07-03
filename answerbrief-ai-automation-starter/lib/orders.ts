@@ -6,7 +6,9 @@ import {
   buildCustomerFolderName,
   buildProvisionalFolderName,
   createCustomerDriveWorkspace,
+  isDriveConfigured,
   renameDriveFolder,
+  uploadDriveFile,
 } from './google-drive';
 
 export type OrderStatus =
@@ -28,8 +30,23 @@ export type Order = {
   driveFolderId?: string;
   driveFolderUrl?: string;
   driveError?: string;
+  sourceFiles?: SourceFile[];
   intake?: Intake;
   intakeSubmittedAt?: string;
+};
+
+export type IntakeUpload = {
+  label: string;
+  fileName: string;
+  mimeType: string;
+  bytes: Buffer;
+};
+
+type SourceFile = {
+  label: string;
+  name: string;
+  id: string;
+  webViewLink: string;
 };
 
 type NewOrder = {
@@ -99,7 +116,8 @@ export async function createPaidOrder({
 export async function saveOrderIntake(
   orderId: string | undefined,
   intake: Intake,
-  packageName = 'Interview Prep Package'
+  packageName = 'Interview Prep Package',
+  uploads: IntakeUpload[] = []
 ) {
   const orders = await readOrders();
   const now = new Date().toISOString();
@@ -128,10 +146,55 @@ export async function saveOrderIntake(
   }
 
   await renameOrderDriveWorkspace(order);
+  await attachSourceFiles(order, uploads);
 
   await writeOrders(orders);
 
   return order;
+}
+
+async function attachSourceFiles(order: Order, uploads: IntakeUpload[]) {
+  if (uploads.length === 0) {
+    return;
+  }
+
+  if (!isDriveConfigured()) {
+    order.driveError = 'Google Drive is not configured; uploaded files were not saved.';
+    return;
+  }
+
+  if (!order.driveFolderId) {
+    order.driveError = 'Google Drive folder was not created; uploaded files were not saved.';
+    return;
+  }
+
+  try {
+    const uploadedFiles = await Promise.all(
+      uploads.map(async (upload) => {
+        const file = await uploadDriveFile(
+          order.driveFolderId,
+          `${upload.label} - ${upload.fileName}`,
+          upload.mimeType,
+          upload.bytes
+        );
+
+        return file ? {
+          label: upload.label,
+          name: file.name,
+          id: file.id,
+          webViewLink: file.webViewLink,
+        } : null;
+      })
+    );
+
+    order.sourceFiles = [
+      ...(order.sourceFiles || []),
+      ...uploadedFiles.filter((file): file is SourceFile => Boolean(file)),
+    ];
+    order.driveError = undefined;
+  } catch (error) {
+    order.driveError = getErrorMessage(error);
+  }
 }
 
 export function getIntakeUrl(orderId: string, customerEmail?: string) {

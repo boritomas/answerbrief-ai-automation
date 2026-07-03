@@ -46,13 +46,14 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                 <th>Created</th>
                 <th>Delivery</th>
                 <th>Drive folder</th>
+                <th>Files</th>
                 <th>Drive status</th>
               </tr>
             </thead>
             <tbody>
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={7}>No orders yet.</td>
+                  <td colSpan={8}>No orders yet.</td>
                 </tr>
               ) : orders.map((order) => (
                 <tr key={order.id}>
@@ -65,6 +66,17 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                     {order.driveFolderUrl || order.prepWorkspaceUrl ? (
                       <a href={order.driveFolderUrl || order.prepWorkspaceUrl}>Open</a>
                     ) : 'Not set'}
+                  </td>
+                  <td>
+                    {order.sourceFiles?.length ? (
+                      <ul className="table-list">
+                        {order.sourceFiles.map((file) => (
+                          <li key={file.id}>
+                            <a href={file.webViewLink}>{file.label}</a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : 'None'}
                   </td>
                   <td>{order.driveError || (order.driveFolderUrl ? 'Ready' : 'Not configured')}</td>
                 </tr>

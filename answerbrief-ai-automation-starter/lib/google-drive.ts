@@ -6,6 +6,12 @@ type DriveFolder = {
   webViewLink: string;
 };
 
+type DriveFile = {
+  id: string;
+  name: string;
+  webViewLink: string;
+};
+
 const driveFolderMimeType = 'application/vnd.google-apps.folder';
 const driveApiBaseUrl = 'https://www.googleapis.com/drive/v3';
 const tokenUrl = 'https://oauth2.googleapis.com/token';
@@ -58,6 +64,53 @@ export async function renameDriveFolder(folderId: string | undefined, folderName
   }
 
   return response.json() as Promise<DriveFolder>;
+}
+
+export async function uploadDriveFile(
+  parentFolderId: string | undefined,
+  fileName: string,
+  mimeType: string,
+  bytes: Buffer
+) {
+  if (!parentFolderId || !isDriveConfigured()) {
+    return null;
+  }
+
+  const token = await getAccessToken();
+  const boundary = `answerbrief-${Date.now()}`;
+  const metadata = {
+    name: sanitizeDriveName(fileName) || 'Uploaded file',
+    parents: [parentFolderId],
+  };
+  const body = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\n` +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      `${JSON.stringify(metadata)}\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Type: ${mimeType || 'application/octet-stream'}\r\n\r\n`
+    ),
+    bytes,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+
+  const response = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=${folderFields}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Google Drive file upload failed: ${await response.text()}`);
+  }
+
+  return response.json() as Promise<DriveFile>;
 }
 
 export function buildProvisionalFolderName(customerEmail: string, packageName: string, createdAt: string) {
