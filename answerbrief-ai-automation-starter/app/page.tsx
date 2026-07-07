@@ -72,29 +72,24 @@ export default function Home() {
         </div>
 
         <aside className="preview-card" aria-label="Interview brief preview">
-          <div className="preview-topline">
-            <span>Interview Readiness Score</span>
-            <strong>78/100</strong>
+          <div className="brief-preview-header">
+            <p className="eyebrow">Deliverable preview</p>
+            <h2>Your Interview Brief Includes</h2>
           </div>
-          <div className="score-bar"><span /></div>
-          <div className="preview-block">
-            <h3>Top strengths</h3>
+          <div className="brief-preview-list">
             <ul>
-              <li>Relevant operating experience</li>
-              <li>Clear ownership examples</li>
-              <li>Strong role motivation</li>
+              <li>Resume-to-role match analysis</li>
+              <li>Likely interview questions</li>
+              <li>STAR story recommendations</li>
+              <li>Strengths to highlight</li>
+              <li>Gaps to prepare for</li>
+              <li>Role-specific talking points</li>
+              <li>Final interview checklist</li>
             </ul>
           </div>
-          <div className="preview-block muted">
-            <h3>Gaps to prepare for</h3>
-            <ul>
-              <li>Translate internal project language</li>
-              <li>Prepare one scale/leadership story</li>
-            </ul>
-          </div>
-          <div className="next-step">
-            <span>Recommended next step</span>
-            <strong>Interview Professional</strong>
+          <div className="brief-preview-footer">
+            <strong>Delivered within 24 hours</strong>
+            <a className="button secondary" href="/sample-brief">Preview Sample Brief</a>
           </div>
         </aside>
       </section>
