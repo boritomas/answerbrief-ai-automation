@@ -1,6 +1,3 @@
-'use client';
-
-import { useSearchParams } from 'next/navigation';
 import { packages } from '@/lib/packages';
 
 interface FitCheckResult {
@@ -9,6 +6,15 @@ interface FitCheckResult {
   gaps: string[];
   alignment: string;
   recommendedPackage: 'quick-prep' | 'full-interview-brief' | 'premium-prep';
+}
+
+interface ResultsPageProps {
+  searchParams?: {
+    jobTitle?: string;
+    industry?: string;
+    experienceLevel?: string;
+    email?: string;
+  };
 }
 
 function generateFitCheck(jobTitle: string, industry: string, experienceLevel: string): FitCheckResult {
@@ -106,12 +112,11 @@ function generateFitCheck(jobTitle: string, industry: string, experienceLevel: s
   };
 }
 
-export default function ResultsPage() {
-  const searchParams = useSearchParams();
-  const jobTitle = searchParams.get('jobTitle') || 'your target role';
-  const industry = searchParams.get('industry') || '';
-  const experienceLevel = searchParams.get('experienceLevel') || '';
-  const email = searchParams.get('email') || '';
+export default function ResultsPage({ searchParams }: ResultsPageProps) {
+  const jobTitle = searchParams?.jobTitle || 'your target role';
+  const industry = searchParams?.industry || '';
+  const experienceLevel = searchParams?.experienceLevel || '';
+  const email = searchParams?.email || '';
 
   const result = generateFitCheck(jobTitle, industry, experienceLevel);
   const recommendedPkg = packages[result.recommendedPackage];
@@ -260,10 +265,10 @@ export default function ResultsPage() {
             lineHeight: '1.6'
           }}>
             <p style={{ marginBottom: '8px' }}>
-              <strong>Important:</strong> This fit check is a preview based on the information you provided. It is not a guarantee of interview success, a job offer, or hiring outcomes. Interview results depend on many factors including actual interview performance, company priorities, and competitive candidate pool.
+              <strong>Important:</strong> This fit check is a preview based on the information you provided. It is not a guarantee of interview success, a job offer, or hiring outcomes. Interview processes and outcomes depend on many factors beyond preparation materials.
             </p>
             <p>
-              AnswerBrief AI provides interview preparation materials to help you present your qualifications more effectively. Success in interviews requires preparation, practice, and good communication—not tools alone.
+              AnswerBrief AI provides interview preparation materials to help you present your qualifications more effectively. Success in interviews requires preparation, practice, and good communication.
             </p>
           </div>
 
