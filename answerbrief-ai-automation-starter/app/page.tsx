@@ -13,55 +13,98 @@ export default function Home() {
         <div className="brand">AnswerBrief AI</div>
         <nav>
           <a href="#how">How it works</a>
+          <a href="#included">What&rsquo;s included</a>
           <a href="#packages">Packages</a>
-          <a href="#intake">After payment</a>
+          <a href="#fit-check">Free Fit Check</a>
         </nav>
       </header>
 
+      {/* Hero */}
       <section className="hero">
-        <p className="eyebrow">Interview prep for serious career moves</p>
-        <h1>Turn your resume and job posting into a role-specific interview brief.</h1>
+        <p className="eyebrow">Personalized interview prep for serious professionals</p>
+        <h1>Walk into your interview prepared, not hoping.</h1>
         <p className="subhead">
-          AnswerBrief AI helps telecom, federal, finance, audit, compliance, operations, product, and leadership candidates prepare with a clear story, strong examples, and focused interview prep.
+          AnswerBrief AI turns your resume and the job posting into a focused, role-specific interview brief &mdash; so you can answer confidently, stay on point, and stand out.
         </p>
         <div className="cta-row">
-          <a className="button primary" href="#packages">View packages</a>
-          <a className="button secondary" href="#how">How it works</a>
+          <a className="button primary" href="#fit-check">Start Free Interview Fit Check</a>
+          <a className="button secondary" href="#included">View Sample Brief</a>
         </div>
       </section>
 
+      {/* Problem */}
       <section className="problem">
         <h2>Generic interview prep is not enough.</h2>
         <p>
-          Many experienced professionals know their work, but struggle to explain it clearly in an interview. We help connect your experience to the role before the interview.
+          Most professionals know their work. Few know how to tell it clearly under pressure. AnswerBrief AI connects your experience to the role before the interview &mdash; so you show up with a clear story, strong examples, and real focus.
         </p>
       </section>
 
-      <section id="how">
+      {/* How It Works */}
+      <section id="how" className="how">
         <h2>How it works</h2>
-        <div className="cards">
-          <article><h3>1. Send your materials</h3><p>Resume, job posting, target company, and interview notes.</p></article>
-          <article><h3>2. Get your brief</h3><p>Opening pitch, likely questions, STAR stories, technical prep, and weak spots.</p></article>
-          <article><h3>3. Prep with focus</h3><p>Use the 24-hour prep sheet before the interview.</p></article>
+        <div className="steps">
+          <div className="step">
+            <div className="step-number">1</div>
+            <div>
+              <h3>Share your materials</h3>
+              <p>Send your resume, the job posting, and a few notes about the role and your concerns.</p>
+            </div>
+          </div>
+          <div className="step">
+            <div className="step-number">2</div>
+            <div>
+              <h3>We build your brief</h3>
+              <p>We create a personalized interview brief with your opening pitch, likely questions, STAR stories, and risk areas &mdash; aligned to the specific role.</p>
+            </div>
+          </div>
+          <div className="step">
+            <div className="step-number">3</div>
+            <div>
+              <h3>You prep with clarity</h3>
+              <p>Use the 24-hour prep sheet the night before. Walk in knowing exactly what to say and how to say it.</p>
+            </div>
+          </div>
+        </div>
+        <p className="delivery-note">Standard delivery: within 24 hours of receiving your materials.</p>
+      </section>
+
+      {/* Free Fit Check */}
+      <section id="fit-check" className="fit-check">
+        <div className="fit-check-inner">
+          <p className="eyebrow">Free &mdash; no purchase required</p>
+          <h2>Not sure where to start? Get a free Interview Fit Check.</h2>
+          <p>
+            Tell us your target role and situation. We&rsquo;ll send you a quick, honest assessment of how your experience aligns with the role &mdash; and which prep package makes the most sense for you.
+          </p>
+          <ul className="fit-check-steps">
+            <li>Share your target role and interview timeline</li>
+            <li>Tell us your biggest interview concern</li>
+            <li>Receive your free fit check by email within one business day</li>
+          </ul>
+          <a className="button primary" href="/intake">Start Free Interview Fit Check</a>
         </div>
       </section>
 
-      <section className="included">
-        <h2>What your prep package includes</h2>
+      {/* Deliverables */}
+      <section id="included" className="included">
+        <h2>Your Interview Brief Includes</h2>
         <ul>
-          <li>Opening pitch in your voice</li>
-          <li>Resume-to-role alignment</li>
-          <li>Likely interview questions</li>
-          <li>STAR story bank</li>
+          <li>Opening pitch written in your voice</li>
+          <li>Resume-to-role alignment review</li>
+          <li>Likely interview questions for your specific role</li>
+          <li>STAR story bank from your own experience</li>
           <li>Technical and role-specific prep</li>
-          <li>Risk areas and weak spots to tighten</li>
+          <li>Risk areas and weak spots to address</li>
           <li>Final 24-hour interview prep sheet</li>
-          <li>Optional thank-you note after the interview</li>
+          <li>Optional thank-you note template after the interview</li>
         </ul>
       </section>
 
+      {/* Pricing */}
       <section id="packages" className="pricing">
         <h2>Packages</h2>
+        <p className="delivery-note">Standard delivery: within 24 hours of receiving your materials.</p>
         <div className="price-cards">
           {(Object.keys(packages) as PackageKey[]).map((key) => {
             const pkg = packages[key];
@@ -88,14 +131,57 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Why AnswerBrief AI */}
+      <section className="why">
+        <h2>Why AnswerBrief AI?</h2>
+        <div className="why-grid">
+          <div className="why-card">
+            <h3>Role-specific, not generic</h3>
+            <p>Every brief is built around your resume and the exact job posting &mdash; not a template designed for anyone.</p>
+          </div>
+          <div className="why-card">
+            <h3>Delivered fast</h3>
+            <p>Most briefs are ready within 24 hours. Useful whether your interview is tomorrow or next week.</p>
+          </div>
+          <div className="why-card">
+            <h3>Honest preparation</h3>
+            <p>We help you understand where your experience is strong, where it has gaps, and how to talk about both clearly.</p>
+          </div>
+          <div className="why-card">
+            <h3>Between a tool and a coach</h3>
+            <p>More personalized than AI interview apps. More affordable than hourly coaching. Built for working professionals.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Document Privacy */}
+      <section className="privacy-section">
+        <h2>Your documents stay private.</h2>
+        <p>
+          We use your materials only to build your interview brief. We do not store, sell, or share your resume or personal information with third parties.
+        </p>
+        <p className="fine-print">
+          Do not upload confidential employer documents, client data, proprietary files, SSNs, passwords, bank details, or any sensitive personal information. Share only what you have clear permission to use.
+        </p>
+      </section>
+
+      {/* After Payment */}
       <section id="intake">
         <h2>After payment</h2>
-        <p>After checkout, you receive a private intake link by email so your prep workflow can start automatically.</p>
+        <p>After checkout, you receive a private intake link by email. Complete the intake form to share your materials and start your prep workflow.</p>
         <p className="fine-print">Do not upload confidential employer documents unless you have permission to use them.</p>
       </section>
 
+      {/* Disclaimer */}
+      <div className="disclaimer">
+        <p>
+          AnswerBrief AI provides interview preparation materials only. We do not guarantee job offers, interview invitations, or hiring outcomes. Results depend on many factors outside our control.
+        </p>
+      </div>
+
       <footer>
-        <p>© AnswerBrief AI. Role-specific interview prep for telecom and regulated careers.</p>
+        <p>© AnswerBrief AI &mdash; Role-specific interview prep for telecom, federal, finance, and regulated careers.</p>
+        <p className="fine-print"><a href="/privacy">Privacy policy</a></p>
       </footer>
     </main>
   );
