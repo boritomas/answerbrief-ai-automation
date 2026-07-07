@@ -17,6 +17,7 @@ export const intakeSchema = z.object({
     'leadership',
     'other',
   ]),
+  jobPostingText: z.string().optional(),
   notes: z.string().optional(),
 });
 

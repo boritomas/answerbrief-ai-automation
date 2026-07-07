@@ -1,41 +1,85 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
+import { generateInterviewBrief } from './brief';
+import { sendDeliveryEmail } from './email';
 import { Intake } from './intake-schema';
 import {
   buildCustomerFolderName,
   buildProvisionalFolderName,
   createCustomerDriveWorkspace,
   renameDriveFolder,
+  uploadDriveFile,
 } from './google-drive';
+import { PackageKey, packages } from './packages';
+
+export type PaymentStatus = 'paid' | 'unpaid' | 'failed' | 'needs_review';
+export type IntakeStatus = 'pending' | 'complete';
+export type BriefStatus = 'not_started' | 'generating' | 'generated' | 'failed' | 'fallback_generated';
+export type DeliveryStatus = 'not_started' | 'sent' | 'failed' | 'skipped';
 
 export type OrderStatus =
   | 'Paid'
   | 'Intake Pending'
   | 'In Progress'
   | 'Delivered'
-  | 'Follow-up Sent';
+  | 'Needs Review'
+  | 'Failed';
+
+export type OrderLog = {
+  at: string;
+  event: string;
+  message?: string;
+};
+
+export type IntakeUpload = {
+  filename: string;
+  contentType: string;
+  content: Buffer;
+};
 
 export type Order = {
   id: string;
   customerEmail: string;
+  customerName?: string;
+  packageKey?: PackageKey;
   packageName: string;
+  amountPaid?: number;
+  stripeSessionId?: string;
+  stripePaymentId?: string;
+  paymentStatus: PaymentStatus;
+  intakeStatus: IntakeStatus;
+  briefStatus: BriefStatus;
+  deliveryStatus: DeliveryStatus;
   status: OrderStatus;
   createdAt: string;
+  updatedAt: string;
   deliveryDate?: string;
-  stripeSessionId?: string;
+  intakeTokenHash?: string;
   prepWorkspaceUrl?: string;
   driveFolderId?: string;
   driveFolderUrl?: string;
   driveError?: string;
+  generatedBriefUrl?: string;
+  generatedBriefMode?: 'fallback';
+  errorMessage?: string;
   intake?: Intake;
   intakeSubmittedAt?: string;
+  logs: OrderLog[];
 };
 
 type NewOrder = {
+  amountPaid?: number;
   customerEmail: string;
+  customerName?: string;
+  packageKey?: PackageKey;
   packageName: string;
+  stripePaymentId?: string;
   stripeSessionId?: string;
+};
+
+type PaidOrderResult = Order & {
+  intakeToken?: string;
 };
 
 const ordersFile = path.join(process.cwd(), 'data', 'orders.json');
@@ -43,7 +87,7 @@ const ordersFile = path.join(process.cwd(), 'data', 'orders.json');
 async function readOrders(): Promise<Order[]> {
   try {
     const raw = await fs.readFile(ordersFile, 'utf8');
-    return JSON.parse(raw) as Order[];
+    return (JSON.parse(raw) as Partial<Order>[]).map(normalizeOrder);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return [];
@@ -63,71 +107,104 @@ export async function listOrders() {
   return orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export async function createPaidOrder({
-  customerEmail,
-  packageName,
-  stripeSessionId,
-}: NewOrder) {
+export async function createPaidOrder(input: NewOrder): Promise<PaidOrderResult> {
   const orders = await readOrders();
-  const existingOrder = stripeSessionId
-    ? orders.find((order) => order.stripeSessionId === stripeSessionId)
+  const existingOrder = input.stripeSessionId
+    ? orders.find((order) => order.stripeSessionId === input.stripeSessionId)
     : undefined;
 
   if (existingOrder) {
+    addLog(existingOrder, 'payment_duplicate', 'Stripe sent an already-recorded payment event.');
+    await writeOrders(orders);
     return existingOrder;
   }
 
+  const now = new Date().toISOString();
   const order: Order = {
     id: randomUUID(),
-    customerEmail,
-    packageName,
+    customerEmail: input.customerEmail,
+    customerName: input.customerName,
+    packageKey: input.packageKey,
+    packageName: input.packageName,
+    amountPaid: input.amountPaid,
+    stripePaymentId: input.stripePaymentId,
+    stripeSessionId: input.stripeSessionId,
+    paymentStatus: 'paid',
+    intakeStatus: 'pending',
+    briefStatus: 'not_started',
+    deliveryStatus: 'not_started',
     status: 'Intake Pending',
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     deliveryDate: estimateDeliveryDate(),
-    stripeSessionId,
     prepWorkspaceUrl: process.env.PREP_INTERVIEW_WORKSPACE_URL,
+    logs: [],
   };
 
-  await attachDriveWorkspace(order);
+  const intakeToken = createIntakeToken();
+  order.intakeTokenHash = hashToken(intakeToken);
+  addLog(order, 'payment_received', `Payment received for ${order.packageName}.`);
+  addLog(order, 'order_created', 'Order record created and intake token generated.');
 
+  await attachDriveWorkspace(order);
   orders.push(order);
   await writeOrders(orders);
 
-  return order;
+  return {
+    ...order,
+    intakeToken,
+  };
 }
 
-export async function saveOrderIntake(orderId: string | undefined, intake: Intake) {
+export async function saveOrderIntake({
+  intake,
+  orderId,
+  token,
+  uploads = [],
+}: {
+  intake: Intake;
+  orderId?: string;
+  token?: string;
+  uploads?: IntakeUpload[];
+}) {
   const orders = await readOrders();
   const now = new Date().toISOString();
   let order = orderId ? orders.find((item) => item.id === orderId) : undefined;
 
+  if (order?.intakeTokenHash && hashToken(token || '') !== order.intakeTokenHash) {
+    addLog(order, 'intake_token_rejected', 'Intake submission was rejected because the token did not match.');
+    order.errorMessage = 'Invalid intake token.';
+    order.status = 'Needs Review';
+    order.updatedAt = now;
+    await writeOrders(orders);
+    throw new Error('Invalid intake token.');
+  }
+
   if (!order) {
-    order = {
-      id: randomUUID(),
-      customerEmail: intake.email,
-      packageName: 'Interview Prep Package',
-      status: 'Intake Pending',
-      createdAt: now,
-      deliveryDate: estimateDeliveryDate(),
-      prepWorkspaceUrl: process.env.PREP_INTERVIEW_WORKSPACE_URL,
-    };
+    order = createManualIntakeOrder(intake, now);
     orders.push(order);
   }
 
   order.customerEmail = intake.email;
+  order.customerName = intake.name;
   order.intake = intake;
   order.intakeSubmittedAt = now;
+  order.intakeStatus = 'complete';
   order.status = 'In Progress';
+  order.updatedAt = now;
+  addLog(order, 'intake_completed', 'Customer intake was submitted.');
 
   await renameOrderDriveWorkspace(order);
+  await uploadIntakeMaterials(order, uploads, intake);
+  await runBriefWorkflow(order);
 
   await writeOrders(orders);
 
   return order;
 }
 
-export function getIntakeUrl(orderId: string, customerEmail?: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+export function getIntakeUrl(orderId: string, customerEmail?: string, token?: string) {
+  const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
   const url = new URL('/intake', baseUrl);
   url.searchParams.set('orderId', orderId);
 
@@ -135,12 +212,121 @@ export function getIntakeUrl(orderId: string, customerEmail?: string) {
     url.searchParams.set('email', customerEmail);
   }
 
+  if (token) {
+    url.searchParams.set('token', token);
+  }
+
   return url.toString();
+}
+
+function createManualIntakeOrder(intake: Intake, now: string): Order {
+  const order: Order = {
+    id: randomUUID(),
+    customerEmail: intake.email,
+    customerName: intake.name,
+    packageName: 'Interview Prep Package',
+    paymentStatus: 'unpaid',
+    intakeStatus: 'pending',
+    briefStatus: 'not_started',
+    deliveryStatus: 'not_started',
+    status: 'Intake Pending',
+    createdAt: now,
+    updatedAt: now,
+    deliveryDate: estimateDeliveryDate(),
+    prepWorkspaceUrl: process.env.PREP_INTERVIEW_WORKSPACE_URL,
+    logs: [],
+  };
+
+  addLog(order, 'manual_intake_created', 'Intake was submitted without a paid order token.');
+  return order;
+}
+
+async function uploadIntakeMaterials(order: Order, uploads: IntakeUpload[], intake: Intake) {
+  if (!order.driveFolderId) {
+    addLog(order, 'drive_upload_skipped', 'Drive folder is not configured, so intake files were not uploaded.');
+    return;
+  }
+
+  try {
+    const summary = buildIntakeSummary(intake);
+    await uploadDriveFile({
+      folderId: order.driveFolderId,
+      filename: 'intake-summary.md',
+      contentType: 'text/markdown; charset=utf-8',
+      content: summary,
+    });
+
+    for (const upload of uploads) {
+      await uploadDriveFile({
+        folderId: order.driveFolderId,
+        filename: upload.filename,
+        contentType: upload.contentType,
+        content: upload.content,
+      });
+    }
+
+    addLog(order, 'files_uploaded_to_drive', `${uploads.length + 1} intake file(s) uploaded to Drive.`);
+  } catch (error) {
+    order.driveError = getErrorMessage(error);
+    order.errorMessage = order.driveError;
+    order.status = 'Needs Review';
+    addLog(order, 'drive_upload_failed', order.driveError);
+  }
+}
+
+async function runBriefWorkflow(order: Order) {
+  if (!order.intake) {
+    return;
+  }
+
+  order.briefStatus = 'generating';
+  order.updatedAt = new Date().toISOString();
+  addLog(order, 'brief_generation_started', 'Brief workflow started after intake completion.');
+
+  try {
+    const brief = await generateInterviewBrief({
+      intake: order.intake,
+      packageName: order.packageName,
+      packageKey: order.packageKey,
+    });
+
+    const uploadedBrief = await uploadDriveFile({
+      folderId: order.driveFolderId,
+      filename: brief.filename,
+      contentType: brief.contentType,
+      content: brief.content,
+    });
+
+    order.generatedBriefUrl = uploadedBrief?.webViewLink || undefined;
+    order.generatedBriefMode = brief.mode;
+    order.briefStatus = brief.mode === 'fallback' ? 'fallback_generated' : 'generated';
+    addLog(order, 'brief_generated', `Brief generated using ${brief.mode} mode.`);
+
+    const delivery = await sendDeliveryEmail({
+      to: order.customerEmail,
+      packageName: order.packageName,
+      briefUrl: order.generatedBriefUrl,
+    });
+
+    order.deliveryStatus = delivery.skipped ? 'skipped' : 'sent';
+    order.status = delivery.skipped ? 'Needs Review' : 'Delivered';
+    addLog(order, 'delivery_email_sent', delivery.skipped
+      ? 'Delivery email was logged because Gmail is not configured.'
+      : 'Delivery email sent to customer.');
+  } catch (error) {
+    order.briefStatus = 'failed';
+    order.deliveryStatus = 'failed';
+    order.status = 'Needs Review';
+    order.errorMessage = getErrorMessage(error);
+    addLog(order, 'brief_workflow_failed', order.errorMessage);
+  } finally {
+    order.updatedAt = new Date().toISOString();
+  }
 }
 
 function estimateDeliveryDate() {
   const deliveryDate = new Date();
-  deliveryDate.setDate(deliveryDate.getDate() + 3);
+  deliveryDate.setDate(deliveryDate.getDate() + 1);
   return deliveryDate.toISOString().slice(0, 10);
 }
 
@@ -154,6 +340,7 @@ async function attachDriveWorkspace(order: Order) {
     const folder = await createCustomerDriveWorkspace(folderName);
 
     if (!folder) {
+      addLog(order, 'drive_workspace_skipped', 'Google Drive is not configured.');
       return;
     }
 
@@ -161,8 +348,12 @@ async function attachDriveWorkspace(order: Order) {
     order.driveFolderUrl = folder.webViewLink;
     order.prepWorkspaceUrl = folder.webViewLink;
     order.driveError = undefined;
+    addLog(order, 'drive_folder_created', 'Customer Drive workspace created.');
   } catch (error) {
     order.driveError = getErrorMessage(error);
+    order.errorMessage = order.driveError;
+    order.status = 'Needs Review';
+    addLog(order, 'drive_folder_failed', order.driveError);
   }
 }
 
@@ -186,11 +377,91 @@ async function renameOrderDriveWorkspace(order: Order) {
     order.driveFolderUrl = folder.webViewLink;
     order.prepWorkspaceUrl = folder.webViewLink;
     order.driveError = undefined;
+    addLog(order, 'drive_folder_renamed', 'Customer Drive workspace renamed after intake.');
   } catch (error) {
     order.driveError = getErrorMessage(error);
+    order.errorMessage = order.driveError;
+    order.status = 'Needs Review';
+    addLog(order, 'drive_folder_rename_failed', order.driveError);
   }
 }
 
+function buildIntakeSummary(intake: Intake) {
+  return [
+    '# AnswerBrief AI Intake Summary',
+    '',
+    `Name: ${intake.name}`,
+    `Email: ${intake.email}`,
+    `Target role: ${intake.targetRole}`,
+    intake.targetCompany ? `Target company: ${intake.targetCompany}` : undefined,
+    intake.interviewDate ? `Interview date: ${intake.interviewDate}` : undefined,
+    `Career lane: ${intake.careerLane}`,
+    '',
+    '## Job Posting / Role Notes',
+    intake.jobPostingText || intake.notes || 'No pasted job posting or role notes provided.',
+    '',
+    '## Candidate Notes',
+    intake.notes || 'No additional notes provided.',
+  ].filter(Boolean).join('\n');
+}
+
+function addLog(order: Order, event: string, message?: string) {
+  order.logs.push({
+    at: new Date().toISOString(),
+    event,
+    message,
+  });
+}
+
+function createIntakeToken() {
+  return randomBytes(24).toString('base64url');
+}
+
+function hashToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function normalizeOrder(order: Partial<Order>): Order {
+  const packageKey = order.packageKey || getPackageKeyFromName(order.packageName);
+  const now = order.createdAt || new Date().toISOString();
+
+  return {
+    id: order.id || randomUUID(),
+    customerEmail: order.customerEmail || '',
+    customerName: order.customerName,
+    packageKey,
+    packageName: order.packageName || (packageKey ? packages[packageKey].name : 'Interview Prep Package'),
+    amountPaid: order.amountPaid,
+    stripeSessionId: order.stripeSessionId,
+    stripePaymentId: order.stripePaymentId,
+    paymentStatus: order.paymentStatus || (order.stripeSessionId ? 'paid' : 'unpaid'),
+    intakeStatus: order.intakeStatus || (order.intake ? 'complete' : 'pending'),
+    briefStatus: order.briefStatus || 'not_started',
+    deliveryStatus: order.deliveryStatus || 'not_started',
+    status: order.status || 'Intake Pending',
+    createdAt: now,
+    updatedAt: order.updatedAt || now,
+    deliveryDate: order.deliveryDate,
+    intakeTokenHash: order.intakeTokenHash,
+    prepWorkspaceUrl: order.prepWorkspaceUrl,
+    driveFolderId: order.driveFolderId,
+    driveFolderUrl: order.driveFolderUrl,
+    driveError: order.driveError,
+    generatedBriefUrl: order.generatedBriefUrl,
+    generatedBriefMode: order.generatedBriefMode,
+    errorMessage: order.errorMessage,
+    intake: order.intake,
+    intakeSubmittedAt: order.intakeSubmittedAt,
+    logs: order.logs || [],
+  };
+}
+
+function getPackageKeyFromName(packageName?: string): PackageKey | undefined {
+  return (Object.keys(packages) as PackageKey[]).find((key) => {
+    return packages[key].name === packageName;
+  });
+}
+
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unknown Google Drive error';
+  return error instanceof Error ? error.message : 'Unknown automation error';
 }

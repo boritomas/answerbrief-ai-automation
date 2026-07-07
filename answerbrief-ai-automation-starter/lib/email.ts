@@ -4,6 +4,12 @@ type NextStepsEmail = {
   intakeUrl: string;
 };
 
+type DeliveryEmail = {
+  to: string;
+  packageName: string;
+  briefUrl?: string;
+};
+
 export async function sendNextStepsEmail({ to, packageName, intakeUrl }: NextStepsEmail) {
   const subject = 'Next steps for your AnswerBrief AI prep package';
   const text = buildNextStepsEmail({ packageName, intakeUrl });
@@ -37,6 +43,46 @@ export async function sendNextStepsEmail({ to, packageName, intakeUrl }: NextSte
 
   if (!response.ok) {
     throw new Error(`Gmail send failed: ${await response.text()}`);
+  }
+
+  return {
+    success: true,
+  };
+}
+
+export async function sendDeliveryEmail({ to, packageName, briefUrl }: DeliveryEmail) {
+  const subject = 'Your AnswerBrief AI interview brief is ready';
+  const text = buildDeliveryEmail({ packageName, briefUrl });
+
+  if (!isGmailConfigured()) {
+    console.log(`Gmail is not configured. Delivery email for ${to}:`);
+    console.log(text);
+
+    return {
+      success: true,
+      skipped: true,
+    };
+  }
+
+  const accessToken = await getGmailAccessToken();
+  const raw = encodeMessage({
+    from: process.env.GMAIL_SENDER_EMAIL as string,
+    to,
+    subject,
+    text,
+  });
+
+  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ raw }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gmail delivery send failed: ${await response.text()}`);
   }
 
   return {
@@ -97,7 +143,30 @@ function buildNextStepsEmail({
     '',
     'Do not upload confidential employer documents or anything you do not have permission to share.',
     '',
-    'Once we receive your materials, we will start your prep package.',
+    'Once we receive your materials, we will start your prep package. Standard delivery is within 24 hours after usable materials are received. Rush delivery may be available when capacity allows.',
+    '',
+    'You can request deletion of your submitted materials by replying to this email.',
+    '',
+    'AnswerBrief AI provides interview preparation materials only. We do not guarantee interviews, job offers, or hiring outcomes.',
+    '',
+    'Thanks,',
+    'AnswerBrief AI',
+  ].join('\n');
+}
+
+function buildDeliveryEmail({ packageName, briefUrl }: Pick<DeliveryEmail, 'packageName' | 'briefUrl'>) {
+  return [
+    'Hi,',
+    '',
+    `Your ${packageName} interview brief is ready.`,
+    '',
+    briefUrl
+      ? `View or download your brief here: ${briefUrl}`
+      : 'Your brief has been generated, but the share link is not available. Please reply to this email and we will send it manually.',
+    '',
+    'If anything looks off or you need a minor clarification, reply to this email with the question.',
+    '',
+    'Reminder: AnswerBrief AI provides preparation materials to help you organize and communicate your experience. We do not guarantee interviews, job offers, promotions, or hiring outcomes.',
     '',
     'Thanks,',
     'AnswerBrief AI',

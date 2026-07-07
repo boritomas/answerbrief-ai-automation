@@ -53,26 +53,33 @@ Required environment variables:
 ```bash
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
+APP_BASE_URL=http://localhost:3000
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
 NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK=
 NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK=
 NEXT_PUBLIC_STRIPE_PREMIUM_PREP_LINK=
 ADMIN_DASHBOARD_PASSWORD=
 PREP_INTERVIEW_WORKSPACE_URL=
+SUPPORT_EMAIL=
 GOOGLE_SERVICE_ACCOUNT_EMAIL=
 GOOGLE_PRIVATE_KEY=
 GOOGLE_DRIVE_ROOT_FOLDER_ID=
+GOOGLE_DRIVE_FOLDER_ROOT_ID=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REFRESH_TOKEN=
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
 GMAIL_REFRESH_TOKEN=
 GMAIL_SENDER_EMAIL=
+OPENAI_API_KEY=
 ```
 
 In Stripe, create one Payment Link for each package:
 
-- Quick Prep - $49
-- Full Interview Brief - $149
-- Premium Prep - $299
+- Interview Essentials - $49
+- Interview Professional - $149
+- Executive Interview Strategy - $299
 
 Paste those URLs into `.env.local`. If a Payment Link variable is blank, the matching package card will show `Payment link coming soon` instead of sending customers to a broken URL.
 
@@ -81,9 +88,11 @@ Paste those URLs into `.env.local`. If a Payment Link variable is blank, the mat
 Stripe sends paid orders to `app/api/stripe/webhook/route.ts`. When a `checkout.session.completed` event arrives, the app:
 
 1. Creates a local order record in `data/orders.json`.
-2. Marks the order as `Intake Pending`.
-3. Builds a customer-specific intake link.
-4. Sends the next-steps email placeholder with that intake link.
+2. Captures customer email, customer name when available, package, amount paid, and Stripe IDs.
+3. Generates a secure intake token.
+4. Creates a Google Drive workspace when Drive is configured.
+5. Builds a customer-specific intake link.
+6. Sends the next-steps email with that intake link.
 
 For local development, order and intake records are stored in `data/orders.json`. The `data` folder is ignored by git so customer details are not committed.
 
@@ -91,13 +100,22 @@ Set `PREP_INTERVIEW_WORKSPACE_URL` to the workspace you use for prep operations,
 
 ## Google Drive customer folders
 
-For production file tracking, connect a Google service account to Drive and set:
+For production file tracking, connect Google Drive with either a service account or OAuth refresh token.
+
+Service account variables:
 
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
 - `GOOGLE_PRIVATE_KEY`
 - `GOOGLE_DRIVE_ROOT_FOLDER_ID`
 
-Create a root Drive folder named `AnswerBrief AI`, share that folder with the service account email, and paste the root folder ID into `GOOGLE_DRIVE_ROOT_FOLDER_ID`.
+OAuth variables:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REFRESH_TOKEN`
+- `GOOGLE_DRIVE_FOLDER_ROOT_ID`
+
+Create a root Drive folder named `AnswerBrief AI`, share that folder with the configured Google identity, and paste the root folder ID into `GOOGLE_DRIVE_FOLDER_ROOT_ID` or `GOOGLE_DRIVE_ROOT_FOLDER_ID`.
 
 When Drive is configured, paid orders create a provisional customer folder under the root folder. The app also creates:
 
@@ -110,10 +128,24 @@ When Drive is configured, paid orders create a provisional customer folder under
 When the customer submits intake, the app renames the customer folder to:
 
 ```text
-Customer Name - Target Role - YYYY-MM-DD
+AnswerBrief - Customer Name - Target Role - YYYY-MM-DD
 ```
 
-The order tracker stores and displays the customer Drive folder URL.
+The intake workflow uploads an intake summary plus submitted resume/job description files into the customer folder. The generated brief is uploaded there as Markdown.
+
+## Brief generation and delivery
+
+After intake is submitted, the app:
+
+1. Marks intake complete.
+2. Uploads allowed files to Drive when configured.
+3. Starts brief generation.
+4. Generates a structured Markdown brief.
+5. Uploads the generated brief to Drive when configured.
+6. Sends a delivery email with the Drive link when Gmail is configured.
+7. Logs fallback/skipped states for manual review when Gmail or Drive is not configured.
+
+The current brief generator is a clean fallback implementation. It produces a structured, realistic interview-prep brief without claiming full AI resume parsing. `OPENAI_API_KEY` is reserved for a future real AI generation adapter.
 
 ## Gmail next-step emails
 

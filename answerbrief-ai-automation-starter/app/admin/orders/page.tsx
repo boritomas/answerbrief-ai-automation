@@ -43,22 +43,31 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                 <th>Customer</th>
                 <th>Package</th>
                 <th>Status</th>
+                <th>Payment</th>
+                <th>Intake</th>
+                <th>Brief</th>
+                <th>Delivery</th>
                 <th>Created</th>
                 <th>Delivery</th>
                 <th>Drive folder</th>
-                <th>Drive status</th>
+                <th>Generated brief</th>
+                <th>Last log</th>
               </tr>
             </thead>
             <tbody>
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={7}>No orders yet.</td>
+                  <td colSpan={11}>No orders yet.</td>
                 </tr>
               ) : orders.map((order) => (
                 <tr key={order.id}>
                   <td>{order.customerEmail}</td>
                   <td>{order.packageName}</td>
                   <td>{order.status}</td>
+                  <td>{order.paymentStatus}</td>
+                  <td>{order.intakeStatus}</td>
+                  <td>{order.briefStatus}</td>
+                  <td>{order.deliveryStatus}</td>
                   <td>{formatDate(order.createdAt)}</td>
                   <td>{order.deliveryDate || 'TBD'}</td>
                   <td>
@@ -66,7 +75,12 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                       <a href={order.driveFolderUrl || order.prepWorkspaceUrl}>Open</a>
                     ) : 'Not set'}
                   </td>
-                  <td>{order.driveError || (order.driveFolderUrl ? 'Ready' : 'Not configured')}</td>
+                  <td>
+                    {order.generatedBriefUrl ? (
+                      <a href={order.generatedBriefUrl}>Open brief</a>
+                    ) : order.errorMessage || order.driveError || 'Not generated'}
+                  </td>
+                  <td>{formatLastLog(order.logs)}</td>
                 </tr>
               ))}
             </tbody>
@@ -75,6 +89,16 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
       </section>
     </main>
   );
+}
+
+function formatLastLog(logs = [] as { at: string; event: string; message?: string }[]) {
+  const latest = logs[logs.length - 1];
+
+  if (!latest) {
+    return 'No logs';
+  }
+
+  return `${latest.event}: ${latest.message || latest.at}`;
 }
 
 function formatDate(value: string) {

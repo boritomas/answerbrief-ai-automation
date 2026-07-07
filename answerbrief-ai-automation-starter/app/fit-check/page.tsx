@@ -11,232 +11,189 @@ const industries = [
   'Government & Federal',
   'Energy & Utilities',
   'Consulting',
-  'Other'
+  'Operations',
+  'Other',
 ];
 
 const experienceLevels = [
   'Entry level (0-2 years)',
   'Mid-career (2-7 years)',
   'Senior (7-15 years)',
-  'Executive (15+ years)'
+  'Executive (15+ years)',
 ];
 
 export default function FitCheckPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    jobTitle: '',
-    industry: '',
-    experienceLevel: '',
+    company: '',
     email: '',
-    resumeFile: null as File | null,
+    experienceLevel: '',
+    industry: '',
     jobDescriptionText: '',
+    jobTitle: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    if (!formData.jobTitle.trim()) newErrors.jobTitle = 'Job title is required';
+
+    if (!formData.jobTitle.trim()) newErrors.jobTitle = 'Target job title is required';
     if (!formData.industry) newErrors.industry = 'Industry is required';
     if (!formData.experienceLevel) newErrors.experienceLevel = 'Experience level is required';
-    if (!formData.email.trim()) newErrors.email = 'Email is required';
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Valid email is required';
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Valid email is required';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!validateForm()) return;
 
     setLoading(true);
-    // Simulate processing
-    await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Store form data and redirect to results
     const queryParams = new URLSearchParams({
       jobTitle: formData.jobTitle,
       industry: formData.industry,
       experienceLevel: formData.experienceLevel,
       email: formData.email,
     });
+
+    if (formData.company) {
+      queryParams.set('company', formData.company);
+    }
+
     router.push(`/fit-check/results?${queryParams.toString()}`);
   };
 
   return (
-    <main style={{ backgroundColor: '#fafafa' }}>
+    <main>
       <header className="nav">
-        <div className="brand">AnswerBrief AI</div>
+        <a className="brand" href="/">AnswerBrief AI</a>
         <nav>
           <a href="/">Home</a>
+          <a href="/sample-brief">Sample Brief</a>
         </nav>
       </header>
 
-      <section className="fit-check-form" style={{ paddingTop: '60px' }}>
-        <div className="form-container" style={{ maxWidth: '600px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-            <p style={{ fontSize: '14px', fontWeight: '600', color: '#0066cc', marginBottom: '8px' }}>Free &mdash; no credit card required</p>
-            <h1 style={{ fontSize: '32px', marginBottom: '12px' }}>Get your Interview Fit Check</h1>
-            <p style={{ fontSize: '16px', color: '#666', lineHeight: '1.6' }}>
-              In 2 minutes, we'll assess how your background aligns with your target role and suggest the right prep package for you.
-            </p>
-          </div>
+      <section className="hero compact">
+        <p className="eyebrow">Free Interview Fit Check</p>
+        <h1>See where your interview prep should focus first.</h1>
+        <p className="subhead">
+          In a few minutes, get a realistic preview of your readiness, likely strengths, potential gaps, and recommended next step. This is mock-based guidance, not a full resume parser.
+        </p>
+      </section>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Job Title */}
-            <div>
-              <label htmlFor="jobTitle" style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Target Job Title</label>
+      <section className="guided-form-section">
+        <form onSubmit={handleSubmit} className="guided-form">
+          <fieldset>
+            <legend>1. Role details</legend>
+            <label htmlFor="jobTitle">
+              Target job title
               <input
                 id="jobTitle"
                 type="text"
-                placeholder="e.g., Senior Network Engineer"
+                placeholder="Senior Network Engineer"
                 value={formData.jobTitle}
-                onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  border: errors.jobTitle ? '1px solid #cc0000' : '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                }}
+                onChange={(event) => setFormData({ ...formData, jobTitle: event.target.value })}
+                aria-invalid={Boolean(errors.jobTitle)}
               />
-              {errors.jobTitle && <p style={{ color: '#cc0000', fontSize: '12px', marginTop: '4px' }}>{errors.jobTitle}</p>}
-            </div>
-
-            {/* Industry */}
-            <div>
-              <label htmlFor="industry" style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Industry</label>
+              {errors.jobTitle ? <span className="field-error">{errors.jobTitle}</span> : null}
+            </label>
+            <label htmlFor="company">
+              Company <span>Optional</span>
+              <input
+                id="company"
+                type="text"
+                placeholder="Company name if known"
+                value={formData.company}
+                onChange={(event) => setFormData({ ...formData, company: event.target.value })}
+              />
+            </label>
+            <label htmlFor="industry">
+              Industry
               <select
                 id="industry"
                 value={formData.industry}
-                onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  border: errors.industry ? '1px solid #cc0000' : '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                }}
+                onChange={(event) => setFormData({ ...formData, industry: event.target.value })}
+                aria-invalid={Boolean(errors.industry)}
               >
                 <option value="">Select an industry</option>
-                {industries.map((ind) => (
-                  <option key={ind} value={ind}>{ind}</option>
+                {industries.map((industry) => (
+                  <option key={industry} value={industry}>{industry}</option>
                 ))}
               </select>
-              {errors.industry && <p style={{ color: '#cc0000', fontSize: '12px', marginTop: '4px' }}>{errors.industry}</p>}
-            </div>
+              {errors.industry ? <span className="field-error">{errors.industry}</span> : null}
+            </label>
+          </fieldset>
 
-            {/* Experience Level */}
-            <div>
-              <label htmlFor="experienceLevel" style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Your Experience Level</label>
+          <fieldset>
+            <legend>2. Candidate background</legend>
+            <label htmlFor="experienceLevel">
+              Experience level
               <select
                 id="experienceLevel"
                 value={formData.experienceLevel}
-                onChange={(e) => setFormData({ ...formData, experienceLevel: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  border: errors.experienceLevel ? '1px solid #cc0000' : '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                }}
+                onChange={(event) => setFormData({ ...formData, experienceLevel: event.target.value })}
+                aria-invalid={Boolean(errors.experienceLevel)}
               >
                 <option value="">Select your experience level</option>
                 {experienceLevels.map((level) => (
                   <option key={level} value={level}>{level}</option>
                 ))}
               </select>
-              {errors.experienceLevel && <p style={{ color: '#cc0000', fontSize: '12px', marginTop: '4px' }}>{errors.experienceLevel}</p>}
-            </div>
-
-            {/* Email */}
-            <div>
-              <label htmlFor="email" style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Email Address</label>
+              {errors.experienceLevel ? <span className="field-error">{errors.experienceLevel}</span> : null}
+            </label>
+            <label htmlFor="email">
+              Email
               <input
                 id="email"
                 type="email"
-                placeholder="your@email.com"
+                placeholder="you@example.com"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  border: errors.email ? '1px solid #cc0000' : '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                }}
+                onChange={(event) => setFormData({ ...formData, email: event.target.value })}
+                aria-invalid={Boolean(errors.email)}
               />
-              {errors.email && <p style={{ color: '#cc0000', fontSize: '12px', marginTop: '4px' }}>{errors.email}</p>}
-            </div>
+              {errors.email ? <span className="field-error">{errors.email}</span> : null}
+            </label>
+          </fieldset>
 
-            {/* Resume Upload (Optional) */}
-            <div>
-              <label htmlFor="resume" style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Resume <span style={{ color: '#999', fontSize: '12px' }}>(optional)</span></label>
-              <input
-                id="resume"
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                onChange={(e) => setFormData({ ...formData, resumeFile: e.target.files?.[0] || null })}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  padding: '8px',
-                  fontSize: '14px',
-                }}
-              />
-              <p style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>PDF, Word, or text. Max 5 MB.</p>
-            </div>
-
-            {/* Job Description (Optional) */}
-            <div>
-              <label htmlFor="jobDescription" style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Job Description <span style={{ color: '#999', fontSize: '12px' }}>(optional)</span></label>
+          <fieldset>
+            <legend>3. Resume and job posting inputs</legend>
+            <label htmlFor="resume">
+              Resume upload <span>Optional</span>
+              <input id="resume" type="file" accept=".pdf,.doc,.docx,.txt" />
+            </label>
+            <label htmlFor="jobDescriptionFile">
+              Job description upload <span>Optional</span>
+              <input id="jobDescriptionFile" type="file" accept=".pdf,.doc,.docx,.txt" />
+            </label>
+            <label htmlFor="jobDescription">
+              Pasted job description <span>Optional</span>
               <textarea
                 id="jobDescription"
-                placeholder="Paste the job description or key requirements here"
+                placeholder="Paste the public job posting, role requirements, or link."
                 value={formData.jobDescriptionText}
-                onChange={(e) => setFormData({ ...formData, jobDescriptionText: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  minHeight: '100px',
-                  fontFamily: 'inherit',
-                }}
+                onChange={(event) => setFormData({ ...formData, jobDescriptionText: event.target.value })}
               />
-            </div>
+            </label>
+          </fieldset>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="button primary"
-              style={{
-                padding: '12px 24px',
-                fontSize: '16px',
-                fontWeight: '600',
-                backgroundColor: loading ? '#ccc' : '#0066cc',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: loading ? 'default' : 'pointer',
-                marginTop: '20px',
-              }}
-            >
-              {loading ? 'Analyzing...' : 'Get My Free Fit Check'}
-            </button>
+          <div className="privacy-callout">
+            <strong>Privacy note</strong>
+            <p>Use only resumes, public job postings, and career notes you have permission to share. Do not upload confidential employer files, client data, SSNs, passwords, bank details, or sensitive personal documents.</p>
+          </div>
 
-            <p style={{ fontSize: '12px', color: '#999', textAlign: 'center', marginTop: '20px' }}>
-              We respect your privacy. Your materials are used only for your fit check and are not stored or shared.
-            </p>
-          </form>
-        </div>
+          <button type="submit" disabled={loading} className="button primary">
+            {loading ? 'Preparing results...' : 'Get My Free Fit Check'}
+          </button>
+        </form>
       </section>
-
-      <footer style={{ marginTop: '60px', paddingTop: '40px', borderTop: '1px solid #ddd' }}>
-        <p style={{ fontSize: '12px', color: '#666' }}>© AnswerBrief AI &mdash; Role-specific interview prep for telecom, federal, finance, and regulated careers.</p>
-      </footer>
     </main>
   );
 }
