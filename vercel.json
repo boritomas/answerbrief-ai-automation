@@ -1,1 +1,3 @@
-{\n  \"buildCommand\": \"cd answerbrief-ai-automation-starter && npm run build\",\n  \"outputDirectory\": \"answerbrief-ai-automation-starter/.next\",\n  \"devCommand\": \"cd answerbrief-ai-automation-starter && npm run dev\"\n}\n
+{
+  "framework": "nextjs"
+}
