@@ -1,0 +1,228 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #161616;
+  background: #f7f7f5;
+  line-height: 1.5;
+}
+a { color: inherit; }
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 7%;
+  background: #ffffff;
+  border-bottom: 1px solid #ddd;
+}
+.brand { font-weight: 700; font-size: 1.1rem; }
+.nav nav { display: flex; gap: 18px; font-size: .95rem; flex-wrap: wrap; }
+.nav nav a { text-decoration: none; }
+.hero { padding: 80px 7% 70px; background: #ffffff; }
+.compact { padding-bottom: 46px; }
+.eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .8rem; color: #555; margin-bottom: 16px; }
+h1 { font-size: clamp(2.4rem, 6vw, 5rem); line-height: 1.05; max-width: 980px; margin: 0 0 24px; }
+.subhead { font-size: 1.25rem; max-width: 760px; color: #333; }
+.cta-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 32px; }
+.button {
+  display: inline-block;
+  text-decoration: none;
+  padding: 13px 20px;
+  border-radius: 8px;
+  font-weight: 700;
+  border: 0;
+  cursor: pointer;
+  font-size: 1rem;
+}
+.primary { background: #111; color: #fff; }
+.secondary { border: 1px solid #111; color: #111; background: #fff; }
+.disabled {
+  background: #e5e5e2;
+  color: #666;
+  cursor: not-allowed;
+}
+section { padding: 64px 7%; }
+.problem, .focus { max-width: 900px; }
+h2 { font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.05; margin: 0 0 20px; }
+h3 { font-size: 1.2rem; margin: 0 0 8px; }
+
+/* How It Works */
+.how { background: #fff; }
+.steps { display: flex; flex-direction: column; gap: 32px; max-width: 700px; margin-bottom: 28px; }
+.step { display: flex; gap: 20px; align-items: flex-start; }
+.step-number {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #111;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.delivery-note {
+  font-size: .95rem;
+  color: #444;
+  font-style: italic;
+  margin-top: 8px;
+}
+
+/* Free Fit Check */
+.fit-check { background: #111; color: #fff; }
+.fit-check .eyebrow { color: #aaa; }
+.fit-check h2 { color: #fff; }
+.fit-check p { color: #ccc; max-width: 640px; }
+.fit-check-inner { max-width: 680px; }
+.fit-check-steps {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fit-check-steps li {
+  padding-left: 24px;
+  position: relative;
+  color: #ccc;
+}
+.fit-check-steps li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #fff;
+  font-weight: 700;
+}
+.fit-check .button.primary {
+  background: #fff;
+  color: #111;
+  margin-top: 4px;
+}
+
+/* Deliverables / Included */
+.included ul { columns: 2; max-width: 900px; padding-left: 22px; }
+
+/* Pricing */
+.pricing { background: #fff; }
+.price-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 24px; }
+article { background: #f7f7f5; padding: 28px; border: 1px solid #ddd; border-radius: 14px; }
+.pricing article .button { margin-top: 20px; display: block; text-align: center; }
+.price { font-size: 2rem; font-weight: 700; margin: 10px 0; }
+.featured { border: 2px solid #111; background: #fff; }
+.badge {
+  display: inline-block;
+  background: #111;
+  color: #fff;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 700;
+  margin: 0 0 10px;
+  padding: 4px 10px;
+}
+
+/* Why AnswerBrief AI */
+.why { background: #f7f7f5; }
+.why-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-top: 8px; }
+.why-card { background: #fff; border: 1px solid #ddd; border-radius: 14px; padding: 24px; }
+.why-card h3 { font-size: 1.1rem; margin-bottom: 8px; }
+
+/* Privacy Section */
+.privacy-section { background: #fff; max-width: 100%; }
+.privacy-section p { max-width: 760px; }
+
+/* Disclaimer */
+.disclaimer {
+  background: #f0f0ec;
+  border-top: 1px solid #ddd;
+  padding: 20px 7%;
+}
+.disclaimer p {
+  font-size: .9rem;
+  color: #555;
+  max-width: 900px;
+  margin: 0;
+}
+
+/* Forms */
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+form { display: grid; gap: 14px; max-width: 720px; }
+label { display: grid; gap: 6px; font-weight: 700; }
+input, textarea, select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #bbb;
+  border-radius: 8px;
+  font: inherit;
+}
+textarea { min-height: 120px; }
+.intake-form {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 24px;
+}
+.checkbox-label {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 18px 1fr;
+  font-weight: 400;
+}
+.checkbox-label input {
+  margin-top: 5px;
+  width: auto;
+}
+.error {
+  background: #fff1f1;
+  border: 1px solid #d56b6b;
+  border-radius: 8px;
+  color: #8a1f1f;
+  max-width: 720px;
+  padding: 12px 14px;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+table {
+  background: #fff;
+  border-collapse: collapse;
+  min-width: 860px;
+  width: 100%;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 12px;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #efefeb;
+}
+.fine-print { font-size: .9rem; color: #555; margin-top: 16px; }
+footer { padding: 32px 7%; border-top: 1px solid #ddd; background: #fff; color: #444; }
+footer a { text-decoration: none; color: #444; }
+footer a:hover { text-decoration: underline; }
+
+/* Mobile */
+@media (max-width: 850px) {
+  .nav { display: block; }
+  .nav nav { margin-top: 14px; gap: 12px; }
+  .cards, .price-cards { grid-template-columns: 1fr; }
+  .included ul { columns: 1; }
+  .why-grid { grid-template-columns: 1fr; }
+  h1 { font-size: clamp(2rem, 8vw, 4rem); }
+  .hero { padding: 56px 7% 48px; }
+  .step { gap: 14px; }
+}
+
+@media (max-width: 480px) {
+  .nav { padding: 16px 5%; }
+  section { padding: 48px 5%; }
+  .hero { padding: 40px 5% 36px; }
+  .disclaimer { padding: 20px 5%; }
+  .cta-row { flex-direction: column; }
+  .cta-row .button { text-align: center; }
+}
