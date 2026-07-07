@@ -13,7 +13,7 @@ export default function Home() {
         <div className="brand">AnswerBrief AI</div>
         <nav>
           <a href="#how">How it works</a>
-          <a href="#included">What&rsquo;s included</a>
+          <a href="#included">What's included</a>
           <a href="#packages">Packages</a>
           <a href="#fit-check">Free Fit Check</a>
         </nav>
@@ -27,7 +27,7 @@ export default function Home() {
           AnswerBrief AI turns your resume and the job posting into a focused, role-specific interview brief &mdash; so you can answer confidently, stay on point, and stand out.
         </p>
         <div className="cta-row">
-          <a className="button primary" href="#fit-check">Start Free Interview Fit Check</a>
+          <a className="button primary" href="/fit-check">Start Free Interview Fit Check</a>
           <a className="button secondary" href="#included">View Sample Brief</a>
         </div>
       </section>
@@ -36,7 +36,7 @@ export default function Home() {
       <section className="problem">
         <h2>Generic interview prep is not enough.</h2>
         <p>
-          Most professionals know their work. Few know how to tell it clearly under pressure. AnswerBrief AI connects your experience to the role before the interview &mdash; so you show up with a clear story, strong examples, and real focus.
+          Most professionals know their work. Few know how to tell it clearly under pressure. AnswerBrief AI connects your experience to the role before the interview &mdash; so you show up with a clear narrative, anticipate likely questions, and know how to position your gaps.
         </p>
       </section>
 
@@ -75,14 +75,14 @@ export default function Home() {
           <p className="eyebrow">Free &mdash; no purchase required</p>
           <h2>Not sure where to start? Get a free Interview Fit Check.</h2>
           <p>
-            Tell us your target role and situation. We&rsquo;ll send you a quick, honest assessment of how your experience aligns with the role &mdash; and which prep package makes the most sense for you.
+            Tell us your target role and situation. We'll send you a quick, honest assessment of how your experience aligns with the role &mdash; and which prep package makes the most sense for you.
           </p>
           <ul className="fit-check-steps">
             <li>Share your target role and interview timeline</li>
             <li>Tell us your biggest interview concern</li>
             <li>Receive your free fit check by email within one business day</li>
           </ul>
-          <a className="button primary" href="/intake">Start Free Interview Fit Check</a>
+          <a className="button primary" href="/fit-check">Start Free Interview Fit Check</a>
         </div>
       </section>
 
@@ -175,7 +175,7 @@ export default function Home() {
       {/* Disclaimer */}
       <div className="disclaimer">
         <p>
-          AnswerBrief AI provides interview preparation materials only. We do not guarantee job offers, interview invitations, or hiring outcomes. Results depend on many factors outside our control.
+          AnswerBrief AI provides interview preparation materials only. We do not guarantee job offers, interview invitations, or hiring outcomes. Results depend on many factors outside our control, including your actual interview performance, company priorities, and competitive candidate pool. Success in interviews requires preparation, practice, and strong communication.
         </p>
       </div>
 
