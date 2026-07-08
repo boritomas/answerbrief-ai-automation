@@ -396,38 +396,28 @@ article,
   color: #dce8f2;
 }
 
-.video-placeholder {
-  align-items: center;
-  aspect-ratio: 16 / 9;
+.video-embed-card {
   background:
     radial-gradient(circle at 20% 15%, rgba(15, 76, 129, .12), transparent 32%),
     linear-gradient(135deg, #ffffff 0%, #edf5fb 100%);
   border: 1px solid var(--line);
   border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.video-embed {
+  aspect-ratio: 16 / 9;
+  background: #fff;
+  border: 0;
+  border-radius: 6px;
+  display: block;
   min-height: 320px;
-  padding: 28px;
-  text-align: center;
+  width: 100%;
 }
 
-.video-placeholder p {
-  color: var(--accent-dark);
-  font-weight: 800;
-}
-
-.play-mark {
-  align-items: center;
-  background: var(--accent);
-  border-radius: 999px;
-  color: #fff;
-  display: inline-flex;
-  font-size: 1.6rem;
-  height: 72px;
-  justify-content: center;
-  margin-bottom: 18px;
-  width: 72px;
+.video-embed-card .text-link {
+  margin: 12px 4px 2px;
 }
 
 .explainer-steps {

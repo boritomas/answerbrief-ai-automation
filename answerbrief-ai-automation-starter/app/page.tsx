@@ -1,5 +1,7 @@
 import { packages, PackageKey } from '@/lib/packages';
 
+const walkthroughVideoUrl = 'https://labs.google/fx/tools/flow/shared/video/8e2c5835-8fe7-4dcf-8262-824ceef89938';
+
 const paymentLinks: Record<PackageKey, string | undefined> = {
   'quick-prep': process.env.NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK,
   'full-interview-brief': process.env.NEXT_PUBLIC_STRIPE_FULL_INTERVIEW_BRIEF_LINK,
@@ -269,13 +271,20 @@ export default function Home() {
           <p className="eyebrow">Product walkthrough</p>
           <h2>See AnswerBrief AI in Action</h2>
           <p>
-            A 60-second walkthrough is coming soon. See how AnswerBrief AI turns your resume and target job posting into a personalized interview strategy.
+            Watch how AnswerBrief AI turns your resume and target job posting into a personalized interview strategy.
           </p>
         </div>
         <div className="explainer-grid">
-          <div className="video-placeholder" aria-label="Explainer video placeholder">
-            <span className="play-mark" aria-hidden="true">▶</span>
-            <p>60-second walkthrough coming soon</p>
+          <div className="video-embed-card">
+            <iframe
+              className="video-embed"
+              src={walkthroughVideoUrl}
+              title="AnswerBrief AI walkthrough video"
+              loading="lazy"
+              allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+              allowFullScreen
+            />
+            <a className="text-link" href={walkthroughVideoUrl} rel="noreferrer">Open video in a new tab</a>
           </div>
           <div className="explainer-steps">
             {explainerSteps.map((step, index) => (
