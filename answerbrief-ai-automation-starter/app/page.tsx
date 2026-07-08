@@ -8,12 +8,30 @@ const paymentLinks: Record<PackageKey, string | undefined> = {
 
 const sampleSections = [
   ['Executive Summary', 'A clear read on how the candidate should position their background for the target role.'],
+  ['Opening Pitch', 'A concise way to introduce your background without rambling or underselling your fit.'],
   ['Resume-to-Role Alignment', 'Role requirements mapped to relevant experience, proof points, and areas to clarify.'],
   ['Likely Interview Questions', 'Focused questions based on the role level, function, and stated requirements.'],
-  ['STAR Story Angles', 'Practical story prompts for ownership, conflict, execution, leadership, and measurable impact.'],
+  ['STAR Story Example', 'A realistic structure for turning one experience into a clear interview answer.'],
   ['Strengths to Emphasize', 'The strongest evidence to repeat throughout the interview.'],
   ['Gaps to Prepare For', 'Honest prep areas with language for addressing them constructively.'],
   ['Final Prep Checklist', 'A concise list for the night before and day of the interview.'],
+];
+
+const afterPaySteps = [
+  ['Secure checkout', 'Choose a package and complete payment through Stripe.'],
+  ['Intake link', 'You receive the intake path for your resume, public job posting, and role notes.'],
+  ['Upload resume and job posting', 'Share only documents and public role details you have permission to use.'],
+  ['Brief prepared', 'Your materials are turned into a practical interview-prep brief.'],
+  ['Delivery within promised window', 'Standard delivery is within 24 hours after usable materials are received.'],
+];
+
+const useCases = [
+  ['Last-minute prep', 'You have an interview soon and need focused talking points quickly.'],
+  ['Career changer', 'You need to translate adjacent experience into the language of a new role.'],
+  ['Leadership interview', 'You need clear stories about judgment, ownership, and stakeholder communication.'],
+  ['Technical/business role', 'You need to explain both the work and its business impact.'],
+  ['Government/compliance role', 'You need precise, careful language for regulated or process-heavy work.'],
+  ['Internal promotion', 'You need to position proven work as readiness for a higher-scope role.'],
 ];
 
 const faqs = [
@@ -26,7 +44,7 @@ const faqs = [
     answer: 'Standard delivery is within 24 hours after usable materials are received. Rush delivery may be available when capacity allows.',
   },
   {
-    question: 'Does this guarantee a job offer?',
+    question: 'Does this guarantee a job?',
     answer: 'No. AnswerBrief AI provides preparation materials only. We do not guarantee interviews, offers, promotions, or hiring outcomes.',
   },
   {
@@ -34,12 +52,16 @@ const faqs = [
     answer: 'Depending on the package, you receive a structured brief with alignment notes, likely questions, STAR story angles, gaps to prepare for, and a final prep checklist.',
   },
   {
-    question: 'What industries is this for?',
-    answer: 'The structure works well for telecom, federal, finance, audit, compliance, operations, product, technology, and other competitive professional roles.',
+    question: 'What happens after I pay?',
+    answer: 'You complete secure checkout, submit your intake materials, and receive your brief within the promised delivery window after usable materials are received.',
   },
   {
-    question: 'Can I use this for leadership roles?',
-    answer: 'Yes. The Executive Interview Strategy package is designed for higher-stakes or leadership interviews where positioning, judgment, and stakeholder communication matter.',
+    question: 'Are payments secure?',
+    answer: 'Payments are handled through Stripe checkout. AnswerBrief AI does not store your card number.',
+  },
+  {
+    question: 'Is this a subscription?',
+    answer: 'No. Current packages are one-time interview-prep purchases unless a future checkout page explicitly says otherwise.',
   },
 ];
 
@@ -60,12 +82,12 @@ export default function Home() {
       <section className="hero hero-grid">
         <div>
           <p className="eyebrow">Role-specific interview prep for serious candidates</p>
-          <h1>Walk into your interview prepared, not hoping.</h1>
+          <h1>Walk into your interview knowing exactly what to say.</h1>
           <p className="subhead">
             AnswerBrief AI turns your resume and the job posting into a focused interview brief so you can explain your experience clearly, prepare for likely questions, and address gaps with confidence.
           </p>
           <div className="cta-row">
-            <a className="button primary" href="/fit-check">Start Free Interview Fit Check</a>
+            <a className="button primary" href="/fit-check">Start Free Fit Check</a>
             <a className="button secondary" href="/sample-brief">View Sample Brief</a>
           </div>
           <p className="microcopy">No fake confidence. No outcome guarantees. Just structured preparation.</p>
@@ -159,6 +181,41 @@ export default function Home() {
         <a className="text-link" href="/sample-brief">Open full sample brief</a>
       </section>
 
+      <section className="section-band">
+        <div className="section-heading">
+          <p className="eyebrow">After checkout</p>
+          <h2>What happens after you pay?</h2>
+          <p>A simple handoff keeps the process clear from payment to delivery.</p>
+        </div>
+        <div className="steps timeline-steps">
+          {afterPaySteps.map(([title, description], index) => (
+            <article className="step" key={title}>
+              <span className="step-number">{index + 1}</span>
+              <div>
+                <h3>{title}</h3>
+                <p>{description}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="use-cases">
+        <div className="section-heading">
+          <p className="eyebrow">Use cases</p>
+          <h2>Built for real interview moments.</h2>
+          <p>Use AnswerBrief AI when the stakes are high and generic prep is too thin.</p>
+        </div>
+        <div className="sample-grid">
+          {useCases.map(([title, description]) => (
+            <article className="sample-tile" key={title}>
+              <h3>{title}</h3>
+              <p>{description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section className="why">
         <div className="section-heading">
           <p className="eyebrow">Trust and clarity</p>
@@ -184,13 +241,13 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="section-band">
+      <section className="section-band credibility">
         <div className="section-heading">
-          <p className="eyebrow">Why we built this</p>
+          <p className="eyebrow">Founder-led product</p>
           <h2>Interview prep should feel organized, not scattered.</h2>
         </div>
         <p className="wide-copy">
-          Many candidates have strong experience but struggle to package it under pressure. AnswerBrief AI exists to turn raw materials into role-specific preparation: what to emphasize, what to practice, what gaps to address, and what questions to expect.
+          AnswerBrief AI is a focused public product from Nieves Labs. It is built around a practical promise: help candidates turn their own resume, the public job posting, and their notes into clearer interview preparation. No fake testimonials, no invented credentials, and no hiring guarantees.
         </p>
       </section>
 
@@ -199,6 +256,7 @@ export default function Home() {
           <p className="eyebrow">Packages</p>
           <h2>Choose the prep depth that matches the stakes.</h2>
           <p>Standard delivery: within 24 hours. Rush delivery may be available when capacity allows.</p>
+          <p className="secure-note">Secure checkout powered by Stripe.</p>
         </div>
         <div className="price-cards">
           {(Object.keys(packages) as PackageKey[]).map((key) => {
@@ -264,7 +322,11 @@ export default function Home() {
         <strong>AnswerBrief AI</strong>
         <p>Privacy note: your materials are used for preparation and are not sold.</p>
         <p>Disclaimer: no guarantees of interviews, offers, promotions, or hiring outcomes.</p>
-        <p className="fine-print"><a href="/privacy">Privacy policy</a></p>
+        <p className="fine-print footer-links">
+          <a href="/privacy">Privacy policy</a>
+          <a href="/terms">Terms</a>
+          <a href="/refund">Refund policy</a>
+        </p>
       </footer>
     </main>
   );

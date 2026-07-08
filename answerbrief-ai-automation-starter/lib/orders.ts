@@ -204,7 +204,7 @@ export async function saveOrderIntake({
 }
 
 export function getIntakeUrl(orderId: string, customerEmail?: string, token?: string) {
-  const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://www.answer-brief.com';
   const url = new URL('/intake', baseUrl);
   url.searchParams.set('orderId', orderId);
 
