@@ -1,6 +1,8 @@
 import { packages, PackageKey } from '@/lib/packages';
 
-const walkthroughVideoUrl = 'https://labs.google/fx/tools/flow/shared/video/8e2c5835-8fe7-4dcf-8262-824ceef89938';
+const walkthroughPageUrl = 'https://labs.google/fx/tools/flow/shared/video/8e2c5835-8fe7-4dcf-8262-824ceef89938';
+const walkthroughVideoUrl = 'https://labs.google/fx/api/og-video/shared/8e2c5835-8fe7-4dcf-8262-824ceef89938';
+const walkthroughPosterUrl = 'https://labs.google/fx/api/og-video/thumbnail/shared/8e2c5835-8fe7-4dcf-8262-824ceef89938';
 
 const paymentLinks: Record<PackageKey, string | undefined> = {
   'quick-prep': process.env.NEXT_PUBLIC_STRIPE_QUICK_PREP_LINK,
@@ -276,15 +278,17 @@ export default function Home() {
         </div>
         <div className="explainer-grid">
           <div className="video-embed-card">
-            <iframe
-              className="video-embed"
+            <video
+              className="walkthrough-video"
               src={walkthroughVideoUrl}
-              title="AnswerBrief AI walkthrough video"
-              loading="lazy"
-              allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-              allowFullScreen
+              poster={walkthroughPosterUrl}
+              autoPlay
+              muted
+              loop
+              playsInline
+              controls
             />
-            <a className="text-link" href={walkthroughVideoUrl} rel="noreferrer">Open video in a new tab</a>
+            <a className="text-link" href={walkthroughPageUrl} rel="noreferrer">Watch Demo</a>
           </div>
           <div className="explainer-steps">
             {explainerSteps.map((step, index) => (
