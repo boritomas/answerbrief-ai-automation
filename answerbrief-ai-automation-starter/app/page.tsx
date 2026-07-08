@@ -1,6 +1,5 @@
 import { packages, PackageKey } from '@/lib/packages';
 
-const walkthroughPageUrl = 'https://labs.google/fx/tools/flow/shared/video/8e2c5835-8fe7-4dcf-8262-824ceef89938';
 const walkthroughVideoUrl = 'https://labs.google/fx/api/og-video/shared/8e2c5835-8fe7-4dcf-8262-824ceef89938';
 const walkthroughPosterUrl = 'https://labs.google/fx/api/og-video/thumbnail/shared/8e2c5835-8fe7-4dcf-8262-824ceef89938';
 
@@ -39,10 +38,22 @@ const useCases = [
 ];
 
 const explainerSteps = [
-  'Upload your resume',
-  'Add the job posting',
-  'Choose your package',
-  'Receive your personalized interview strategy',
+  ['Upload your resume', 'Securely upload your current resume.'],
+  ['Add the job posting', "Paste the role you're interviewing for."],
+  ['Choose your package', 'Select the preparation level that best fits your needs.'],
+  ['Receive your Interview Brief', 'Delivered within 24 hours and personalized for your interview.'],
+];
+
+const videoTrustIndicators = [
+  'Delivered within 24 Hours',
+  'Personalized for Your Target Role',
+  'Secure Checkout Powered by Stripe',
+  'No Subscription Required',
+];
+
+const previewTestimonials = [
+  ['The brief helped me organize my interview stories and walk in with much more confidence.', 'Early User'],
+  ['The preparation felt far more focused than generic interview advice.', 'Beta User'],
 ];
 
 const feedbackFocus = [
@@ -272,8 +283,8 @@ export default function Home() {
         <div className="section-heading">
           <p className="eyebrow">Product walkthrough</p>
           <h2>See AnswerBrief AI in Action</h2>
-          <p>
-            Watch how AnswerBrief AI turns your resume and target job posting into a personalized interview strategy.
+          <p className="video-subtitle">
+            See how AnswerBrief AI transforms your resume and target job posting into a personalized interview strategy—helping you walk into your interview with confidence.
           </p>
         </div>
         <div className="explainer-grid">
@@ -286,19 +297,28 @@ export default function Home() {
               muted
               loop
               playsInline
+              preload="metadata"
               controls
             />
-            <a className="text-link" href={walkthroughPageUrl} rel="noreferrer">Watch Demo</a>
+            <a className="text-link" href={walkthroughVideoUrl} rel="noreferrer">Watch Demo</a>
           </div>
           <div className="explainer-steps">
-            {explainerSteps.map((step, index) => (
-              <article className="step compact-step" key={step}>
+            {explainerSteps.map(([title, description], index) => (
+              <article className="step compact-step" key={title}>
                 <span className="step-number">{index + 1}</span>
-                <h3>{step}</h3>
+                <div>
+                  <h3>{title}</h3>
+                  <p>{description}</p>
+                </div>
               </article>
             ))}
             <a className="button secondary" href="/sample-brief">View Sample Brief</a>
           </div>
+        </div>
+        <div className="trust-strip" aria-label="AnswerBrief AI trust indicators">
+          {videoTrustIndicators.map((item) => (
+            <span key={item}>✓ {item}</span>
+          ))}
         </div>
       </section>
 
@@ -319,6 +339,24 @@ export default function Home() {
           ))}
         </div>
         <a className="button primary" href="mailto:support@answer-brief.com?subject=AnswerBrief%20AI%20Feedback">Share Feedback</a>
+      </section>
+
+      <section className="testimonials-section">
+        <div className="section-heading">
+          <p className="eyebrow">Preview examples</p>
+          <h2>What Early Users Are Saying</h2>
+          <p>Customer testimonials will be updated as AnswerBrief AI grows.</p>
+        </div>
+        <div className="testimonial-grid">
+          {previewTestimonials.map(([quote, attribution]) => (
+            <article className="testimonial-card" key={quote}>
+              <p className="stars" aria-label="Five-star preview rating">★★★★★</p>
+              <blockquote>“{quote}”</blockquote>
+              <p className="testimonial-attribution">— {attribution}</p>
+              <p className="preview-label">Preview example</p>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="why">
@@ -358,6 +396,22 @@ export default function Home() {
               <p>{item}</p>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="section-band professional-section">
+        <div className="section-heading">
+          <p className="eyebrow">Built for launch-ready candidates</p>
+          <h2>Built by Professionals. Designed for Job Seekers.</h2>
+          <p>
+            AnswerBrief AI was created by experienced product and technology professionals who understand how hiring teams evaluate candidates. We built AnswerBrief AI to help people prepare smarter—not harder—with personalized interview strategies tailored to each opportunity.
+          </p>
+        </div>
+        <div className="trust-strip compact-trust-strip" aria-label="AnswerBrief AI purchase safeguards">
+          <span>✓ Secure Stripe Checkout</span>
+          <span>✓ Privacy Protected</span>
+          <span>✓ No Subscription Required</span>
+          <span>✓ Delivered Within 24 Hours</span>
         </div>
       </section>
 
