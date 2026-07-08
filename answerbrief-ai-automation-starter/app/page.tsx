@@ -34,6 +34,31 @@ const useCases = [
   ['Internal promotion', 'You need to position proven work as readiness for a higher-scope role.'],
 ];
 
+const explainerSteps = [
+  'Upload your resume',
+  'Add the job posting',
+  'Choose your package',
+  'Receive your personalized interview strategy',
+];
+
+const feedbackFocus = [
+  'Interview strategy quality',
+  'Resume-to-role matching',
+  'STAR story guidance',
+  'Delivery experience',
+  'Overall interview confidence',
+];
+
+const trustBullets = [
+  'Personalized for your resume and target role',
+  'Designed to reduce interview preparation time',
+  'Clear, structured interview strategy',
+  'Secure checkout powered by Stripe',
+  'Privacy-conscious document handling',
+  'Transparent pricing with no subscriptions',
+  'Built for professionals preparing for real interviews',
+];
+
 const faqs = [
   {
     question: 'Is my resume private?',
@@ -216,6 +241,73 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="section-band founder-section">
+        <div className="founder-card">
+          <div>
+            <p className="eyebrow">Founder-led product</p>
+            <h2>Meet the Founder</h2>
+            <p>
+              AnswerBrief AI was created by Tomas Nieves to help candidates turn resumes and job postings into focused interview preparation strategies without spending hours organizing notes, likely questions, STAR stories, and role-specific talking points.
+            </p>
+            <div className="founder-links">
+              <a className="text-link" href="https://www.linkedin.com/" rel="noreferrer">LinkedIn placeholder</a>
+              <a className="text-link" href="https://nieves-labs.com" rel="noreferrer">Nieves Labs</a>
+            </div>
+          </div>
+          <blockquote className="founder-quote">
+            <p>“Interviews shouldn’t be about guessing what to say. They should be about confidently communicating the value you already bring.”</p>
+            <footer>
+              <strong>Tomas Nieves</strong>
+              <span>Founder, AnswerBrief AI</span>
+            </footer>
+          </blockquote>
+        </div>
+      </section>
+
+      <section className="explainer-section">
+        <div className="section-heading">
+          <p className="eyebrow">Product walkthrough</p>
+          <h2>See AnswerBrief AI in Action</h2>
+          <p>
+            A 60-second walkthrough is coming soon. See how AnswerBrief AI turns your resume and target job posting into a personalized interview strategy.
+          </p>
+        </div>
+        <div className="explainer-grid">
+          <div className="video-placeholder" aria-label="Explainer video placeholder">
+            <span className="play-mark" aria-hidden="true">▶</span>
+            <p>60-second walkthrough coming soon</p>
+          </div>
+          <div className="explainer-steps">
+            {explainerSteps.map((step, index) => (
+              <article className="step compact-step" key={step}>
+                <span className="step-number">{index + 1}</span>
+                <h3>{step}</h3>
+              </article>
+            ))}
+            <a className="button secondary" href="/sample-brief">View Sample Brief</a>
+          </div>
+        </div>
+      </section>
+
+      <section className="section-band feedback-section">
+        <div className="section-heading">
+          <p className="eyebrow">Early feedback</p>
+          <h2>Early User Feedback</h2>
+          <p>
+            We are actively collecting feedback from job seekers, career changers, and professionals preparing for competitive interviews.
+          </p>
+        </div>
+        <div className="trust-list">
+          {feedbackFocus.map((item) => (
+            <article className="trust-item" key={item}>
+              <span aria-hidden="true">✓</span>
+              <p>{item}</p>
+            </article>
+          ))}
+        </div>
+        <a className="button primary" href="mailto:support@answer-brief.com?subject=AnswerBrief%20AI%20Feedback">Share Feedback</a>
+      </section>
+
       <section className="why">
         <div className="section-heading">
           <p className="eyebrow">Trust and clarity</p>
@@ -241,14 +333,32 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="section-band credibility">
+      <section className="section-band trust-section">
         <div className="section-heading">
-          <p className="eyebrow">Founder-led product</p>
-          <h2>Interview prep should feel organized, not scattered.</h2>
+          <p className="eyebrow">Why trust AnswerBrief AI</p>
+          <h2>Practical preparation with clear boundaries.</h2>
         </div>
-        <p className="wide-copy">
-          AnswerBrief AI is a focused public product from Nieves Labs. It is built around a practical promise: help candidates turn their own resume, the public job posting, and their notes into clearer interview preparation. No fake testimonials, no invented credentials, and no hiring guarantees.
-        </p>
+        <div className="trust-list">
+          {trustBullets.map((item) => (
+            <article className="trust-item" key={item}>
+              <span aria-hidden="true">✓</span>
+              <p>{item}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="support-section">
+        <div className="support-card">
+          <div>
+            <p className="eyebrow">Support</p>
+            <h2>Questions Before You Purchase?</h2>
+            <p>
+              Whether you’re preparing for your first interview or your next leadership opportunity, we’re here to help you choose the package that fits your needs.
+            </p>
+          </div>
+          <a className="button primary" href="mailto:support@answer-brief.com">support@answer-brief.com</a>
+        </div>
       </section>
 
       <section id="packages" className="pricing">
@@ -320,12 +430,15 @@ export default function Home() {
 
       <footer>
         <strong>AnswerBrief AI</strong>
+        <p className="footer-kicker">Built by Nieves Labs</p>
+        <p>Practical AI tools designed to help people solve real-world problems with confidence.</p>
         <p>Privacy note: your materials are used for preparation and are not sold.</p>
         <p>Disclaimer: no guarantees of interviews, offers, promotions, or hiring outcomes.</p>
         <p className="fine-print footer-links">
           <a href="/privacy">Privacy policy</a>
           <a href="/terms">Terms</a>
           <a href="/refund">Refund policy</a>
+          <a href="mailto:support@answer-brief.com">Contact</a>
         </p>
       </footer>
     </main>

@@ -263,6 +263,8 @@ p { margin: 0 0 16px; }
 .steps,
 .why-grid,
 .sample-grid,
+.explainer-grid,
+.trust-list,
 .price-cards,
 .results-grid {
   display: grid;
@@ -273,12 +275,15 @@ p { margin: 0 0 16px; }
 .timeline-steps { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .why-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .sample-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.explainer-grid { align-items: stretch; grid-template-columns: minmax(0, 1fr) minmax(320px, .75fr); }
+.trust-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .price-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
 
 article,
   .sample-tile,
   .why-grid article,
   .step,
+  .trust-item,
   .guided-form,
   .results-grid article,
   .sample-report article,
@@ -316,6 +321,8 @@ article,
 
 .included,
 .use-cases,
+.explainer-section,
+.support-section,
 .pricing,
 .faq { background: var(--soft); }
 
@@ -336,6 +343,159 @@ article,
 .price { font-size: 2.1rem; font-weight: 800; margin: 8px 0; }
 .value-note { background: #edf5fb; border-radius: 8px; color: var(--accent-dark); padding: 10px 12px; }
 .secure-note { color: var(--accent-dark); font-weight: 800; }
+
+.founder-card,
+.support-card {
+  align-items: center;
+  display: grid;
+  gap: 28px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
+  max-width: 1120px;
+}
+
+.founder-card p,
+.support-card p {
+  color: var(--muted);
+  max-width: 760px;
+}
+
+.founder-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.founder-quote {
+  background: var(--accent-dark);
+  border-radius: 8px;
+  color: #fff;
+  margin: 0;
+  padding: 28px;
+}
+
+.founder-quote p {
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.founder-quote footer {
+  background: transparent;
+  border: 0;
+  color: #dce8f2;
+  display: grid;
+  gap: 2px;
+  padding: 0;
+}
+
+.founder-quote footer strong {
+  color: #fff;
+}
+
+.founder-quote footer span {
+  color: #dce8f2;
+}
+
+.video-placeholder {
+  align-items: center;
+  aspect-ratio: 16 / 9;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(15, 76, 129, .12), transparent 32%),
+    linear-gradient(135deg, #ffffff 0%, #edf5fb 100%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 320px;
+  padding: 28px;
+  text-align: center;
+}
+
+.video-placeholder p {
+  color: var(--accent-dark);
+  font-weight: 800;
+}
+
+.play-mark {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 1.6rem;
+  height: 72px;
+  justify-content: center;
+  margin-bottom: 18px;
+  width: 72px;
+}
+
+.explainer-steps {
+  display: grid;
+  gap: 14px;
+}
+
+.compact-step {
+  align-items: center;
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  padding: 18px;
+}
+
+.compact-step .step-number {
+  margin-bottom: 0;
+}
+
+.compact-step h3 {
+  margin: 0;
+}
+
+.trust-item {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 22px 1fr;
+}
+
+.trust-item span {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  font-size: .8rem;
+  font-weight: 800;
+  height: 22px;
+  justify-content: center;
+  margin-top: 2px;
+  width: 22px;
+}
+
+.trust-item p {
+  margin: 0;
+}
+
+.feedback-section .button {
+  margin-top: 24px;
+}
+
+.support-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(23, 23, 23, .08);
+  padding: 30px;
+}
+
+.support-card .button {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.footer-kicker {
+  color: var(--accent-dark);
+  font-weight: 800;
+}
 
 .badge {
   background: var(--accent);
@@ -558,6 +718,10 @@ th { background: #eef1f3; }
   .steps,
   .timeline-steps,
   .why-grid,
+  .explainer-grid,
+  .trust-list,
+  .founder-card,
+  .support-card,
   .price-cards,
   .results-grid {
     grid-template-columns: 1fr;
@@ -573,6 +737,7 @@ th { background: #eef1f3; }
   }
 
   .featured { transform: none; }
+  .support-card .button { justify-self: stretch; }
 }
 
 @media (max-width: 720px) {
