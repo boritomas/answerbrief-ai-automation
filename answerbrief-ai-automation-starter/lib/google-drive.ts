@@ -19,17 +19,19 @@ const tokenUrl = 'https://oauth2.googleapis.com/token';
 const folderFields = 'id,name,webViewLink';
 
 export function isDriveConfigured() {
-  return Boolean(getRootFolderId() && (
-    (
-      process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-      process.env.GOOGLE_PRIVATE_KEY
-    ) ||
-    (
-      process.env.GOOGLE_CLIENT_ID &&
-      process.env.GOOGLE_CLIENT_SECRET &&
-      process.env.GOOGLE_REFRESH_TOKEN
-    )
-  ));
+  return Boolean(getRootFolderId() && (isOAuthConfigured() || isServiceAccountConfigured()));
+}
+
+export function getDriveAuthMode() {
+  if (isOAuthConfigured()) {
+    return 'oauth';
+  }
+
+  if (isServiceAccountConfigured()) {
+    return 'service_account';
+  }
+
+  return 'not_configured';
 }
 
 export async function createCustomerDriveWorkspace(folderName: string) {
@@ -150,11 +152,7 @@ async function createDriveFolder(name: string, parentFolderId: string) {
 }
 
 async function getAccessToken() {
-  if (
-    process.env.GOOGLE_CLIENT_ID &&
-    process.env.GOOGLE_CLIENT_SECRET &&
-    process.env.GOOGLE_REFRESH_TOKEN
-  ) {
+  if (isOAuthConfigured()) {
     return getOAuthAccessToken();
   }
 
@@ -189,8 +187,8 @@ async function getOAuthAccessToken() {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID as string,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET as string,
+      client_id: getOAuthClientId(),
+      client_secret: getOAuthClientSecret(),
       refresh_token: process.env.GOOGLE_REFRESH_TOKEN as string,
       grant_type: 'refresh_token',
     }),
@@ -233,4 +231,20 @@ function sanitizeDriveName(value: string) {
 
 function getRootFolderId() {
   return process.env.GOOGLE_DRIVE_FOLDER_ROOT_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+}
+
+function isOAuthConfigured() {
+  return Boolean(getOAuthClientId() && getOAuthClientSecret() && process.env.GOOGLE_REFRESH_TOKEN);
+}
+
+function isServiceAccountConfigured() {
+  return Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY);
+}
+
+function getOAuthClientId() {
+  return process.env.GOOGLE_CLIENT_ID || process.env.GMAIL_CLIENT_ID || '';
+}
+
+function getOAuthClientSecret() {
+  return process.env.GOOGLE_CLIENT_SECRET || process.env.GMAIL_CLIENT_SECRET || '';
 }

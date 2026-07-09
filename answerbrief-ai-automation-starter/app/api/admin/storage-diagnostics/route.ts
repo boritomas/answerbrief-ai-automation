@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createPaidOrder, listOrders, saveOrderIntake } from '@/lib/orders';
 import type { Order } from '@/lib/orders';
-import { isDriveConfigured } from '@/lib/google-drive';
+import { getDriveAuthMode, isDriveConfigured } from '@/lib/google-drive';
 import { getOrderStorageDiagnostics, getOrderStore } from '@/lib/storage/orders';
 import { getSupabaseOrderStoreConfiguration } from '@/lib/storage/supabase-orders';
 
@@ -113,6 +113,7 @@ export async function GET(request: NextRequest) {
 function getIntegrationDiagnostics() {
   return {
     driveConfigured: isDriveConfigured(),
+    driveAuthMode: getDriveAuthMode(),
     gmailConfigured: Boolean(
       process.env.GMAIL_CLIENT_ID
       && process.env.GMAIL_CLIENT_SECRET
