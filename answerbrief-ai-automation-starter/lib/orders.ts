@@ -408,6 +408,10 @@ async function runBriefWorkflow(order: Order) {
       filename: brief.filename,
       contentType: brief.contentType,
       content: brief.content,
+    }).catch((error) => {
+      order.driveError = getErrorMessage(error);
+      addLog(order, 'brief_drive_upload_failed', order.driveError);
+      return null;
     });
 
     order.generatedBriefUrl = uploadedBrief?.webViewLink || undefined;
