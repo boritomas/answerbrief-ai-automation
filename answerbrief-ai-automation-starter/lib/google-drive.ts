@@ -14,6 +14,7 @@ export type DriveFile = {
 
 const driveFolderMimeType = 'application/vnd.google-apps.folder';
 const driveApiBaseUrl = 'https://www.googleapis.com/drive/v3';
+const driveUploadApiBaseUrl = 'https://www.googleapis.com/upload/drive/v3';
 const tokenUrl = 'https://oauth2.googleapis.com/token';
 const folderFields = 'id,name,webViewLink';
 
@@ -101,7 +102,7 @@ export async function uploadDriveFile({
     Buffer.from(`\r\n--${boundary}--`),
   ]);
 
-  const response = await fetch(`${driveApiBaseUrl}/files?uploadType=multipart&fields=${folderFields}`, {
+  const response = await fetch(`${driveUploadApiBaseUrl}/files?uploadType=multipart&fields=${folderFields}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
