@@ -43,5 +43,22 @@ export function getOrderStore(): OrderStore {
     return createSupabaseOrderStore();
   }
 
+  if (process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production') {
+    throw new Error('Production order storage requires non-empty Supabase environment variables.');
+  }
+
   return new JsonFileOrderStore(path.join(process.cwd(), 'data', 'orders.json'));
+}
+
+export function getOrderStorageDiagnostics() {
+  const supabaseAdapterActive = isSupabaseOrderStoreConfigured();
+  const productionRuntime = process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
+
+  return {
+    jsonFallbackActive: !supabaseAdapterActive && !productionRuntime,
+    storageProvider: supabaseAdapterActive ? 'supabase' : 'unconfigured',
+    supabaseAdapterActive,
+    supabaseEnvPresent: supabaseAdapterActive,
+    timestamp: new Date().toISOString(),
+  };
 }

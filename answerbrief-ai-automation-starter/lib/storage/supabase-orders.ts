@@ -123,18 +123,39 @@ class SupabaseOrderStore implements OrderStore {
 }
 
 export function isSupabaseOrderStoreConfigured() {
-  return Boolean(
-    process.env.SUPABASE_URL
-    && process.env.SUPABASE_SERVICE_ROLE_KEY
-    && process.env.SUPABASE_ANON_KEY
-  );
+  return Boolean(getSupabaseOrderStoreConfiguration().configured);
+}
+
+export function getSupabaseOrderStoreConfiguration() {
+  const supabaseUrl = normalizeEnvValue(process.env.SUPABASE_URL);
+  const serviceRoleKey = normalizeEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const anonKey = normalizeEnvValue(process.env.SUPABASE_ANON_KEY);
+
+  return {
+    configured: Boolean(supabaseUrl && serviceRoleKey && anonKey),
+    supabaseUrl,
+    serviceRoleKey,
+    anonKey,
+  };
 }
 
 export function createSupabaseOrderStore(): OrderStore {
+  const configuration = getSupabaseOrderStoreConfiguration();
+
   return new SupabaseOrderStore(
-    process.env.SUPABASE_URL || '',
-    process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    configuration.supabaseUrl,
+    configuration.serviceRoleKey
   );
+}
+
+function normalizeEnvValue(value?: string) {
+  const trimmed = (value || '').trim();
+
+  if (!trimmed || trimmed === '""' || trimmed === "''") {
+    return '';
+  }
+
+  return trimmed;
 }
 
 function orderToRow(order: Order): SupabaseOrderRow {
