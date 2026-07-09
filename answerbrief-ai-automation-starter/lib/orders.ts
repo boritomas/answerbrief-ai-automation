@@ -1,5 +1,3 @@
-import { promises as fs } from 'fs';
-import path from 'path';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { generateInterviewBrief } from './brief';
 import { sendDeliveryEmail } from './email';
@@ -12,6 +10,7 @@ import {
   uploadDriveFile,
 } from './google-drive';
 import { PackageKey, packages } from './packages';
+import { getOrderStore } from './storage/orders';
 
 export type PaymentStatus = 'paid' | 'unpaid' | 'failed' | 'needs_review';
 export type IntakeStatus = 'pending' | 'complete';
@@ -82,29 +81,32 @@ type PaidOrderResult = Order & {
   intakeToken?: string;
 };
 
-const ordersFile = path.join(process.cwd(), 'data', 'orders.json');
-
 async function readOrders(): Promise<Order[]> {
-  try {
-    const raw = await fs.readFile(ordersFile, 'utf8');
-    return (JSON.parse(raw) as Partial<Order>[]).map(normalizeOrder);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return [];
-    }
-
-    throw error;
-  }
+  const orders = await getOrderStore().listOrders();
+  return orders.map(normalizeOrder);
 }
 
 async function writeOrders(orders: Order[]) {
-  await fs.mkdir(path.dirname(ordersFile), { recursive: true });
-  await fs.writeFile(ordersFile, `${JSON.stringify(orders, null, 2)}\n`);
+  await getOrderStore().saveOrders(orders);
 }
 
 export async function listOrders() {
   const orders = await readOrders();
   return orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function listOrdersForCustomer(customerEmail: string) {
+  const normalizedEmail = customerEmail.toLowerCase();
+  const orders = await listOrders();
+  return orders.filter((order) => order.customerEmail.toLowerCase() === normalizedEmail);
+}
+
+export async function getOrderForCustomer(orderId: string, customerEmail: string) {
+  const normalizedEmail = customerEmail.toLowerCase();
+  const orders = await readOrders();
+  return orders.find((order) => {
+    return order.id === orderId && order.customerEmail.toLowerCase() === normalizedEmail;
+  });
 }
 
 export async function createPaidOrder(input: NewOrder): Promise<PaidOrderResult> {
@@ -157,11 +159,13 @@ export async function createPaidOrder(input: NewOrder): Promise<PaidOrderResult>
 }
 
 export async function saveOrderIntake({
+  authenticatedEmail,
   intake,
   orderId,
   token,
   uploads = [],
 }: {
+  authenticatedEmail?: string;
   intake: Intake;
   orderId?: string;
   token?: string;
@@ -171,7 +175,10 @@ export async function saveOrderIntake({
   const now = new Date().toISOString();
   let order = orderId ? orders.find((item) => item.id === orderId) : undefined;
 
-  if (order?.intakeTokenHash && hashToken(token || '') !== order.intakeTokenHash) {
+  const authenticatedOrderAccess = authenticatedEmail
+    && order?.customerEmail.toLowerCase() === authenticatedEmail.toLowerCase();
+
+  if (order?.intakeTokenHash && !authenticatedOrderAccess && hashToken(token || '') !== order.intakeTokenHash) {
     addLog(order, 'intake_token_rejected', 'Intake submission was rejected because the token did not match.');
     order.errorMessage = 'Invalid intake token.';
     order.status = 'Needs Review';
@@ -198,6 +205,49 @@ export async function saveOrderIntake({
   await uploadIntakeMaterials(order, uploads, intake);
   await runBriefWorkflow(order);
 
+  await writeOrders(orders);
+
+  return order;
+}
+
+export async function saveAuthenticatedOrderIntake({
+  authenticatedEmail,
+  intake,
+  orderId,
+}: {
+  authenticatedEmail: string;
+  intake: Intake;
+  orderId: string;
+}) {
+  return saveOrderIntake({
+    authenticatedEmail,
+    intake,
+    orderId,
+  });
+}
+
+export async function appendOrderLogForCustomer({
+  customerEmail,
+  event,
+  message,
+  orderId,
+}: {
+  customerEmail: string;
+  event: string;
+  message?: string;
+  orderId: string;
+}) {
+  const orders = await readOrders();
+  const order = orders.find((item) => {
+    return item.id === orderId && item.customerEmail.toLowerCase() === customerEmail.toLowerCase();
+  });
+
+  if (!order) {
+    return undefined;
+  }
+
+  addLog(order, event, message);
+  order.updatedAt = new Date().toISOString();
   await writeOrders(orders);
 
   return order;
