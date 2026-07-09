@@ -50,10 +50,12 @@ class SupabaseOrderStore implements OrderStore {
     await this.request('/rest/v1/orders?on_conflict=id', {
       body: JSON.stringify(orders.map(orderToRow)),
       headers: {
-        Prefer: 'resolution=merge-duplicates',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
       },
       method: 'POST',
     });
+
+    await this.saveIntakeSubmissions(orders);
   }
 
   async appendOrderEvent(event: StoredOrderEvent) {
@@ -66,6 +68,28 @@ class SupabaseOrderStore implements OrderStore {
       }),
       method: 'POST',
     });
+  }
+
+  private async saveIntakeSubmissions(orders: Order[]) {
+    const submittedOrders = orders.filter((order) => order.intake && order.intakeSubmittedAt);
+
+    for (const order of submittedOrders) {
+      await this.request(`/rest/v1/intake_submissions?order_id=eq.${order.id}`, {
+        method: 'DELETE',
+      });
+
+      await this.request('/rest/v1/intake_submissions', {
+        body: JSON.stringify({
+          intake: order.intake,
+          order_id: order.id,
+          submitted_by_email: order.customerEmail,
+        }),
+        headers: {
+          Prefer: 'return=minimal',
+        },
+        method: 'POST',
+      });
+    }
   }
 
   private async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
@@ -87,7 +111,13 @@ class SupabaseOrderStore implements OrderStore {
       return undefined as T;
     }
 
-    return response.json() as Promise<T>;
+    const text = await response.text();
+
+    if (!text) {
+      return undefined as T;
+    }
+
+    return JSON.parse(text) as T;
   }
 }
 

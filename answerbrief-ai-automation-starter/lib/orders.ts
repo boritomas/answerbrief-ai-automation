@@ -211,6 +211,11 @@ export async function saveOrderIntake({
   await runBriefWorkflow(order);
 
   await writeOrders(orders);
+  await recordOrderEvent({
+    event: 'intake_submitted',
+    message: `Intake submitted by ${order.customerEmail}.`,
+    orderId: order.id,
+  }).catch(() => undefined);
 
   return order;
 }
