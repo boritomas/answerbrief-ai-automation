@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createPaidOrder, listOrders, saveOrderIntake } from '@/lib/orders';
 import type { Order } from '@/lib/orders';
+import { isDriveConfigured } from '@/lib/google-drive';
 import { getOrderStorageDiagnostics, getOrderStore } from '@/lib/storage/orders';
 import { getSupabaseOrderStoreConfiguration } from '@/lib/storage/supabase-orders';
 
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
   }
 
   const diagnostics = getOrderStorageDiagnostics();
+  const integrationDiagnostics = getIntegrationDiagnostics();
   const url = new URL(request.url);
   const runSmoke = url.searchParams.get('smoke') === '1';
   const runCleanup = url.searchParams.get('cleanup') === '1';
@@ -37,12 +39,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         ...diagnostics,
+        integrations: integrationDiagnostics,
         cleanup: await cleanupSyntheticData(),
       });
     } catch (error) {
       return NextResponse.json({
         ok: false,
         ...diagnostics,
+        integrations: integrationDiagnostics,
         cleanup: {
           ok: false,
           error: error instanceof Error ? error.message : 'Synthetic cleanup failed.',
@@ -58,6 +62,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         ok: journey.ok,
         ...diagnostics,
+        integrations: integrationDiagnostics,
         journey,
       }, { status: journey.ok ? 200 : 500 });
     } catch (error) {
@@ -66,6 +71,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         ok: false,
         ...diagnostics,
+        integrations: integrationDiagnostics,
         journey: {
           ok: false,
           error: error instanceof Error ? error.message : 'Synthetic customer journey failed.',
@@ -78,6 +84,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       ...diagnostics,
+      integrations: integrationDiagnostics,
     });
   }
 
@@ -87,18 +94,38 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: smoke.ok,
       ...diagnostics,
+      integrations: integrationDiagnostics,
       smoke,
     }, { status: smoke.ok ? 200 : 500 });
   } catch (error) {
     return NextResponse.json({
       ok: false,
       ...diagnostics,
+      integrations: integrationDiagnostics,
       smoke: {
         ok: false,
         error: error instanceof Error ? error.message : 'Storage smoke test failed.',
       },
     }, { status: 500 });
   }
+}
+
+function getIntegrationDiagnostics() {
+  return {
+    driveConfigured: isDriveConfigured(),
+    gmailConfigured: Boolean(
+      process.env.GMAIL_CLIENT_ID
+      && process.env.GMAIL_CLIENT_SECRET
+      && process.env.GMAIL_REFRESH_TOKEN
+      && process.env.GMAIL_SENDER_EMAIL
+    ),
+    gmailRecipientConfigured: Boolean(
+      process.env.OWNER_NOTIFICATION_EMAIL
+      || process.env.NOTIFICATION_EMAIL
+      || process.env.ADMIN_NOTIFICATION_EMAIL
+      || process.env.GMAIL_SENDER_EMAIL
+    ),
+  };
 }
 
 function authorizeAdmin(request: NextRequest) {
@@ -160,7 +187,8 @@ async function runSyntheticCustomerJourney() {
 
   const storedOrder = (await listOrders()).find((item) => item.id === updatedOrder.id);
   const tableChecks = await verifySupabaseTables(updatedOrder.id);
-  const logEvents = new Set((storedOrder?.logs || []).map((log) => log.event));
+  const logs = storedOrder?.logs || [];
+  const logEvents = new Set(logs.map((log) => log.event));
   const cleanup = await cleanupSyntheticData();
 
   return {
@@ -177,6 +205,13 @@ async function runSyntheticCustomerJourney() {
       || logEvents.has('delivery_email_failed')
     ),
     intakeComplete: storedOrder?.intakeStatus === 'complete',
+    logEvents: Array.from(logEvents).sort(),
+    needsReviewMessages: logs
+      .filter((log) => /failed|skipped|error/i.test(log.event))
+      .map((log) => ({
+        event: log.event,
+        message: log.message,
+      })),
     notificationsGenerated: Boolean(
       logEvents.has('owner_payment_notification_sent')
       && logEvents.has('owner_intake_notification_sent')
