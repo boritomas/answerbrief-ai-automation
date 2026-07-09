@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedMobileEmail, unauthorizedMobileResponse } from '@/lib/mobile-api';
+import { NextRequest } from 'next/server';
+import { getAuthenticatedMobileEmail, mobileJson, unauthorizedMobileResponse } from '@/lib/mobile-api';
 
 export const runtime = 'nodejs';
 
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     return unauthorizedMobileResponse();
   }
 
-  return NextResponse.json({
+  return mobileJson({
     user: {
       email,
       role: 'customer',

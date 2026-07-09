@@ -1,11 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import {
+  assertMobileOrderAccess,
+  forbiddenMobileResponse,
   getAuthenticatedMobileEmail,
+  mobileError,
+  mobileJson,
   notFoundMobileResponse,
+  readMobileJson,
   unauthorizedMobileResponse,
 } from '@/lib/mobile-api';
 import { intakeSchema } from '@/lib/intake-schema';
-import { getOrderForCustomer, saveAuthenticatedOrderIntake } from '@/lib/orders';
+import { getOrderById, recordOrderEvent, saveAuthenticatedOrderIntake } from '@/lib/orders';
 
 export const runtime = 'nodejs';
 
@@ -22,13 +27,17 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     return unauthorizedMobileResponse();
   }
 
-  const order = await getOrderForCustomer(params.id, email);
+  const order = await getOrderById(params.id);
 
   if (!order) {
     return notFoundMobileResponse();
   }
 
-  const body = await request.json().catch(() => ({}));
+  if (!assertMobileOrderAccess(order.customerEmail, email)) {
+    return forbiddenMobileResponse();
+  }
+
+  const body = await readMobileJson(request);
   const result = intakeSchema.safeParse({
     name: body.name,
     email,
@@ -41,7 +50,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   });
 
   if (!result.success) {
-    return NextResponse.json({ error: 'Invalid intake submission.' }, { status: 400 });
+    return mobileError('Invalid intake submission.', 400);
   }
 
   const updatedOrder = await saveAuthenticatedOrderIntake({
@@ -50,7 +59,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     orderId: params.id,
   });
 
-  return NextResponse.json({
+  await recordOrderEvent({
+    event: 'intake_submitted',
+    message: `Mobile intake submitted by ${email}.`,
+    orderId: updatedOrder.id,
+  }).catch(() => undefined);
+
+  return mobileJson({
     order: {
       id: updatedOrder.id,
       status: updatedOrder.status,

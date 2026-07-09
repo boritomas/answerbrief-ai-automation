@@ -1,5 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedMobileEmail, unauthorizedMobileResponse } from '@/lib/mobile-api';
+import { NextRequest } from 'next/server';
+import { getAuthenticatedMobileEmail, mobileError, mobileJson, readMobileJson, unauthorizedMobileResponse } from '@/lib/mobile-api';
+import { recordOrderEvent } from '@/lib/orders';
+import { saveMobilePushToken } from '@/lib/storage/supabase-mobile-records';
 
 export const runtime = 'nodejs';
 
@@ -10,16 +12,26 @@ export async function POST(request: NextRequest) {
     return unauthorizedMobileResponse();
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = await readMobileJson(request);
   const token = typeof body.token === 'string' ? body.token.trim() : '';
+  const platform = typeof body.platform === 'string' ? body.platform.trim() : 'unknown';
 
   if (!token) {
-    return NextResponse.json({ error: 'Push token is required.' }, { status: 400 });
+    return mobileError('Push token is required.', 400);
   }
 
-  return NextResponse.json({
+  const storageConfigured = await saveMobilePushToken({ email, platform, token }).catch(() => false);
+
+  await recordOrderEvent({
+    event: 'push_token_registered',
+    message: `Mobile push token registered for ${email}.`,
+  }).catch(() => undefined);
+
+  return mobileJson({
     accepted: true,
-    storageConfigured: false,
-    message: 'Push token endpoint is ready; durable push-token storage will be enabled with the mobile database.',
+    storageConfigured,
+    message: storageConfigured
+      ? 'Push token registered.'
+      : 'Push token endpoint is ready; durable push-token storage will be enabled with Supabase.',
   });
 }

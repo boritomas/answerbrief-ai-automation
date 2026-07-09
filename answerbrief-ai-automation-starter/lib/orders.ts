@@ -109,6 +109,11 @@ export async function getOrderForCustomer(orderId: string, customerEmail: string
   });
 }
 
+export async function getOrderById(orderId: string) {
+  const orders = await readOrders();
+  return orders.find((order) => order.id === orderId);
+}
+
 export async function createPaidOrder(input: NewOrder): Promise<PaidOrderResult> {
   const orders = await readOrders();
   const existingOrder = input.stripeSessionId
@@ -251,6 +256,31 @@ export async function appendOrderLogForCustomer({
   await writeOrders(orders);
 
   return order;
+}
+
+export async function recordOrderEvent({
+  event,
+  message,
+  orderId,
+  severity,
+}: {
+  event: string;
+  message?: string;
+  orderId?: string;
+  severity?: 'info' | 'warning' | 'error';
+}) {
+  const store = getOrderStore();
+
+  if (!store.appendOrderEvent) {
+    return;
+  }
+
+  await store.appendOrderEvent({
+    event,
+    message,
+    orderId,
+    severity,
+  });
 }
 
 export function getIntakeUrl(orderId: string, customerEmail?: string, token?: string) {

@@ -1,8 +1,17 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import type { Order } from '@/lib/orders';
+import { createSupabaseOrderStore, isSupabaseOrderStoreConfigured } from './supabase-orders';
+
+export type StoredOrderEvent = {
+  event: string;
+  message?: string;
+  orderId?: string;
+  severity?: 'info' | 'warning' | 'error';
+};
 
 export type OrderStore = {
+  appendOrderEvent?(event: StoredOrderEvent): Promise<void>;
   listOrders(): Promise<Order[]>;
   saveOrders(orders: Order[]): Promise<void>;
 };
@@ -30,5 +39,9 @@ class JsonFileOrderStore implements OrderStore {
 }
 
 export function getOrderStore(): OrderStore {
+  if (isSupabaseOrderStoreConfigured()) {
+    return createSupabaseOrderStore();
+  }
+
   return new JsonFileOrderStore(path.join(process.cwd(), 'data', 'orders.json'));
 }

@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMobileSession } from './mobile-auth';
 
+export function mobileJson<T>(data: T, status = 200) {
+  return NextResponse.json({ ok: status < 400, ...data }, { status });
+}
+
+export function mobileError(error: string, status = 400) {
+  return mobileJson({ error }, status);
+}
+
 export function unauthorizedMobileResponse() {
-  return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+  return mobileError('Authentication required.', 401);
+}
+
+export function forbiddenMobileResponse() {
+  return mobileError('You do not have access to this order.', 403);
 }
 
 export function getAuthenticatedMobileEmail(request: NextRequest) {
@@ -14,5 +26,9 @@ export function assertMobileOrderAccess(orderEmail: string, sessionEmail?: strin
 }
 
 export function notFoundMobileResponse() {
-  return NextResponse.json({ error: 'Order not found.' }, { status: 404 });
+  return mobileError('Order not found.', 404);
+}
+
+export async function readMobileJson(request: NextRequest) {
+  return request.json().catch(() => ({}));
 }

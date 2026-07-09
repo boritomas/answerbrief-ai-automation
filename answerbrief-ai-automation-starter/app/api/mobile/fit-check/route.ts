@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { mobileError, mobileJson, readMobileJson } from '@/lib/mobile-api';
 import { packages, type PackageKey } from '@/lib/packages';
 
 export const runtime = 'nodejs';
@@ -12,21 +13,18 @@ type FitCheckResult = {
 };
 
 export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => ({}));
+  const body = await readMobileJson(request);
   const jobTitle = typeof body.jobTitle === 'string' ? body.jobTitle.trim() : '';
   const industry = typeof body.industry === 'string' ? body.industry.trim() : '';
   const experienceLevel = typeof body.experienceLevel === 'string' ? body.experienceLevel.trim() : '';
 
   if (!jobTitle || !industry || !experienceLevel) {
-    return NextResponse.json(
-      { error: 'jobTitle, industry, and experienceLevel are required.' },
-      { status: 400 }
-    );
+    return mobileError('jobTitle, industry, and experienceLevel are required.', 400);
   }
 
   const result = generateFitCheck(jobTitle, industry, experienceLevel);
 
-  return NextResponse.json({
+  return mobileJson({
     ...result,
     recommendedPackageName: packages[result.recommendedPackage].name,
     purchaseAvailableInMobile: false,

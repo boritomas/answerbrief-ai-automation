@@ -1,10 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import {
+  assertMobileOrderAccess,
+  forbiddenMobileResponse,
   getAuthenticatedMobileEmail,
+  mobileJson,
   notFoundMobileResponse,
   unauthorizedMobileResponse,
 } from '@/lib/mobile-api';
-import { getOrderForCustomer } from '@/lib/orders';
+import { getOrderById } from '@/lib/orders';
 
 export const runtime = 'nodejs';
 
@@ -21,13 +24,17 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     return unauthorizedMobileResponse();
   }
 
-  const order = await getOrderForCustomer(params.id, email);
+  const order = await getOrderById(params.id);
 
   if (!order) {
     return notFoundMobileResponse();
   }
 
-  return NextResponse.json({
+  if (!assertMobileOrderAccess(order.customerEmail, email)) {
+    return forbiddenMobileResponse();
+  }
+
+  return mobileJson({
     events: order.logs.map((log, index) => ({
       id: `${order.id}-${index}`,
       at: log.at,

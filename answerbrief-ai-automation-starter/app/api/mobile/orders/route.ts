@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedMobileEmail, unauthorizedMobileResponse } from '@/lib/mobile-api';
+import { NextRequest } from 'next/server';
+import { getAuthenticatedMobileEmail, mobileJson, unauthorizedMobileResponse } from '@/lib/mobile-api';
 import { listOrdersForCustomer } from '@/lib/orders';
 
 export const runtime = 'nodejs';
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
   const orders = await listOrdersForCustomer(email);
 
-  return NextResponse.json({
+  return mobileJson({
     orders: orders.map((order) => ({
       id: order.id,
       packageName: order.packageName,

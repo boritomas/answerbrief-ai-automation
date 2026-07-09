@@ -44,7 +44,7 @@ export type OrderRecord = DatabaseRecord & {
 export type OrderEventRecord = DatabaseRecord & {
   event: string;
   message?: string;
-  orderId: string;
+  orderId?: string;
   severity: 'info' | 'warning' | 'error';
 };
 
@@ -76,5 +76,13 @@ export type PushTokenRecord = DatabaseRecord & {
   email: string;
   platform: 'ios' | 'android' | 'web' | 'unknown';
   token: string;
+  userId?: string;
+};
+
+export type SupportRequestRecord = DatabaseRecord & {
+  email: string;
+  message: string;
+  status: 'open' | 'closed';
+  subject?: string;
   userId?: string;
 };
