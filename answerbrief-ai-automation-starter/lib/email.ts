@@ -10,52 +10,102 @@ type DeliveryEmail = {
   briefUrl?: string;
 };
 
+type OwnerPaymentNotification = {
+  adminUrl: string;
+  amountPaid?: number;
+  customerEmail: string;
+  customerName?: string;
+  orderId: string;
+  packageName: string;
+};
+
+type OwnerIntakeNotification = {
+  adminUrl: string;
+  customerEmail: string;
+  customerName?: string;
+  interviewDate?: string;
+  jobPostingUploaded: boolean;
+  orderId: string;
+  packageName: string;
+  resumeUploaded: boolean;
+  submittedAt: string;
+  targetCompany?: string;
+  targetRole: string;
+};
+
+type IntakeConfirmationEmail = {
+  deliveryDate?: string;
+  packageName: string;
+  to: string;
+};
+
 export async function sendNextStepsEmail({ to, packageName, intakeUrl }: NextStepsEmail) {
   const subject = 'Next steps for your AnswerBrief AI prep package';
   const text = buildNextStepsEmail({ packageName, intakeUrl });
 
-  if (!isGmailConfigured()) {
-    console.log(`Gmail is not configured. Next-steps email for ${to}:`);
-    console.log(text);
-
-    return {
-      success: true,
-      skipped: true,
-    };
-  }
-
-  const accessToken = await getGmailAccessToken();
-  const raw = encodeMessage({
-    from: process.env.GMAIL_SENDER_EMAIL as string,
-    to,
-    subject,
-    text,
-  });
-
-  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ raw }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Gmail send failed: ${await response.text()}`);
-  }
-
-  return {
-    success: true,
-  };
+  return sendEmail({ label: 'Next-steps', subject, text, to });
 }
 
 export async function sendDeliveryEmail({ to, packageName, briefUrl }: DeliveryEmail) {
   const subject = 'Your AnswerBrief AI interview brief is ready';
   const text = buildDeliveryEmail({ packageName, briefUrl });
 
+  return sendEmail({ label: 'Delivery', subject, text, to });
+}
+
+export async function sendIntakeConfirmationEmail({ deliveryDate, packageName, to }: IntakeConfirmationEmail) {
+  const subject = 'Your AnswerBrief AI intake was received';
+  const text = buildIntakeConfirmationEmail({ deliveryDate, packageName });
+
+  return sendEmail({ label: 'Intake confirmation', subject, text, to });
+}
+
+export async function sendOwnerPaymentNotification(input: OwnerPaymentNotification) {
+  const to = getOwnerNotificationEmail();
+  const subject = `New AnswerBrief AI order: ${input.packageName}`;
+  const text = buildOwnerPaymentNotification(input);
+
+  return sendEmail({ label: 'Owner payment notification', subject, text, to });
+}
+
+export async function sendOwnerIntakeNotification(input: OwnerIntakeNotification) {
+  const to = getOwnerNotificationEmail();
+  const subject = `AnswerBrief AI intake submitted: ${input.customerName || input.customerEmail}`;
+  const text = buildOwnerIntakeNotification(input);
+
+  return sendEmail({ label: 'Owner intake notification', subject, text, to });
+}
+
+function getOwnerNotificationEmail() {
+  return process.env.OWNER_NOTIFICATION_EMAIL
+    || process.env.NOTIFICATION_EMAIL
+    || process.env.ADMIN_NOTIFICATION_EMAIL
+    || process.env.GMAIL_SENDER_EMAIL
+    || '';
+}
+
+async function sendEmail({
+  label,
+  subject,
+  text,
+  to,
+}: {
+  label: string;
+  subject: string;
+  text: string;
+  to?: string;
+}) {
+  if (!to) {
+    console.log(`${label} email skipped because no recipient is configured.`);
+
+    return {
+      success: true,
+      skipped: true,
+    };
+  }
+
   if (!isGmailConfigured()) {
-    console.log(`Gmail is not configured. Delivery email for ${to}:`);
+    console.log(`Gmail is not configured. ${label} email for ${to}:`);
     console.log(text);
 
     return {
@@ -82,7 +132,7 @@ export async function sendDeliveryEmail({ to, packageName, briefUrl }: DeliveryE
   });
 
   if (!response.ok) {
-    throw new Error(`Gmail delivery send failed: ${await response.text()}`);
+    throw new Error(`Gmail ${label.toLowerCase()} send failed: ${await response.text()}`);
   }
 
   return {
@@ -154,6 +204,32 @@ function buildNextStepsEmail({
   ].join('\n');
 }
 
+function buildIntakeConfirmationEmail({
+  deliveryDate,
+  packageName,
+}: Pick<IntakeConfirmationEmail, 'deliveryDate' | 'packageName'>) {
+  return [
+    'Hi,',
+    '',
+    `We received your intake for ${packageName}.`,
+    '',
+    'Next steps:',
+    '',
+    '1. We review your resume, target role, job posting, and notes.',
+    '2. We prepare your interview strategy brief.',
+    deliveryDate
+      ? `3. Your current estimated delivery date is ${deliveryDate}.`
+      : '3. Standard delivery is within 24 hours after usable materials are received.',
+    '',
+    'If anything is missing or unclear, reply to this email or contact support@answer-brief.com.',
+    '',
+    'Reminder: AnswerBrief AI provides interview preparation materials only. We do not guarantee interviews, job offers, promotions, or hiring outcomes.',
+    '',
+    'Thanks,',
+    'AnswerBrief AI',
+  ].join('\n');
+}
+
 function buildDeliveryEmail({ packageName, briefUrl }: Pick<DeliveryEmail, 'packageName' | 'briefUrl'>) {
   return [
     'Hi,',
@@ -170,6 +246,58 @@ function buildDeliveryEmail({ packageName, briefUrl }: Pick<DeliveryEmail, 'pack
     '',
     'Thanks,',
     'AnswerBrief AI',
+  ].join('\n');
+}
+
+function buildOwnerPaymentNotification({
+  adminUrl,
+  amountPaid,
+  customerEmail,
+  customerName,
+  orderId,
+  packageName,
+}: OwnerPaymentNotification) {
+  return [
+    'New AnswerBrief AI payment received.',
+    '',
+    `Customer name: ${customerName || 'Not provided'}`,
+    `Customer email: ${customerEmail}`,
+    `Package: ${packageName}`,
+    `Order ID: ${orderId}`,
+    amountPaid ? `Amount paid: $${(amountPaid / 100).toFixed(2)}` : undefined,
+    '',
+    `Admin dashboard: ${adminUrl}`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildOwnerIntakeNotification({
+  adminUrl,
+  customerEmail,
+  customerName,
+  interviewDate,
+  jobPostingUploaded,
+  orderId,
+  packageName,
+  resumeUploaded,
+  submittedAt,
+  targetCompany,
+  targetRole,
+}: OwnerIntakeNotification) {
+  return [
+    'AnswerBrief AI intake submitted.',
+    '',
+    `Customer name: ${customerName || 'Not provided'}`,
+    `Customer email: ${customerEmail}`,
+    `Package: ${packageName}`,
+    `Order ID: ${orderId}`,
+    `Interview company: ${targetCompany || 'Not provided'}`,
+    `Target role: ${targetRole}`,
+    `Interview date: ${interviewDate || 'Not provided'}`,
+    `Resume uploaded: ${resumeUploaded ? 'Yes' : 'No'}`,
+    `Job posting uploaded: ${jobPostingUploaded ? 'Yes' : 'No'}`,
+    `Submission timestamp: ${submittedAt}`,
+    '',
+    `Admin dashboard: ${adminUrl}`,
   ].join('\n');
 }
 

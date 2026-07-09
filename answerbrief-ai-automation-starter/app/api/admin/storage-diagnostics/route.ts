@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { createPaidOrder, listOrders, saveOrderIntake } from '@/lib/orders';
 import type { Order } from '@/lib/orders';
 import { getOrderStorageDiagnostics, getOrderStore } from '@/lib/storage/orders';
 import { getSupabaseOrderStoreConfiguration } from '@/lib/storage/supabase-orders';
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const runSmoke = url.searchParams.get('smoke') === '1';
   const runCleanup = url.searchParams.get('cleanup') === '1';
+  const runJourney = url.searchParams.get('journey') === '1';
 
   if (runCleanup) {
     try {
@@ -44,6 +46,29 @@ export async function GET(request: NextRequest) {
         cleanup: {
           ok: false,
           error: error instanceof Error ? error.message : 'Synthetic cleanup failed.',
+        },
+      }, { status: 500 });
+    }
+  }
+
+  if (runJourney) {
+    try {
+      const journey = await runSyntheticCustomerJourney();
+
+      return NextResponse.json({
+        ok: journey.ok,
+        ...diagnostics,
+        journey,
+      }, { status: journey.ok ? 200 : 500 });
+    } catch (error) {
+      await cleanupSyntheticData().catch(() => undefined);
+
+      return NextResponse.json({
+        ok: false,
+        ...diagnostics,
+        journey: {
+          ok: false,
+          error: error instanceof Error ? error.message : 'Synthetic customer journey failed.',
         },
       }, { status: 500 });
     }
@@ -89,6 +114,92 @@ function authorizeAdmin(request: NextRequest) {
 
   return {
     authorized: queryPassword === password || headerPassword === password,
+  };
+}
+
+async function runSyntheticCustomerJourney() {
+  await cleanupSyntheticData();
+
+  const email = 'codex-smoke-answerbrief@example.com';
+  const order = await createPaidOrder({
+    amountPaid: 14900,
+    customerEmail: email,
+    customerName: 'Codex E2E Smoke Test',
+    packageKey: 'full-interview-brief',
+    packageName: 'Interview Professional',
+    stripePaymentId: `pi_codex_smoke_${Date.now()}`,
+    stripeSessionId: `cs_codex_smoke_${Date.now()}`,
+  });
+
+  const updatedOrder = await saveOrderIntake({
+    intake: {
+      careerLane: 'operations',
+      email,
+      interviewDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      jobPostingText: 'Synthetic public job posting for production workflow verification.',
+      name: 'Codex E2E Smoke Test',
+      notes: 'source: codex_storage_smoke_test',
+      targetCompany: 'AnswerBrief AI Verification',
+      targetRole: 'Operations Strategy Manager',
+    },
+    orderId: order.id,
+    token: order.intakeToken,
+    uploads: [
+      {
+        content: Buffer.from('Synthetic resume for production verification.', 'utf8'),
+        contentType: 'text/plain',
+        filename: 'codex-smoke-resume.txt',
+      },
+      {
+        content: Buffer.from('Synthetic job posting upload for production verification.', 'utf8'),
+        contentType: 'text/plain',
+        filename: 'codex-smoke-job-posting.txt',
+      },
+    ],
+  });
+
+  const storedOrder = (await listOrders()).find((item) => item.id === updatedOrder.id);
+  const tableChecks = await verifySupabaseTables(updatedOrder.id);
+  const logEvents = new Set((storedOrder?.logs || []).map((log) => log.event));
+  const cleanup = await cleanupSyntheticData();
+
+  return {
+    adminVisible: Boolean(storedOrder),
+    briefWorkflowRan: Boolean(
+      logEvents.has('brief_generated')
+      || logEvents.has('brief_workflow_failed')
+    ),
+    cleanup,
+    customerConfirmationGenerated: logEvents.has('intake_confirmation_email_sent')
+      || logEvents.has('intake_confirmation_email_failed'),
+    deliveryWorkflowRan: Boolean(
+      logEvents.has('delivery_email_sent')
+      || logEvents.has('delivery_email_failed')
+    ),
+    intakeComplete: storedOrder?.intakeStatus === 'complete',
+    notificationsGenerated: Boolean(
+      logEvents.has('owner_payment_notification_sent')
+      && logEvents.has('owner_intake_notification_sent')
+    ),
+    ok: Boolean(
+      storedOrder
+      && storedOrder.paymentStatus === 'paid'
+      && storedOrder.intakeStatus === 'complete'
+      && tableChecks.ordersWrite
+      && tableChecks.orderEventsWrite
+      && tableChecks.intakeSubmissionsWrite
+      && cleanup.ok
+    ),
+    orderEventsWrite: tableChecks.orderEventsWrite,
+    orderId: updatedOrder.id,
+    ordersWrite: tableChecks.ordersWrite,
+    paymentStatus: storedOrder?.paymentStatus,
+    source: 'codex_storage_smoke_test',
+    status: storedOrder?.status,
+    tables: tableChecks.tables,
+    uploadLogPresent: logEvents.has('files_uploaded_to_drive')
+      || logEvents.has('drive_upload_skipped')
+      || logEvents.has('drive_upload_failed'),
   };
 }
 

@@ -54,10 +54,12 @@ export async function POST(request: NextRequest) {
         to: customerEmail,
         packageName,
         intakeUrl,
+      }).catch(async (error) => {
+        console.error('Next-steps email failed:', error instanceof Error ? error.message : 'Unknown email error.');
       });
     }
 
-    // TODO: Notify owner and upload customer materials into an AI-ready knowledge store.
+    // Customer materials are uploaded through the secure intake flow after checkout.
   }
 
   return NextResponse.json({ received: true });

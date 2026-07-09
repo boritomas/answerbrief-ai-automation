@@ -1,6 +1,11 @@
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { generateInterviewBrief } from './brief';
-import { sendDeliveryEmail } from './email';
+import {
+  sendDeliveryEmail,
+  sendIntakeConfirmationEmail,
+  sendOwnerIntakeNotification,
+  sendOwnerPaymentNotification,
+} from './email';
 import { Intake } from './intake-schema';
 import {
   buildCustomerFolderName,
@@ -156,6 +161,15 @@ export async function createPaidOrder(input: NewOrder): Promise<PaidOrderResult>
   await attachDriveWorkspace(order);
   orders.push(order);
   await writeOrders(orders);
+  await recordOrderEvent({
+    event: 'order_created',
+    message: `Paid order created for ${order.customerEmail}.`,
+    orderId: order.id,
+  }).catch(() => undefined);
+  await notifyOwnerPayment(order).catch((error) => {
+    addLog(order, 'owner_payment_notification_failed', getErrorMessage(error));
+  });
+  await writeOrders(orders);
 
   return {
     ...order,
@@ -208,6 +222,20 @@ export async function saveOrderIntake({
 
   await renameOrderDriveWorkspace(order);
   await uploadIntakeMaterials(order, uploads, intake);
+  await notifyOwnerIntake(order, uploads, now).catch((error) => {
+    addLog(order, 'owner_intake_notification_failed', getErrorMessage(error));
+  });
+  await sendIntakeConfirmationEmail({
+    deliveryDate: order.deliveryDate,
+    packageName: order.packageName,
+    to: order.customerEmail,
+  }).then((confirmation) => {
+    addLog(order, 'intake_confirmation_email_sent', confirmation.skipped
+      ? 'Intake confirmation email was logged because Gmail or recipient configuration is missing.'
+      : 'Intake confirmation email sent to customer.');
+  }).catch((error) => {
+    addLog(order, 'intake_confirmation_email_failed', getErrorMessage(error));
+  });
   await runBriefWorkflow(order);
 
   await writeOrders(orders);
@@ -391,13 +419,21 @@ async function runBriefWorkflow(order: Order) {
       to: order.customerEmail,
       packageName: order.packageName,
       briefUrl: order.generatedBriefUrl,
+    }).catch((error) => {
+      addLog(order, 'delivery_email_failed', getErrorMessage(error));
+      return { success: false, skipped: false };
     });
 
-    order.deliveryStatus = delivery.skipped ? 'skipped' : 'sent';
-    order.status = delivery.skipped ? 'Needs Review' : 'Delivered';
-    addLog(order, 'delivery_email_sent', delivery.skipped
-      ? 'Delivery email was logged because Gmail is not configured.'
-      : 'Delivery email sent to customer.');
+    if (delivery.success) {
+      order.deliveryStatus = delivery.skipped ? 'skipped' : 'sent';
+      order.status = delivery.skipped ? 'Needs Review' : 'Delivered';
+      addLog(order, 'delivery_email_sent', delivery.skipped
+        ? 'Delivery email was logged because Gmail is not configured.'
+        : 'Delivery email sent to customer.');
+    } else {
+      order.deliveryStatus = 'failed';
+      order.status = 'Needs Review';
+    }
   } catch (error) {
     order.briefStatus = 'failed';
     order.deliveryStatus = 'failed';
@@ -407,6 +443,55 @@ async function runBriefWorkflow(order: Order) {
   } finally {
     order.updatedAt = new Date().toISOString();
   }
+}
+
+async function notifyOwnerPayment(order: Order) {
+  const notification = await sendOwnerPaymentNotification({
+    adminUrl: getAdminOrdersUrl(),
+    amountPaid: order.amountPaid,
+    customerEmail: order.customerEmail,
+    customerName: order.customerName,
+    orderId: order.id,
+    packageName: order.packageName,
+  });
+
+  addLog(order, 'owner_payment_notification_sent', notification.skipped
+    ? 'Owner payment notification was logged because Gmail or recipient configuration is missing.'
+    : 'Owner payment notification sent.');
+}
+
+async function notifyOwnerIntake(order: Order, uploads: IntakeUpload[], submittedAt: string) {
+  if (!order.intake) {
+    return;
+  }
+
+  const resumeUploaded = uploads.some((upload) => /resume/i.test(upload.filename));
+  const jobPostingUploaded = uploads.some((upload) => {
+    return /job|description|posting/i.test(upload.filename);
+  }) || Boolean(order.intake.jobPostingText);
+
+  const notification = await sendOwnerIntakeNotification({
+    adminUrl: getAdminOrdersUrl(),
+    customerEmail: order.customerEmail,
+    customerName: order.customerName,
+    interviewDate: order.intake.interviewDate,
+    jobPostingUploaded,
+    orderId: order.id,
+    packageName: order.packageName,
+    resumeUploaded,
+    submittedAt,
+    targetCompany: order.intake.targetCompany,
+    targetRole: order.intake.targetRole,
+  });
+
+  addLog(order, 'owner_intake_notification_sent', notification.skipped
+    ? 'Owner intake notification was logged because Gmail or recipient configuration is missing.'
+    : 'Owner intake notification sent.');
+}
+
+function getAdminOrdersUrl() {
+  const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://www.answer-brief.com';
+  return new URL('/admin/orders', baseUrl).toString();
 }
 
 function estimateDeliveryDate() {

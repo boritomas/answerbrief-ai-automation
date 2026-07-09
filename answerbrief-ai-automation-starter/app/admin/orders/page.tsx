@@ -45,6 +45,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                 <th>Status</th>
                 <th>Payment</th>
                 <th>Intake</th>
+                <th>Files</th>
                 <th>Brief</th>
                 <th>Delivery</th>
                 <th>Created</th>
@@ -57,7 +58,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
             <tbody>
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={11}>No orders yet.</td>
+                  <td colSpan={12}>No orders yet.</td>
                 </tr>
               ) : orders.map((order) => (
                 <tr key={order.id}>
@@ -66,6 +67,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                   <td>{order.status}</td>
                   <td>{order.paymentStatus}</td>
                   <td>{order.intakeStatus}</td>
+                  <td>{formatFileStatus(order.logs)}</td>
                   <td>{order.briefStatus}</td>
                   <td>{order.deliveryStatus}</td>
                   <td>{formatDate(order.createdAt)}</td>
@@ -89,6 +91,16 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
       </section>
     </main>
   );
+}
+
+function formatFileStatus(logs = [] as { at: string; event: string; message?: string }[]) {
+  const uploadLog = [...logs].reverse().find((log) => {
+    return log.event === 'files_uploaded_to_drive'
+      || log.event === 'drive_upload_failed'
+      || log.event === 'drive_upload_skipped';
+  });
+
+  return uploadLog?.message || 'No upload log';
 }
 
 function formatLastLog(logs = [] as { at: string; event: string; message?: string }[]) {
