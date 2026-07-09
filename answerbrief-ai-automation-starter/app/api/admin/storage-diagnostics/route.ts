@@ -252,6 +252,7 @@ async function supabaseRequest<T = unknown>(path: string, init: RequestInit = {}
   const configuration = getSupabaseOrderStoreConfiguration();
   const response = await fetch(`${configuration.supabaseUrl}${path}`, {
     ...init,
+    cache: 'no-store',
     headers: {
       apikey: configuration.serviceRoleKey,
       Authorization: `Bearer ${configuration.serviceRoleKey}`,

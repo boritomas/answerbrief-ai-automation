@@ -95,6 +95,7 @@ class SupabaseOrderStore implements OrderStore {
   private async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await fetch(`${this.supabaseUrl}${path}`, {
       ...init,
+      cache: 'no-store',
       headers: {
         apikey: this.serviceRoleKey,
         Authorization: `Bearer ${this.serviceRoleKey}`,

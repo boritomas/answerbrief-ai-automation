@@ -54,6 +54,7 @@ async function supabaseRequest(path: string, init: RequestInit) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const response = await fetch(`${supabaseUrl}${path}`, {
     ...init,
+    cache: 'no-store',
     headers: {
       apikey: serviceRoleKey,
       Authorization: `Bearer ${serviceRoleKey}`,
