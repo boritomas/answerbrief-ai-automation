@@ -28,6 +28,26 @@ export async function GET(request: NextRequest) {
   const diagnostics = getOrderStorageDiagnostics();
   const url = new URL(request.url);
   const runSmoke = url.searchParams.get('smoke') === '1';
+  const runCleanup = url.searchParams.get('cleanup') === '1';
+
+  if (runCleanup) {
+    try {
+      return NextResponse.json({
+        ok: true,
+        ...diagnostics,
+        cleanup: await cleanupSyntheticData(),
+      });
+    } catch (error) {
+      return NextResponse.json({
+        ok: false,
+        ...diagnostics,
+        cleanup: {
+          ok: false,
+          error: error instanceof Error ? error.message : 'Synthetic cleanup failed.',
+        },
+      }, { status: 500 });
+    }
+  }
 
   if (!runSmoke) {
     return NextResponse.json({
@@ -171,6 +191,61 @@ async function cleanupSupabaseSmokeData(orderId: string) {
 
   const remaining = await supabaseRequest<{ id: string }[]>(`/rest/v1/orders?id=eq.${orderId}&select=id`);
   return remaining.length === 0;
+}
+
+async function cleanupSyntheticData() {
+  const matchingOrders = await supabaseRequest<{ id: string }[]>(
+    '/rest/v1/orders?select=id&or=(customer_email.ilike.*codex-smoke*,customer_email.eq.codex-smoke-answerbrief@example.com)'
+  );
+  const orderIds = matchingOrders.map((order) => order.id);
+
+  if (orderIds.length > 0) {
+    const orderIdFilter = `order_id=in.(${orderIds.join(',')})`;
+
+    await supabaseRequest(`/rest/v1/uploads?${orderIdFilter}`, { method: 'DELETE' });
+    await supabaseRequest(`/rest/v1/briefs?${orderIdFilter}`, { method: 'DELETE' });
+    await supabaseRequest(`/rest/v1/intake_submissions?${orderIdFilter}`, { method: 'DELETE' });
+    await supabaseRequest(`/rest/v1/order_events?${orderIdFilter}`, { method: 'DELETE' });
+    await supabaseRequest(`/rest/v1/orders?id=in.(${orderIds.join(',')})`, { method: 'DELETE' });
+  }
+
+  await supabaseRequest('/rest/v1/order_events?event=eq.codex_storage_smoke_test', { method: 'DELETE' });
+  await supabaseRequest('/rest/v1/order_events?message=ilike.*codex-smoke*', { method: 'DELETE' });
+  await supabaseRequest('/rest/v1/order_events?message=ilike.*codex_storage_smoke_test*', { method: 'DELETE' });
+  await supabaseRequest('/rest/v1/intake_submissions?submitted_by_email=ilike.*codex-smoke*', { method: 'DELETE' });
+  await supabaseRequest('/rest/v1/support_requests?email=ilike.*codex-smoke*', { method: 'DELETE' });
+  await supabaseRequest('/rest/v1/push_tokens?email=ilike.*codex-smoke*', { method: 'DELETE' });
+  await supabaseRequest('/rest/v1/users?email=ilike.*codex-smoke*', { method: 'DELETE' });
+
+  const remainingOrders = await supabaseRequest<{ id: string }[]>(
+    '/rest/v1/orders?select=id&or=(customer_email.ilike.*codex-smoke*,customer_email.eq.codex-smoke-answerbrief@example.com)'
+  );
+  const remainingEvents = await supabaseRequest<{ id: string }[]>(
+    '/rest/v1/order_events?select=id&or=(event.eq.codex_storage_smoke_test,message.ilike.*codex-smoke*,message.ilike.*codex_storage_smoke_test*)'
+  );
+  const remainingIntakeSubmissions = await supabaseRequest<{ id: string }[]>(
+    '/rest/v1/intake_submissions?select=id&submitted_by_email=ilike.*codex-smoke*'
+  );
+  const remainingUsers = await supabaseRequest<{ id: string }[]>('/rest/v1/users?select=id&email=ilike.*codex-smoke*');
+  const remainingSupportRequests = await supabaseRequest<{ id: string }[]>(
+    '/rest/v1/support_requests?select=id&email=ilike.*codex-smoke*'
+  );
+
+  return {
+    ok: remainingOrders.length === 0
+      && remainingEvents.length === 0
+      && remainingIntakeSubmissions.length === 0
+      && remainingUsers.length === 0
+      && remainingSupportRequests.length === 0,
+    removedMatchingOrderCount: orderIds.length,
+    remaining: {
+      intakeSubmissions: remainingIntakeSubmissions.length,
+      orderEvents: remainingEvents.length,
+      orders: remainingOrders.length,
+      supportRequests: remainingSupportRequests.length,
+      users: remainingUsers.length,
+    },
+  };
 }
 
 async function supabaseRequest<T = unknown>(path: string, init: RequestInit = {}) {
