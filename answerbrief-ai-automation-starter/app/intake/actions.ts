@@ -54,7 +54,8 @@ export async function submitIntake(formData: FormData) {
       intake: result.data,
       uploads,
     });
-  } catch {
+  } catch (error) {
+    console.error('Intake submission failed:', error instanceof Error ? error.message : 'Unknown error.');
     redirect('/intake?error=token');
   }
 

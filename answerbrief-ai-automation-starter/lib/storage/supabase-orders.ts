@@ -104,7 +104,8 @@ class SupabaseOrderStore implements OrderStore {
     });
 
     if (!response.ok) {
-      throw new Error(`Supabase order storage request failed with status ${response.status}.`);
+      const message = await response.text().catch(() => '');
+      throw new Error(`Supabase order storage request failed with status ${response.status}: ${message}`);
     }
 
     if (response.status === 204) {
