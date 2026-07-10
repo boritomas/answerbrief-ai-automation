@@ -19,7 +19,7 @@ export default function HomeScreen() {
         </Card>
         <Card>
           <H2>Mobile companion app</H2>
-          <Body>Use this app for Fit Check, intake, file upload metadata, order status, brief viewing, support, and notifications. Purchases stay on the web product.</Body>
+          <Body>Use this app for Fit Check, intake, secure file uploads, order status, brief viewing, support, and notifications. Purchases stay on the web product.</Body>
         </Card>
         <View style={{ gap: spacing.sm }}>
           {steps.map((step, index) => (

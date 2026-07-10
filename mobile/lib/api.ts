@@ -16,16 +16,33 @@ type RequestOptions = {
   token?: string | null;
 };
 
+const REQUEST_TIMEOUT_MS = 20000;
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const response = await fetch(`${config.apiBaseUrl}${path}`, {
-    method: options.method || 'GET',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(`${config.apiBaseUrl}${path}`, {
+      method: options.method || 'GET',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    });
+  } catch (error) {
+    const message = error instanceof Error && error.name === 'AbortError'
+      ? 'The request timed out. Check your connection and try again.'
+      : 'Unable to reach AnswerBrief AI. Check your connection and try again.';
+    throw new ApiError(message, 0);
+  } finally {
+    clearTimeout(timeout);
+  }
+
   const data = await response.json().catch(() => ({ ok: false, error: 'Unexpected server response.' })) as ApiResponse<T>;
 
   if (!response.ok) {

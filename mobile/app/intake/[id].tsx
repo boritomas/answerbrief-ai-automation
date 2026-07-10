@@ -28,7 +28,7 @@ export default function IntakeScreen() {
   });
   const [resume, setResume] = useState<PickedFile | null>(null);
   const [jobPosting, setJobPosting] = useState<PickedFile | null>(null);
-const [message, setMessage] = useState('');
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const maxUploadBytes = 8 * 1024 * 1024;
 

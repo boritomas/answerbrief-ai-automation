@@ -60,6 +60,34 @@ Features:
 
 AnswerBrief AI provides interview preparation materials only. It does not guarantee interviews, job offers, promotions, or hiring outcomes.
 
+## App Metadata
+
+- Expo account: `tomasnieves`
+- Expo project: `AnswerBrief AI`
+- App display name: `AnswerBrief AI`
+- iOS bundle identifier: `com.nieveslabs.answerbrief`
+- Android package name: `com.nieveslabs.answerbrief`
+- Version: `1.0.0`
+- iOS build number: `1`
+- Android version code: `1`
+- Runtime version policy: app version
+- Production API base URL: `https://www.answer-brief.com`
+- Privacy policy URL: `https://www.answer-brief.com/privacy`
+- Terms URL: `https://www.answer-brief.com/terms`
+- Refund policy URL: `https://www.answer-brief.com/refund`
+- Support email: `support@answer-brief.com`
+
+## Assets
+
+Included assets:
+
+- `assets/icon.png`: 1024x1024 app icon
+- `assets/adaptive-icon.png`: 1024x1024 Android adaptive icon foreground
+- `assets/splash.png`: 2048x2048 splash image
+- `assets/feature-graphic.png`: 1024x500 Google Play feature graphic draft
+
+The feature graphic is suitable for internal testing setup. Final store marketing screenshots should still be captured from real device or simulator builds after EAS credentials are active.
+
 ## Screenshot Plan
 
 Capture real device screenshots for:
@@ -198,7 +226,7 @@ Account deletion:
 
 - Apple Developer account access and legal agreements must be active before TestFlight upload.
 - Google Play Console account access and legal agreements must be active before internal testing upload.
-- EAS account/project authentication is required to generate cloud builds.
+- EAS account/project authentication is required to generate cloud builds. This local environment currently returns `Not logged in` for `eas whoami`.
+- `EXPO_PUBLIC_EAS_PROJECT_ID` must be set to the existing Expo project ID so EAS Update and Expo push tokens are project-bound in production builds.
 - Reviewer test account and OTP instructions must be prepared before app submission.
 - Push notification credentials must be configured for production push delivery.
-

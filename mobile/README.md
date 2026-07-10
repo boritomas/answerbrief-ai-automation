@@ -56,20 +56,33 @@ EXPO_PUBLIC_API_BASE_URL=https://www.answer-brief.com
 
 ```bash
 npm run typecheck
+npm run lint
+npm run doctor
 npm run build
 ```
 
-`npm run build` runs `expo export --platform all`.
+`npm run build` exports iOS, Android, and web bundles sequentially.
+`npm run lint` runs the mobile release policy check to keep checkout, pricing, local URLs, and server-only secrets out of the app bundle.
 
 ## EAS readiness
 
-`app.config.ts` and `eas.json` are included. Before store builds:
+`app.config.ts` and `eas.json` are included for the existing Expo project owned by `tomasnieves`.
 
-1. Create an Expo/EAS project.
-2. Set `EXPO_PUBLIC_EAS_PROJECT_ID` or let EAS inject the project ID.
-3. Replace placeholder app icon and splash artwork with final production assets.
-4. Configure Apple and Google signing credentials.
-5. Provide a store-review test account and OTP instructions.
+Before store builds:
+
+1. Log in with `npx eas-cli login` using the `tomasnieves` Expo account.
+2. Set `EXPO_PUBLIC_EAS_PROJECT_ID` to the existing Expo project ID for AnswerBrief AI.
+3. Confirm Apple and Google signing credentials in EAS.
+4. Provide a store-review test account and OTP instructions.
+
+Production profiles:
+
+- iOS bundle identifier: `com.nieveslabs.answerbrief`
+- Android package: `com.nieveslabs.answerbrief`
+- Version: `1.0.0`
+- iOS build number: `1`
+- Android version code: `1`
+- Production API: `https://www.answer-brief.com`
 
 ## Store policy position
 

@@ -8,7 +8,9 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "web": "expo start --web",
-    "build": "expo export --platform all",
+    "build": "node scripts/export-platforms.mjs",
+    "doctor": "npx expo-doctor",
+    "lint": "node scripts/check-release.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
