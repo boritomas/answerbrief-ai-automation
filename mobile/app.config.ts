@@ -36,7 +36,8 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-secure-store',
     'expo-document-picker',
-    'expo-notifications'
+    'expo-notifications',
+    'expo-font'
   ],
   extra: {
     apiBaseUrl,

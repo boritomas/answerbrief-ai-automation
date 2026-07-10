@@ -7,11 +7,14 @@ type MobileSessionPayload = {
 };
 
 const sessionTtlSeconds = 60 * 60 * 24 * 7;
+const otpWindowSeconds = 10 * 60;
 
 export function getMobileAuthConfiguration() {
+  const secretConfigured = Boolean(getMobileAuthSecret());
+
   return {
-    configured: Boolean(process.env.MOBILE_AUTH_SECRET && process.env.MOBILE_AUTH_STUB_OTP),
-    otpDeliveryConfigured: Boolean(process.env.MOBILE_AUTH_DELIVERY_ENABLED === 'true'),
+    configured: secretConfigured,
+    otpDeliveryConfigured: secretConfigured && isGmailOtpDeliveryConfigured(),
   };
 }
 
@@ -36,17 +39,31 @@ export function createMobileSessionToken(email: string) {
   return `${body}.${signature}`;
 }
 
-export function verifyMobileOtp(otp: string) {
-  const expected = process.env.MOBILE_AUTH_STUB_OTP;
+export function generateMobileOtp(email: string, now = Date.now()) {
+  const secret = getMobileAuthSecret();
 
-  if (!expected) {
+  if (!secret) {
+    throw new Error('Mobile authentication secret is not configured.');
+  }
+
+  return createOtpForWindow(email, Math.floor(now / 1000 / otpWindowSeconds), secret);
+}
+
+export function verifyMobileOtp(email: string, otp: string) {
+  const secret = getMobileAuthSecret();
+
+  if (!secret || !/^\d{6}$/.test(otp)) {
     return false;
   }
 
-  const expectedBuffer = Buffer.from(expected);
+  const currentWindow = Math.floor(Date.now() / 1000 / otpWindowSeconds);
   const actualBuffer = Buffer.from(otp);
 
-  return expectedBuffer.length === actualBuffer.length && timingSafeEqual(expectedBuffer, actualBuffer);
+  return [currentWindow, currentWindow - 1].some((window) => {
+    const expectedBuffer = Buffer.from(createOtpForWindow(email, window, secret));
+
+    return expectedBuffer.length === actualBuffer.length && timingSafeEqual(expectedBuffer, actualBuffer);
+  });
 }
 
 export function getMobileSession(request: NextRequest) {
@@ -92,4 +109,22 @@ function getMobileAuthSecret() {
 
 function sign(value: string, secret: string) {
   return createHmac('sha256', secret).update(value).digest('base64url');
+}
+
+function createOtpForWindow(email: string, window: number, secret: string) {
+  const digest = createHmac('sha256', secret)
+    .update(`${email.toLowerCase()}:${window}`)
+    .digest();
+  const value = digest.readUInt32BE(0) % 1000000;
+
+  return value.toString().padStart(6, '0');
+}
+
+function isGmailOtpDeliveryConfigured() {
+  return Boolean(
+    process.env.GMAIL_CLIENT_ID &&
+    process.env.GMAIL_CLIENT_SECRET &&
+    process.env.GMAIL_REFRESH_TOKEN &&
+    process.env.GMAIL_SENDER_EMAIL
+  );
 }

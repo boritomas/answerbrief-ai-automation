@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     return mobileError('Mobile authentication is not configured yet.', 503);
   }
 
-  if (!isValidEmail(email) || !verifyMobileOtp(otp)) {
+  if (!isValidEmail(email) || !verifyMobileOtp(email, otp)) {
     return mobileError('Invalid sign-in code.', 401);
   }
 

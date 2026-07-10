@@ -77,7 +77,7 @@ export const api = {
       body: { contentType, filename }
     });
   },
-  recordUpload(token: string, id: string, file: { contentType?: string; filename: string; size?: number; uploadType: 'resume' | 'job_posting' }) {
+  recordUpload(token: string, id: string, file: { contentBase64?: string; contentType?: string; filename: string; size?: number; uploadType: 'resume' | 'job_posting' }) {
     return request<{ accepted: boolean; storageConfigured: boolean; uploadStatus: string }>(`/api/mobile/orders/${id}/uploads`, {
       method: 'POST',
       token,
@@ -105,4 +105,3 @@ export const api = {
     });
   }
 };
-

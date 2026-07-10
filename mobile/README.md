@@ -11,7 +11,7 @@ This app is intentionally **not** a purchasing app. It does not include Stripe c
 - Free Fit Check
 - Post-purchase intake
 - Resume and job posting document selection
-- Upload metadata submission through the mobile API
+- Resume and job-posting upload through the authenticated mobile API
 - Order status and event timeline
 - Brief viewer with open/share support
 - Push token registration for brief-ready notifications
@@ -74,4 +74,3 @@ npm run build
 ## Store policy position
 
 Mobile v1 is a companion app only. It lets existing customers access Fit Check, intake, order status, and completed brief delivery. It does not direct users to external checkout or sell digital services inside the app.
-

@@ -60,6 +60,22 @@ export async function sendIntakeConfirmationEmail({ deliveryDate, packageName, t
   return sendEmail({ label: 'Intake confirmation', subject, text, to });
 }
 
+export async function sendMobileOtpEmail({ otp, to }: { otp: string; to: string }) {
+  const subject = 'Your AnswerBrief AI sign-in code';
+  const text = [
+    'Hi,',
+    '',
+    `Your AnswerBrief AI mobile sign-in code is: ${otp}`,
+    '',
+    'This code expires in about 10 minutes. If you did not request it, you can ignore this email.',
+    '',
+    'Thanks,',
+    'AnswerBrief AI',
+  ].join('\n');
+
+  return sendEmail({ label: 'Mobile sign-in code', subject, text, to });
+}
+
 export async function sendOwnerPaymentNotification(input: OwnerPaymentNotification) {
   const to = getOwnerNotificationEmail();
   const subject = `New AnswerBrief AI order: ${input.packageName}`;

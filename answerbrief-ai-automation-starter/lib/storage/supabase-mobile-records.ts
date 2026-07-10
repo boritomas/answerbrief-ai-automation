@@ -12,6 +12,15 @@ type SupportRequestInput = {
   subject?: string;
 };
 
+type UploadRecordInput = {
+  contentType: string;
+  filename: string;
+  orderId: string;
+  sizeBytes?: number;
+  storageKey?: string;
+  uploadStatus: 'pending' | 'uploaded' | 'failed';
+};
+
 export async function saveMobilePushToken(input: PushTokenInput) {
   if (!isSupabaseOrderStoreConfigured()) {
     return false;
@@ -26,6 +35,26 @@ export async function saveMobilePushToken(input: PushTokenInput) {
     headers: {
       Prefer: 'resolution=merge-duplicates',
     },
+    method: 'POST',
+  });
+
+  return true;
+}
+
+export async function saveMobileUploadRecord(input: UploadRecordInput) {
+  if (!isSupabaseOrderStoreConfigured()) {
+    return false;
+  }
+
+  await supabaseRequest('/rest/v1/uploads', {
+    body: JSON.stringify({
+      content_type: input.contentType,
+      filename: input.filename,
+      order_id: input.orderId,
+      size_bytes: input.sizeBytes || null,
+      storage_key: input.storageKey || null,
+      upload_status: input.uploadStatus,
+    }),
     method: 'POST',
   });
 

@@ -1,4 +1,5 @@
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
@@ -13,6 +14,7 @@ type PickedFile = {
   mimeType?: string;
   name: string;
   size?: number;
+  uri: string;
 };
 
 export default function IntakeScreen() {
@@ -26,8 +28,9 @@ export default function IntakeScreen() {
   });
   const [resume, setResume] = useState<PickedFile | null>(null);
   const [jobPosting, setJobPosting] = useState<PickedFile | null>(null);
-  const [message, setMessage] = useState('');
+const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const maxUploadBytes = 8 * 1024 * 1024;
 
   function patch(field: keyof IntakeInput, value: string) {
     setIntake((current) => ({ ...current, [field]: value }));
@@ -41,15 +44,21 @@ export default function IntakeScreen() {
     });
     if (result.canceled) return;
     const file = result.assets[0];
-    const picked = { mimeType: file.mimeType, name: file.name, size: file.size };
+    const picked = { mimeType: file.mimeType, name: file.name, size: file.size, uri: file.uri };
     if (kind === 'resume') setResume(picked);
     if (kind === 'job_posting') setJobPosting(picked);
   }
 
   async function recordFile(file: PickedFile, uploadType: 'resume' | 'job_posting') {
     if (!token || !id) return;
-    await api.presignUpload(token, file.name, file.mimeType || 'application/octet-stream').catch(() => undefined);
+    if (file.size && file.size > maxUploadBytes) {
+      throw new Error(`${file.name} is larger than 8 MB.`);
+    }
+    const contentBase64 = await FileSystem.readAsStringAsync(file.uri, {
+      encoding: FileSystem.EncodingType.Base64
+    });
     await api.recordUpload(token, id, {
+      contentBase64,
       contentType: file.mimeType,
       filename: file.name,
       size: file.size,
@@ -63,11 +72,23 @@ export default function IntakeScreen() {
     setMessage('');
     try {
       await api.submitIntake(token, id, intake);
-      if (resume) await recordFile(resume, 'resume');
-      if (jobPosting) await recordFile(jobPosting, 'job_posting');
+      const uploadFailures: string[] = [];
+      if (resume) {
+        await recordFile(resume, 'resume').catch((error) => {
+          uploadFailures.push(error instanceof Error ? error.message : 'Resume upload failed.');
+        });
+      }
+      if (jobPosting) {
+        await recordFile(jobPosting, 'job_posting').catch((error) => {
+          uploadFailures.push(error instanceof Error ? error.message : 'Job posting upload failed.');
+        });
+      }
       track({ name: 'mobile_intake_submitted' });
-      setMessage('Intake submitted. Your order status will update after review.');
-      router.replace(`/order/${id}`);
+      if (uploadFailures.length > 0) {
+        setMessage(`Intake submitted, but ${uploadFailures.join(' ')}`);
+      } else {
+        router.replace(`/order/${id}`);
+      }
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : 'Unable to submit intake.');
     } finally {
@@ -81,7 +102,7 @@ export default function IntakeScreen() {
         <Card>
           <Eyebrow>Secure intake</Eyebrow>
           <H1>Send the details for your brief.</H1>
-          <Body>Signed in as {email}. Uploads are recorded through the mobile API; direct file storage depends on the production backend configuration.</Body>
+          <Body>Signed in as {email}. Your files are uploaded through the authenticated AnswerBrief AI mobile API.</Body>
         </Card>
         <Card>
           <Field label="Name" onChangeText={(value) => patch('name', value)} value={intake.name} />
@@ -94,6 +115,7 @@ export default function IntakeScreen() {
         </Card>
         <Card>
           <H2>Uploads</H2>
+          <Body>PDF, Word, and text files up to 8 MB each.</Body>
           <Button secondary onPress={() => pick('resume')}>{resume ? `Resume: ${resume.name}` : 'Select resume'}</Button>
           <Button secondary onPress={() => pick('job_posting')}>{jobPosting ? `Job posting: ${jobPosting.name}` : 'Select job posting'}</Button>
         </Card>
@@ -103,4 +125,3 @@ export default function IntakeScreen() {
     </ScrollView>
   );
 }
-

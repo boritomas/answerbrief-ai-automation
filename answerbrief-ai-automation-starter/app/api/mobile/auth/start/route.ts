@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { mobileError, mobileJson, readMobileJson } from '@/lib/mobile-api';
-import { getMobileAuthConfiguration, isValidEmail } from '@/lib/mobile-auth';
+import { sendMobileOtpEmail } from '@/lib/email';
+import { generateMobileOtp, getMobileAuthConfiguration, isValidEmail } from '@/lib/mobile-auth';
 import { checkMobileRateLimit, getMobileRateLimitIdentity } from '@/lib/mobile-rate-limit';
 import { recordOrderEvent } from '@/lib/orders';
 
@@ -25,6 +26,19 @@ export async function POST(request: NextRequest) {
 
   const configuration = getMobileAuthConfiguration();
 
+  if (!configuration.configured) {
+    return mobileError('Mobile authentication is not configured yet.', 503);
+  }
+
+  if (!configuration.otpDeliveryConfigured) {
+    return mobileError('Mobile OTP delivery is not configured yet.', 503);
+  }
+
+  await sendMobileOtpEmail({
+    otp: generateMobileOtp(email),
+    to: email,
+  });
+
   await recordOrderEvent({
     event: 'auth_started',
     message: `Mobile sign-in started for ${email}.`,
@@ -32,9 +46,7 @@ export async function POST(request: NextRequest) {
 
   return mobileJson({
     email,
-    otpDeliveryConfigured: configuration.otpDeliveryConfigured,
-    message: configuration.otpDeliveryConfigured
-      ? 'If the email matches an AnswerBrief AI account, a sign-in code will be sent.'
-      : 'Mobile OTP delivery is not configured yet. This endpoint is ready for the future mobile app.',
+    otpDeliveryConfigured: true,
+    message: 'If the email matches an AnswerBrief AI account, a sign-in code will be sent.',
   });
 }
