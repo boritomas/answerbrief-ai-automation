@@ -10,7 +10,7 @@ import {
   unauthorizedMobileResponse,
 } from '@/lib/mobile-api';
 import { uploadDriveFile } from '@/lib/google-drive';
-import { appendOrderLogForCustomer, getOrderById, recordOrderEvent } from '@/lib/orders';
+import { appendOrderLogForCustomer, getOrderById, recordOrderEvent, retryOrderFulfillment } from '@/lib/orders';
 import { saveMobileUploadRecord } from '@/lib/storage/supabase-mobile-records';
 
 export const runtime = 'nodejs';
@@ -144,6 +144,17 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       message: `Mobile upload stored for ${filename}.`,
       orderId: params.id,
     }).catch(() => undefined);
+
+    if (order.intakeStatus === 'complete') {
+      await retryOrderFulfillment(params.id).catch(async (error) => {
+        await appendOrderLogForCustomer({
+          customerEmail: email,
+          event: 'fulfillment_retry_failed_after_upload',
+          message: error instanceof Error ? error.message : 'Unknown fulfillment retry error.',
+          orderId: params.id,
+        });
+      });
+    }
 
     return mobileJson({
       accepted: true,

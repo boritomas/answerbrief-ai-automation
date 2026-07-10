@@ -198,6 +198,13 @@ async function runSyntheticCustomerJourney() {
       logEvents.has('brief_generated')
       || logEvents.has('brief_workflow_failed')
     ),
+    fulfillmentAutomation: {
+      automaticTrigger: logEvents.has('fulfillment_job_queued'),
+      interviewPrepKnowledgeReused: logEvents.has('interview_prep_kb_reused'),
+      qaValidation: logEvents.has('qa_validation_passed') || logEvents.has('qa_validation_failed'),
+      retrySafeJobId: Boolean(storedOrder?.fulfillmentJobId),
+      versionedRegistry: Boolean(storedOrder?.promptRegistryVersion || logEvents.has('interview_prep_kb_reused')),
+    },
     cleanup,
     customerConfirmationGenerated: logEvents.has('intake_confirmation_email_sent')
       || logEvents.has('intake_confirmation_email_failed'),
@@ -224,6 +231,9 @@ async function runSyntheticCustomerJourney() {
       && tableChecks.ordersWrite
       && tableChecks.orderEventsWrite
       && tableChecks.intakeSubmissionsWrite
+      && logEvents.has('fulfillment_job_queued')
+      && logEvents.has('interview_prep_kb_reused')
+      && (logEvents.has('qa_validation_passed') || logEvents.has('qa_validation_failed'))
       && cleanup.ok
     ),
     orderEventsWrite: tableChecks.orderEventsWrite,

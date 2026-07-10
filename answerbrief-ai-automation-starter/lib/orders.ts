@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'crypto';
-import { generateInterviewBrief } from './brief';
+import { runAnswerBriefFulfillmentJob } from './answerbrief-fulfillment';
 import {
   sendDeliveryEmail,
   sendIntakeConfirmationEmail,
@@ -65,7 +65,14 @@ export type Order = {
   driveFolderUrl?: string;
   driveError?: string;
   generatedBriefUrl?: string;
-  generatedBriefMode?: 'fallback';
+  generatedBriefMode?: 'fallback' | 'answerbrief_fulfillment_v1';
+  fulfillmentAttempt?: number;
+  fulfillmentJobId?: string;
+  fulfillmentVersion?: string;
+  promptRegistryVersion?: string;
+  qaIssues?: string[];
+  qaPassed?: boolean;
+  qaWarnings?: string[];
   errorMessage?: string;
   intake?: Intake;
   intakeSubmittedAt?: string;
@@ -236,7 +243,7 @@ export async function saveOrderIntake({
   }).catch((error) => {
     addLog(order, 'intake_confirmation_email_failed', getErrorMessage(error));
   });
-  await runBriefWorkflow(order);
+  await runBriefWorkflow(order, uploads);
 
   await writeOrders(orders);
   await recordOrderEvent({
@@ -387,21 +394,46 @@ async function uploadIntakeMaterials(order: Order, uploads: IntakeUpload[], inta
   }
 }
 
-async function runBriefWorkflow(order: Order) {
+export async function retryOrderFulfillment(orderId: string) {
+  const orders = await readOrders();
+  const order = orders.find((item) => item.id === orderId);
+
+  if (!order) {
+    return undefined;
+  }
+
+  await runBriefWorkflow(order, []);
+  await writeOrders(orders);
+
+  return order;
+}
+
+async function runBriefWorkflow(order: Order, uploads: IntakeUpload[]) {
   if (!order.intake) {
     return;
   }
 
   order.briefStatus = 'generating';
+  order.fulfillmentAttempt = (order.fulfillmentAttempt || 0) + 1;
+  order.fulfillmentJobId = order.fulfillmentJobId || randomUUID();
+  order.fulfillmentVersion = 'answerbrief-fulfillment-v1';
   order.updatedAt = new Date().toISOString();
-  addLog(order, 'brief_generation_started', 'Brief workflow started after intake completion.');
+  addLog(order, 'fulfillment_job_queued', `Fulfillment job ${order.fulfillmentJobId} queued.`);
+  addLog(order, 'brief_generation_started', `Brief workflow started after intake completion. Attempt ${order.fulfillmentAttempt}.`);
 
   try {
-    const brief = await generateInterviewBrief({
-      intake: order.intake,
-      packageName: order.packageName,
-      packageKey: order.packageKey,
-    });
+    const fulfillment = await runAnswerBriefFulfillmentJob(order, uploads);
+    const brief = fulfillment.brief;
+
+    for (const event of fulfillment.events) {
+      addLog(order, event.event, event.message);
+      await recordOrderEvent({
+        event: event.event,
+        message: event.message,
+        orderId: order.id,
+        severity: event.severity,
+      }).catch(() => undefined);
+    }
 
     const uploadedBrief = await uploadDriveFile({
       folderId: order.driveFolderId,
@@ -416,8 +448,18 @@ async function runBriefWorkflow(order: Order) {
 
     order.generatedBriefUrl = uploadedBrief?.webViewLink || undefined;
     order.generatedBriefMode = brief.mode;
-    order.briefStatus = brief.mode === 'fallback' ? 'fallback_generated' : 'generated';
+    order.promptRegistryVersion = brief.registryVersion;
+    order.qaIssues = brief.qa.issues;
+    order.qaPassed = brief.qa.passed;
+    order.qaWarnings = brief.qa.warnings;
+    order.briefStatus = brief.qa.passed ? 'generated' : 'failed';
     addLog(order, 'brief_generated', `Brief generated using ${brief.mode} mode.`);
+
+    if (!brief.qa.passed) {
+      order.status = 'Needs Review';
+      order.errorMessage = `QA validation failed: ${brief.qa.issues.join('; ')}`;
+      addLog(order, 'manual_review_required', order.errorMessage);
+    }
 
     const delivery = await sendDeliveryEmail({
       to: order.customerEmail,
@@ -430,7 +472,7 @@ async function runBriefWorkflow(order: Order) {
 
     if (delivery.success) {
       order.deliveryStatus = delivery.skipped ? 'skipped' : 'sent';
-      order.status = delivery.skipped ? 'Needs Review' : 'Delivered';
+      order.status = delivery.skipped || !brief.qa.passed ? 'Needs Review' : 'Delivered';
       addLog(order, 'delivery_email_sent', delivery.skipped
         ? 'Delivery email was logged because Gmail is not configured.'
         : 'Delivery email sent to customer.');
@@ -621,12 +663,19 @@ function normalizeOrder(order: Partial<Order>): Order {
     driveFolderId: order.driveFolderId,
     driveFolderUrl: order.driveFolderUrl,
     driveError: order.driveError,
+    fulfillmentAttempt: order.fulfillmentAttempt,
+    fulfillmentJobId: order.fulfillmentJobId,
+    fulfillmentVersion: order.fulfillmentVersion,
     generatedBriefUrl: order.generatedBriefUrl,
     generatedBriefMode: order.generatedBriefMode,
     errorMessage: order.errorMessage,
     intake: order.intake,
     intakeSubmittedAt: order.intakeSubmittedAt,
     logs: order.logs || [],
+    promptRegistryVersion: order.promptRegistryVersion,
+    qaIssues: order.qaIssues,
+    qaPassed: order.qaPassed,
+    qaWarnings: order.qaWarnings,
   };
 }
 

@@ -13,7 +13,7 @@ type SupabaseOrderRow = {
   drive_folder_id?: string | null;
   drive_folder_url?: string | null;
   error_message?: string | null;
-  generated_brief_mode?: 'fallback' | null;
+  generated_brief_mode?: Order['generatedBriefMode'] | null;
   generated_brief_url?: string | null;
   id: string;
   intake?: Order['intake'] | null;
