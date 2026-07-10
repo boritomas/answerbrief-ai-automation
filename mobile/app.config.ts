@@ -1,7 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://www.answer-brief.com';
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || process.env.EAS_PROJECT_ID;
+const easProjectId = '36ae905e-d073-4c1b-ae37-4ded41c58c96';
 
 const config: ExpoConfig = {
   name: 'AnswerBrief AI',
