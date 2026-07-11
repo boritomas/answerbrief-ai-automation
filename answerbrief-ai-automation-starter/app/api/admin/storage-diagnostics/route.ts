@@ -259,6 +259,16 @@ async function runSyntheticCustomerJourney(request: NextRequest) {
       && tableChecks.briefsWrite
       && logEvents.has('fulfillment_job_queued')
       && logEvents.has('interview_prep_kb_reused')
+      && logEvents.has('resume_analyzed')
+      && logEvents.has('job_description_analyzed')
+      && logEvents.has('resume_role_alignment_completed')
+      && logEvents.has('company_role_research_guidance_generated')
+      && logEvents.has('interview_questions_generated')
+      && logEvents.has('star_guidance_generated')
+      && logEvents.has('strength_risk_analysis_completed')
+      && logEvents.has('interview_strategy_generated')
+      && logEvents.has('executive_summary_generated')
+      && logEvents.has('answerbrief_composed')
       && logEvents.has('openai_generation_completed')
       && (logEvents.has('qa_validation_passed') || logEvents.has('qa_validation_failed'))
       && cleanup.ok

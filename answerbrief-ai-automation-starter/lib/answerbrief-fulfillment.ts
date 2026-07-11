@@ -54,8 +54,12 @@ export async function runAnswerBriefFulfillmentJob(order: Order, uploads: Intake
     { event: 'resume_analyzed', message: 'Resume analyzer completed using customer-provided resume material and intake context.' },
     { event: 'job_description_analyzed', message: 'Job description analyzer completed using provided posting text and target role.' },
     { event: 'resume_role_alignment_completed', message: 'Resume-to-role alignment and gap analysis completed.' },
+    { event: 'company_role_research_guidance_generated', message: 'Company and role research guidance generated without fabricating live company facts.' },
     { event: 'interview_questions_generated', message: 'Likely behavioral, situational, leadership, technical, and follow-up questions generated as applicable.' },
     { event: 'star_guidance_generated', message: 'STAR story guidance generated without inventing customer experience.' },
+    { event: 'strength_risk_analysis_completed', message: 'Strengths, risks, gaps, and preparation priorities generated from provided materials.' },
+    { event: 'interview_strategy_generated', message: 'Interview strategy and preparation priorities generated for the selected package.' },
+    { event: 'executive_summary_generated', message: 'Executive summary generated for the AnswerBrief deliverable.' },
     brief.provider === 'openai'
       ? { event: 'openai_generation_completed', message: 'Production OpenAI provider generated the AnswerBrief deliverable.' }
       : { event: 'openai_generation_skipped', message: 'OPENAI_API_KEY is not configured; deterministic generator produced the deliverable.', severity: 'warning' },
