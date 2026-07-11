@@ -13,7 +13,7 @@ Current implementation adds the server-side fulfillment engine required for the 
 - Order lifecycle integration: `lib/orders.ts`
 - Synthetic journey verification: `/api/admin/storage-diagnostics?journey=1`
 
-Do not mark the service fully automated unless the protected diagnostics journey passes in production with configured Supabase, Stripe webhook, Gmail, and Google Drive OAuth.
+Do not mark the service fully automated unless the protected diagnostics journey passes in production with configured Supabase, Stripe webhook, Resend, and Google Drive OAuth.
 
 ## Required automated modules
 

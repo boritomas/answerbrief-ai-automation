@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { mobileError, mobileJson, readMobileJson } from '@/lib/mobile-api';
-import { sendMobileOtpEmail } from '@/lib/email';
+import { sendMobileOtpEmail } from '@/lib/answerbrief-emails';
 import { generateMobileOtp, getMobileAuthConfiguration, isValidEmail } from '@/lib/mobile-auth';
 import { checkMobileRateLimit, getMobileRateLimitIdentity } from '@/lib/mobile-rate-limit';
 import { recordOrderEvent } from '@/lib/orders';

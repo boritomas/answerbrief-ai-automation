@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { sendNextStepsEmail } from '@/lib/email';
+import { sendNextStepsEmail } from '@/lib/answerbrief-emails';
 import { createPaidOrder, getIntakeUrl } from '@/lib/orders';
 import { packages } from '@/lib/packages';
 import type { PackageKey } from '@/lib/packages';

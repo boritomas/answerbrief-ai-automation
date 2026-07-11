@@ -68,12 +68,11 @@ GOOGLE_DRIVE_FOLDER_ROOT_ID=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REFRESH_TOKEN=
-GMAIL_CLIENT_ID=
-GMAIL_CLIENT_SECRET=
-GMAIL_REFRESH_TOKEN=
-GMAIL_SENDER_EMAIL=
-GMAIL_SENDER_NAME=
-GMAIL_REPLY_TO_EMAIL=
+RESEND_API_KEY=
+PRODUCT_NAME=AnswerBrief AI
+FROM_ADDRESS=hello@answer-brief.com
+FROM_NAME=AnswerBrief AI
+REPLY_TO=hello@answer-brief.com
 OPENAI_API_KEY=
 ```
 
@@ -144,25 +143,31 @@ After intake is submitted, the app:
 3. Starts brief generation.
 4. Generates a structured Markdown brief.
 5. Uploads the generated brief to Drive when configured.
-6. Sends a delivery email with the Drive link when Gmail is configured.
-7. Logs fallback/skipped states for manual review when Gmail or Drive is not configured.
+6. Sends a delivery email with the Drive link when the NAIP-OS email service is configured.
+7. Logs fallback/skipped states for manual review when email or Drive is not configured.
 
 The current brief generator is a clean fallback implementation. It produces a structured, realistic interview-prep brief without claiming full AI resume parsing. `OPENAI_API_KEY` is reserved for a future real AI generation adapter.
 
-## Gmail next-step emails
+## NAIP-OS transactional email
 
-The payment webhook sends the customer their private intake link with Gmail when these variables are set:
+Resend is the official NAIP-OS outbound email provider. The payment webhook, intake workflow, delivery workflow, owner notifications, and mobile OTP flow send through Resend when these variables are set:
 
-- `GMAIL_CLIENT_ID`
-- `GMAIL_CLIENT_SECRET`
-- `GMAIL_REFRESH_TOKEN`
-- `GMAIL_SENDER_EMAIL`
-- `GMAIL_SENDER_NAME`
-- `GMAIL_REPLY_TO_EMAIL`
+- `RESEND_API_KEY`
+- `PRODUCT_NAME`
+- `FROM_ADDRESS`
+- `FROM_NAME`
+- `REPLY_TO`
 
-Use a Google OAuth client with Gmail API access and a refresh token for the sender account. The token must include permission to send mail. `GMAIL_SENDER_EMAIL` must be the Gmail account or a verified Gmail "Send mail as" identity for that account. `GMAIL_SENDER_NAME` controls the display name and `GMAIL_REPLY_TO_EMAIL` controls replies. Do not commit those values; keep them in `.env.local` or your production host's secret manager.
+AnswerBrief AI production should use:
 
-If Gmail is not configured, the app logs the next-step email and intake link to the server console so local testing still works.
+```text
+PRODUCT_NAME=AnswerBrief AI
+FROM_ADDRESS=hello@answer-brief.com
+FROM_NAME=AnswerBrief AI
+REPLY_TO=hello@answer-brief.com
+```
+
+Do not commit `RESEND_API_KEY`; keep it in `.env.local` or your production host's secret manager. If Resend is not configured, the app logs email content to the server console so local testing still works.
 
 For local testing only, open the intake form directly at:
 

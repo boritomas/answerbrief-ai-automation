@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest } from 'next/server';
+import { isTransactionalEmailConfigured } from './email';
 
 type MobileSessionPayload = {
   email: string;
@@ -14,7 +15,7 @@ export function getMobileAuthConfiguration() {
 
   return {
     configured: secretConfigured,
-    otpDeliveryConfigured: secretConfigured && isGmailOtpDeliveryConfigured(),
+    otpDeliveryConfigured: secretConfigured && isTransactionalEmailConfigured(),
   };
 }
 
@@ -118,13 +119,4 @@ function createOtpForWindow(email: string, window: number, secret: string) {
   const value = digest.readUInt32BE(0) % 1000000;
 
   return value.toString().padStart(6, '0');
-}
-
-function isGmailOtpDeliveryConfigured() {
-  return Boolean(
-    process.env.GMAIL_CLIENT_ID &&
-    process.env.GMAIL_CLIENT_SECRET &&
-    process.env.GMAIL_REFRESH_TOKEN &&
-    process.env.GMAIL_SENDER_EMAIL
-  );
 }

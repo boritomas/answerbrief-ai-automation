@@ -5,7 +5,7 @@ import {
   sendIntakeConfirmationEmail,
   sendOwnerIntakeNotification,
   sendOwnerPaymentNotification,
-} from './email';
+} from './answerbrief-emails';
 import { Intake } from './intake-schema';
 import {
   buildCustomerFolderName,
@@ -239,7 +239,7 @@ export async function saveOrderIntake({
     to: order.customerEmail,
   }).then((confirmation) => {
     addLog(order, 'intake_confirmation_email_sent', confirmation.skipped
-      ? 'Intake confirmation email was logged because Gmail or recipient configuration is missing.'
+      ? 'Intake confirmation email was logged because the platform email service or recipient configuration is missing.'
       : 'Intake confirmation email sent to customer.');
   }).catch((error) => {
     addLog(order, 'intake_confirmation_email_failed', getErrorMessage(error));
@@ -512,7 +512,7 @@ async function runBriefWorkflow(order: Order, uploads: IntakeUpload[]) {
       order.deliveryStatus = delivery.skipped ? 'skipped' : 'sent';
       order.status = delivery.skipped || !brief.qa.passed ? 'Needs Review' : 'Delivered';
       addLog(order, 'delivery_email_sent', delivery.skipped
-        ? 'Delivery email was logged because Gmail is not configured.'
+        ? 'Delivery email was logged because the platform email service is not configured.'
         : 'Delivery email sent to customer.');
     } else {
       order.deliveryStatus = 'failed';
@@ -540,7 +540,7 @@ async function notifyOwnerPayment(order: Order) {
   });
 
   addLog(order, 'owner_payment_notification_sent', notification.skipped
-    ? 'Owner payment notification was logged because Gmail or recipient configuration is missing.'
+    ? 'Owner payment notification was logged because the platform email service or recipient configuration is missing.'
     : 'Owner payment notification sent.');
 }
 
@@ -569,7 +569,7 @@ async function notifyOwnerIntake(order: Order, uploads: IntakeUpload[], submitte
   });
 
   addLog(order, 'owner_intake_notification_sent', notification.skipped
-    ? 'Owner intake notification was logged because Gmail or recipient configuration is missing.'
+    ? 'Owner intake notification was logged because the platform email service or recipient configuration is missing.'
     : 'Owner intake notification sent.');
 }
 

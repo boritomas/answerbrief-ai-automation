@@ -218,7 +218,7 @@ Account deletion:
 - Production website and checkout: https://www.answer-brief.com
 - Mobile API base URL: https://www.answer-brief.com
 - Supabase-backed order storage
-- Gmail notifications
+- Resend notifications
 - Google Drive OAuth document storage
 - Expo push notification credentials before production push delivery
 

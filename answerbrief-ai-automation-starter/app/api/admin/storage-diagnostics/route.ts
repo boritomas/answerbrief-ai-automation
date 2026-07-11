@@ -4,6 +4,7 @@ import { listOrders, retryOrderFulfillment, saveOrderIntake } from '@/lib/orders
 import type { Order } from '@/lib/orders';
 import { deleteDriveFile, getDriveAuthMode, isDriveConfigured } from '@/lib/google-drive';
 import { getOpenAIFulfillmentConfigured } from '@/lib/brief';
+import { getPlatformEmailDiagnostics } from '@/lib/email';
 import { getOrderStorageDiagnostics, getOrderStore } from '@/lib/storage/orders';
 import { getSupabaseOrderStoreConfiguration } from '@/lib/storage/supabase-orders';
 
@@ -114,20 +115,23 @@ export async function GET(request: NextRequest) {
 }
 
 function getIntegrationDiagnostics() {
+  const email = getPlatformEmailDiagnostics();
+
   return {
     driveConfigured: isDriveConfigured(),
     driveAuthMode: getDriveAuthMode(),
-    gmailConfigured: Boolean(
-      process.env.GMAIL_CLIENT_ID
-      && process.env.GMAIL_CLIENT_SECRET
-      && process.env.GMAIL_REFRESH_TOKEN
-      && process.env.GMAIL_SENDER_EMAIL
-    ),
-    gmailRecipientConfigured: Boolean(
+    emailConfigured: email.configured,
+    emailFrom: email.from,
+    emailProvider: email.provider,
+    emailReplyTo: email.replyTo,
+    emailRecipientConfigured: Boolean(
       process.env.OWNER_NOTIFICATION_EMAIL
       || process.env.NOTIFICATION_EMAIL
       || process.env.ADMIN_NOTIFICATION_EMAIL
-      || process.env.GMAIL_SENDER_EMAIL
+      || process.env.REPLY_TO
+      || process.env.REPLY_TO_EMAIL
+      || process.env.FROM_ADDRESS
+      || process.env.EMAIL_FROM_ADDRESS
     ),
     openAIConfigured: getOpenAIFulfillmentConfigured(),
     stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET),
