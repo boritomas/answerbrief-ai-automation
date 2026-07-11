@@ -131,8 +131,12 @@ async function sendEmail({
   }
 
   const accessToken = await getGmailAccessToken();
+  const senderEmail = process.env.GMAIL_SENDER_EMAIL as string;
+  const senderName = process.env.GMAIL_SENDER_NAME || 'AnswerBrief AI';
+  const replyTo = process.env.GMAIL_REPLY_TO_EMAIL || senderEmail;
   const raw = encodeMessage({
-    from: process.env.GMAIL_SENDER_EMAIL as string,
+    from: formatEmailAddress(senderEmail, senderName),
+    replyTo,
     to,
     subject,
     text,
@@ -319,28 +323,47 @@ function buildOwnerIntakeNotification({
 
 function encodeMessage({
   from,
+  replyTo,
   to,
   subject,
   text,
 }: {
   from: string;
+  replyTo?: string;
   to: string;
   subject: string;
   text: string;
 }) {
   const message = [
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
+    `From: ${sanitizeHeaderValue(from)}`,
+    replyTo ? `Reply-To: ${sanitizeHeaderValue(replyTo)}` : undefined,
+    `To: ${sanitizeHeaderValue(to)}`,
+    `Subject: ${sanitizeHeaderValue(subject)}`,
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset="UTF-8"',
     '',
     text,
-  ].join('\r\n');
+  ].filter(Boolean).join('\r\n');
 
   return Buffer.from(message)
     .toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/g, '');
+}
+
+function formatEmailAddress(email: string, displayName?: string) {
+  const cleanEmail = sanitizeHeaderValue(email.trim());
+  const cleanName = displayName ? sanitizeHeaderValue(displayName.trim()) : '';
+
+  if (!cleanName) {
+    return cleanEmail;
+  }
+
+  const quotedName = cleanName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `"${quotedName}" <${cleanEmail}>`;
+}
+
+function sanitizeHeaderValue(value: string) {
+  return value.replace(/[\r\n]+/g, ' ').trim();
 }
