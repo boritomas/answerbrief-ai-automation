@@ -34,6 +34,8 @@ export async function GET(request: NextRequest) {
   const runSmoke = url.searchParams.get('smoke') === '1';
   const runCleanup = url.searchParams.get('cleanup') === '1';
   const runJourney = url.searchParams.get('journey') === '1';
+  const preserveProof = url.searchParams.get('preserve') === '1';
+  const proofEmail = url.searchParams.get('testEmail') || 'tomas@nieves.com';
 
   if (runCleanup) {
     try {
@@ -58,7 +60,7 @@ export async function GET(request: NextRequest) {
 
   if (runJourney) {
     try {
-      const journey = await runSyntheticCustomerJourney(request);
+      const journey = await runSyntheticCustomerJourney(request, { preserveProof, proofEmail });
 
       return NextResponse.json({
         ok: journey.ok,
@@ -148,24 +150,36 @@ function authorizeAdmin(request: NextRequest) {
   };
 }
 
-async function runSyntheticCustomerJourney(request: NextRequest) {
-  await cleanupSyntheticData();
+async function runSyntheticCustomerJourney(
+  request: NextRequest,
+  { preserveProof = false, proofEmail = 'tomas@nieves.com' } = {}
+) {
+  if (!preserveProof) {
+    await cleanupSyntheticData();
+  }
 
-  const email = 'codex-smoke-answerbrief@example.com';
+  const proofTimestamp = Date.now();
+  const email = preserveProof ? proofEmail : 'codex-smoke-answerbrief@example.com';
   const sessionId = `cs_codex_smoke_${Date.now()}`;
   const paymentIntentId = `pi_codex_smoke_${Date.now()}`;
   const webhook = await postSignedStripeWebhook({
-    amountTotal: 14900,
+    amountTotal: preserveProof ? 4900 : 14900,
     customerEmail: email,
-    customerName: 'Codex E2E Smoke Test',
+    customerName: preserveProof ? 'AnswerBrief Production Proof Test' : 'Codex E2E Smoke Test',
+    packageKey: preserveProof ? 'quick-prep' : 'full-interview-brief',
+    packageName: preserveProof ? 'Interview Essentials' : 'Interview Professional',
+    proofLabel: preserveProof ? 'PRODUCTION_PROOF_TEST' : 'codex_storage_smoke_test',
     origin: request.nextUrl.origin,
     paymentIntentId,
     sessionId,
   });
   const duplicateWebhook = await postSignedStripeWebhook({
-    amountTotal: 14900,
+    amountTotal: preserveProof ? 4900 : 14900,
     customerEmail: email,
-    customerName: 'Codex E2E Smoke Test',
+    customerName: preserveProof ? 'AnswerBrief Production Proof Test' : 'Codex E2E Smoke Test',
+    packageKey: preserveProof ? 'quick-prep' : 'full-interview-brief',
+    packageName: preserveProof ? 'Interview Essentials' : 'Interview Professional',
+    proofLabel: preserveProof ? 'PRODUCTION_PROOF_TEST' : 'codex_storage_smoke_test',
     origin: request.nextUrl.origin,
     paymentIntentId,
     sessionId,
@@ -183,23 +197,39 @@ async function runSyntheticCustomerJourney(request: NextRequest) {
       careerLane: 'operations',
       email,
       interviewDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      jobPostingText: 'Synthetic public job posting for production workflow verification.',
-      name: 'Codex E2E Smoke Test',
-      notes: 'source: codex_storage_smoke_test',
+      jobPostingText: [
+        'PRODUCTION_PROOF_TEST synthetic job description.',
+        'Role: Operations Strategy Manager.',
+        'Needs: workflow automation, executive communication, process improvement, customer readiness, and cross-functional delivery.',
+        'This content is intentionally safe and synthetic so Tomas can verify the generated AnswerBrief is personalized.',
+      ].join(' '),
+      name: preserveProof ? 'AnswerBrief Production Proof Test' : 'Codex E2E Smoke Test',
+      notes: preserveProof
+        ? `PRODUCTION_PROOF_TEST source: codex_proof_test_${proofTimestamp}. Candidate should emphasize automation, operations strategy, stakeholder communication, and measurable delivery.`
+        : 'source: codex_storage_smoke_test',
       targetCompany: 'AnswerBrief AI Verification',
       targetRole: 'Operations Strategy Manager',
     },
     orderId: order.id,
     uploads: [
       {
-        content: Buffer.from('Synthetic resume for production verification.', 'utf8'),
+        content: Buffer.from([
+          'PRODUCTION_PROOF_TEST synthetic resume.',
+          'Candidate: AnswerBrief Production Proof Test.',
+          'Experience: Built workflow dashboards, coordinated customer onboarding, improved operational handoffs, and translated complex process gaps into clear action plans.',
+          'Proof points: reduced manual follow-up, organized executive-ready status reports, and supported launch readiness across product, operations, and customer communication.',
+        ].join('\n'), 'utf8'),
         contentType: 'text/plain',
-        filename: 'codex-smoke-resume.txt',
+        filename: preserveProof ? 'PRODUCTION_PROOF_TEST-resume.txt' : 'codex-smoke-resume.txt',
       },
       {
-        content: Buffer.from('Synthetic job posting upload for production verification.', 'utf8'),
+        content: Buffer.from([
+          'PRODUCTION_PROOF_TEST synthetic job posting upload.',
+          'Operations Strategy Manager role focused on workflow automation, business process improvement, stakeholder communication, and customer-facing operational readiness.',
+          'The interviewer will evaluate prioritization, concise communication, systems thinking, and ability to turn ambiguous requirements into repeatable workflows.',
+        ].join('\n'), 'utf8'),
         contentType: 'text/plain',
-        filename: 'codex-smoke-job-posting.txt',
+        filename: preserveProof ? 'PRODUCTION_PROOF_TEST-job-description.txt' : 'codex-smoke-job-posting.txt',
       },
     ],
   });
@@ -210,7 +240,20 @@ async function runSyntheticCustomerJourney(request: NextRequest) {
   const logs = storedOrder?.logs || [];
   const logEvents = new Set(logs.map((log) => log.event));
   const fulfillmentQueueCount = logs.filter((log) => log.event === 'fulfillment_job_queued').length;
-  const cleanup = await cleanupSyntheticData();
+  const cleanup = preserveProof
+    ? {
+      ok: true,
+      preserved: true,
+      removedMatchingOrderCount: 0,
+      remaining: {
+        intakeSubmissions: 'preserved',
+        orderEvents: 'preserved',
+        orders: 'preserved',
+        supportRequests: 'preserved',
+        users: 'preserved',
+      },
+    }
+    : await cleanupSyntheticData();
 
   return {
     adminVisible: Boolean(storedOrder),
@@ -274,11 +317,18 @@ async function runSyntheticCustomerJourney(request: NextRequest) {
       && cleanup.ok
     ),
     orderEventsWrite: tableChecks.orderEventsWrite,
+    proofPreserved: preserveProof,
+    proofReviewNote: preserveProof
+      ? 'Synthetic proof data was intentionally preserved. Run cleanup only after Tomas confirms review.'
+      : undefined,
     orderId: updatedOrder.id,
     ordersWrite: tableChecks.ordersWrite,
     paymentStatus: storedOrder?.paymentStatus,
+    proofCustomerEmail: preserveProof ? email : undefined,
+    driveFolderUrl: preserveProof ? storedOrder?.driveFolderUrl : undefined,
+    generatedBriefUrl: preserveProof ? storedOrder?.generatedBriefUrl : undefined,
     signedWebhook: webhook,
-    source: 'codex_storage_smoke_test',
+    source: preserveProof ? `codex_proof_test_${proofTimestamp}` : 'codex_storage_smoke_test',
     status: storedOrder?.status,
     tables: tableChecks.tables,
     uploadLogPresent: logEvents.has('files_uploaded_to_drive')
@@ -291,6 +341,9 @@ async function postSignedStripeWebhook({
   amountTotal,
   customerEmail,
   customerName,
+  packageKey,
+  packageName,
+  proofLabel,
   origin,
   paymentIntentId,
   sessionId,
@@ -298,6 +351,9 @@ async function postSignedStripeWebhook({
   amountTotal: number;
   customerEmail: string;
   customerName: string;
+  packageKey: string;
+  packageName: string;
+  proofLabel: string;
   origin: string;
   paymentIntentId: string;
   sessionId: string;
@@ -323,9 +379,10 @@ async function postSignedStripeWebhook({
           name: customerName,
         },
         metadata: {
-          package: 'full-interview-brief',
-          packageName: 'Interview Professional',
-          source: 'codex_storage_smoke_test',
+          orderLabel: proofLabel,
+          package: packageKey,
+          packageName,
+          source: proofLabel,
         },
         mode: 'payment',
         payment_intent: paymentIntentId,
