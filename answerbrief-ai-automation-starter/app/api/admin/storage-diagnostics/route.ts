@@ -240,6 +240,7 @@ async function runSyntheticCustomerJourney(
   const logs = storedOrder?.logs || [];
   const logEvents = new Set(logs.map((log) => log.event));
   const fulfillmentQueueCount = logs.filter((log) => log.event === 'fulfillment_job_queued').length;
+  const retryVerified = fulfillmentQueueCount >= 2 || logEvents.has('fulfillment_retry_skipped_existing_delivery');
   const cleanup = preserveProof
     ? {
       ok: true,
@@ -266,8 +267,8 @@ async function runSyntheticCustomerJourney(
       interviewPrepKnowledgeReused: logEvents.has('interview_prep_kb_reused'),
       openAIExecution: logEvents.has('openai_generation_completed'),
       qaValidation: logEvents.has('qa_validation_passed') || logEvents.has('qa_validation_failed'),
-      retryBehaviorVerified: fulfillmentQueueCount >= 2,
-      retrySafeJobId: Boolean(storedOrder?.fulfillmentJobId) || fulfillmentQueueCount >= 2,
+      retryBehaviorVerified: retryVerified,
+      retrySafeJobId: Boolean(storedOrder?.fulfillmentJobId) || retryVerified,
       versionedRegistry: Boolean(storedOrder?.promptRegistryVersion || logEvents.has('interview_prep_kb_reused')),
     },
     cleanup,

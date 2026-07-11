@@ -423,6 +423,14 @@ export async function retryOrderFulfillment(orderId: string) {
     return undefined;
   }
 
+  if (order.briefStatus === 'generated' && order.generatedBriefUrl) {
+    addLog(order, 'fulfillment_retry_skipped_existing_delivery', 'Retry requested after successful delivery; existing generated brief was preserved.');
+    order.updatedAt = new Date().toISOString();
+    await writeOrders(orders);
+
+    return order;
+  }
+
   await runBriefWorkflow(order, []);
   await writeOrders(orders);
 
