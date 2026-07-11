@@ -15,6 +15,7 @@ import {
   uploadDriveFile,
 } from './google-drive';
 import { PackageKey, packages } from './packages';
+import { saveBriefRecord, saveUploadRecord } from './storage/supabase-artifacts';
 import { getOrderStore } from './storage/orders';
 
 export type PaymentStatus = 'paid' | 'unpaid' | 'failed' | 'needs_review';
@@ -369,19 +370,39 @@ async function uploadIntakeMaterials(order: Order, uploads: IntakeUpload[], inta
 
   try {
     const summary = buildIntakeSummary(intake);
-    await uploadDriveFile({
+    const intakeSummary = await uploadDriveFile({
       folderId: order.driveFolderId,
       filename: 'intake-summary.md',
       contentType: 'text/markdown; charset=utf-8',
       content: summary,
     });
+    await saveUploadRecord({
+      contentType: 'text/markdown; charset=utf-8',
+      filename: 'intake-summary.md',
+      orderId: order.id,
+      sizeBytes: Buffer.byteLength(summary),
+      storageKey: intakeSummary?.id,
+      uploadStatus: intakeSummary ? 'uploaded' : 'pending',
+    }).catch((error) => {
+      addLog(order, 'upload_record_failed', getErrorMessage(error));
+    });
 
     for (const upload of uploads) {
-      await uploadDriveFile({
+      const driveFile = await uploadDriveFile({
         folderId: order.driveFolderId,
         filename: upload.filename,
         contentType: upload.contentType,
         content: upload.content,
+      });
+      await saveUploadRecord({
+        contentType: upload.contentType,
+        filename: upload.filename,
+        orderId: order.id,
+        sizeBytes: upload.content.byteLength,
+        storageKey: driveFile?.id,
+        uploadStatus: driveFile ? 'uploaded' : 'pending',
+      }).catch((error) => {
+        addLog(order, 'upload_record_failed', getErrorMessage(error));
       });
     }
 
@@ -453,6 +474,15 @@ async function runBriefWorkflow(order: Order, uploads: IntakeUpload[]) {
     order.qaPassed = brief.qa.passed;
     order.qaWarnings = brief.qa.warnings;
     order.briefStatus = brief.qa.passed ? 'generated' : 'failed';
+    await saveBriefRecord({
+      deliveryUrl: order.generatedBriefUrl,
+      filename: brief.filename,
+      generationMode: brief.mode,
+      orderId: order.id,
+      status: order.briefStatus,
+    }).catch((error) => {
+      addLog(order, 'brief_record_failed', getErrorMessage(error));
+    });
     addLog(order, 'brief_generated', `Brief generated using ${brief.mode} mode.`);
 
     if (!brief.qa.passed) {

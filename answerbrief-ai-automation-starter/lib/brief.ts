@@ -1,6 +1,7 @@
 import { Intake } from './intake-schema';
 import type { IntakeUpload } from './orders';
 import { interviewPrepKnowledgeBase, summarizeInterviewPrepKnowledge } from './interview-prep-knowledge';
+import { generateOpenAIInterviewBrief, isOpenAIConfigured } from './openai-fulfillment';
 import { getActivePromptRecords, promptRegistryVersion } from './prompt-registry';
 
 export type BriefDepth = 'focused' | 'full' | 'executive';
@@ -10,6 +11,7 @@ export type GeneratedBrief = {
   contentType: string;
   content: string;
   mode: 'answerbrief_fulfillment_v1';
+  provider: 'deterministic' | 'openai';
   qa: {
     issues: string[];
     passed: boolean;
@@ -43,7 +45,18 @@ export async function generateInterviewBrief({
 }): Promise<GeneratedBrief> {
   const depth = getBriefDepth(packageKey);
   const analysis = buildFulfillmentAnalysis({ depth, intake, packageName, uploads });
-  const content = composeAnswerBrief(analysis);
+  const deterministicDraft = composeAnswerBrief(analysis);
+  const openAIContent = await generateOpenAIInterviewBrief({
+    deterministicDraft,
+    intake,
+    jobPosting: analysis.jobPosting,
+    knowledgeSummary: analysis.knowledgeSummary,
+    packageName,
+    promptRecords: analysis.promptRecords,
+    registryVersion: analysis.registryVersion,
+    resumeText: analysis.resumeText,
+  });
+  const content = openAIContent || deterministicDraft;
   const qa = validateBrief(content, analysis);
 
   return {
@@ -51,9 +64,14 @@ export async function generateInterviewBrief({
     contentType: 'text/markdown; charset=utf-8',
     content,
     mode: 'answerbrief_fulfillment_v1',
+    provider: openAIContent ? 'openai' : 'deterministic',
     qa,
     registryVersion: promptRegistryVersion,
   };
+}
+
+export function getOpenAIFulfillmentConfigured() {
+  return isOpenAIConfigured();
 }
 
 type FulfillmentAnalysis = ReturnType<typeof buildFulfillmentAnalysis>;

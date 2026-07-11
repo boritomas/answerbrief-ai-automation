@@ -121,6 +121,30 @@ export async function uploadDriveFile({
   return response.json() as Promise<DriveFile>;
 }
 
+export async function deleteDriveFile(fileId: string | undefined) {
+  if (!fileId || !isDriveConfigured()) {
+    return false;
+  }
+
+  const token = await getAccessToken();
+  const response = await fetch(`${driveApiBaseUrl}/files/${fileId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (response.status === 404) {
+    return true;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Google Drive file cleanup failed: ${await response.text()}`);
+  }
+
+  return true;
+}
+
 export function buildProvisionalFolderName(customerEmail: string, packageName: string, createdAt: string) {
   return sanitizeDriveName(`AnswerBrief - ${customerEmail} - ${createdAt.slice(0, 10)} - ${packageName}`);
 }

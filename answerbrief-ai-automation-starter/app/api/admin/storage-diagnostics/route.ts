@@ -1,8 +1,9 @@
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { createPaidOrder, listOrders, saveOrderIntake } from '@/lib/orders';
+import { listOrders, retryOrderFulfillment, saveOrderIntake } from '@/lib/orders';
 import type { Order } from '@/lib/orders';
-import { getDriveAuthMode, isDriveConfigured } from '@/lib/google-drive';
+import { deleteDriveFile, getDriveAuthMode, isDriveConfigured } from '@/lib/google-drive';
+import { getOpenAIFulfillmentConfigured } from '@/lib/brief';
 import { getOrderStorageDiagnostics, getOrderStore } from '@/lib/storage/orders';
 import { getSupabaseOrderStoreConfiguration } from '@/lib/storage/supabase-orders';
 
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
 
   if (runJourney) {
     try {
-      const journey = await runSyntheticCustomerJourney();
+      const journey = await runSyntheticCustomerJourney(request);
 
       return NextResponse.json({
         ok: journey.ok,
@@ -126,6 +127,8 @@ function getIntegrationDiagnostics() {
       || process.env.ADMIN_NOTIFICATION_EMAIL
       || process.env.GMAIL_SENDER_EMAIL
     ),
+    openAIConfigured: getOpenAIFulfillmentConfigured(),
+    stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET),
   };
 }
 
@@ -145,21 +148,37 @@ function authorizeAdmin(request: NextRequest) {
   };
 }
 
-async function runSyntheticCustomerJourney() {
+async function runSyntheticCustomerJourney(request: NextRequest) {
   await cleanupSyntheticData();
 
   const email = 'codex-smoke-answerbrief@example.com';
-  const order = await createPaidOrder({
-    amountPaid: 14900,
+  const sessionId = `cs_codex_smoke_${Date.now()}`;
+  const paymentIntentId = `pi_codex_smoke_${Date.now()}`;
+  const webhook = await postSignedStripeWebhook({
+    amountTotal: 14900,
     customerEmail: email,
     customerName: 'Codex E2E Smoke Test',
-    packageKey: 'full-interview-brief',
-    packageName: 'Interview Professional',
-    stripePaymentId: `pi_codex_smoke_${Date.now()}`,
-    stripeSessionId: `cs_codex_smoke_${Date.now()}`,
+    origin: request.nextUrl.origin,
+    paymentIntentId,
+    sessionId,
+  });
+  const duplicateWebhook = await postSignedStripeWebhook({
+    amountTotal: 14900,
+    customerEmail: email,
+    customerName: 'Codex E2E Smoke Test',
+    origin: request.nextUrl.origin,
+    paymentIntentId,
+    sessionId,
   });
 
+  const order = (await listOrders()).find((item) => item.stripeSessionId === sessionId);
+
+  if (!order) {
+    throw new Error('Signed Stripe webhook did not create a durable order.');
+  }
+
   const updatedOrder = await saveOrderIntake({
+    authenticatedEmail: email,
     intake: {
       careerLane: 'operations',
       email,
@@ -171,7 +190,6 @@ async function runSyntheticCustomerJourney() {
       targetRole: 'Operations Strategy Manager',
     },
     orderId: order.id,
-    token: order.intakeToken,
     uploads: [
       {
         content: Buffer.from('Synthetic resume for production verification.', 'utf8'),
@@ -185,11 +203,13 @@ async function runSyntheticCustomerJourney() {
       },
     ],
   });
+  await retryOrderFulfillment(updatedOrder.id);
 
   const storedOrder = (await listOrders()).find((item) => item.id === updatedOrder.id);
   const tableChecks = await verifySupabaseTables(updatedOrder.id);
   const logs = storedOrder?.logs || [];
   const logEvents = new Set(logs.map((log) => log.event));
+  const fulfillmentQueueCount = logs.filter((log) => log.event === 'fulfillment_job_queued').length;
   const cleanup = await cleanupSyntheticData();
 
   return {
@@ -201,17 +221,18 @@ async function runSyntheticCustomerJourney() {
     fulfillmentAutomation: {
       automaticTrigger: logEvents.has('fulfillment_job_queued'),
       interviewPrepKnowledgeReused: logEvents.has('interview_prep_kb_reused'),
+      openAIExecution: logEvents.has('openai_generation_completed'),
       qaValidation: logEvents.has('qa_validation_passed') || logEvents.has('qa_validation_failed'),
-      retrySafeJobId: Boolean(storedOrder?.fulfillmentJobId),
+      retryBehaviorVerified: fulfillmentQueueCount >= 2,
+      retrySafeJobId: Boolean(storedOrder?.fulfillmentJobId) || fulfillmentQueueCount >= 2,
       versionedRegistry: Boolean(storedOrder?.promptRegistryVersion || logEvents.has('interview_prep_kb_reused')),
     },
     cleanup,
-    customerConfirmationGenerated: logEvents.has('intake_confirmation_email_sent')
-      || logEvents.has('intake_confirmation_email_failed'),
+    customerConfirmationGenerated: logEvents.has('intake_confirmation_email_sent'),
     deliveryWorkflowRan: Boolean(
       logEvents.has('delivery_email_sent')
-      || logEvents.has('delivery_email_failed')
     ),
+    duplicateWebhookIdempotent: Boolean(logEvents.has('payment_duplicate')),
     intakeComplete: storedOrder?.intakeStatus === 'complete',
     logEvents: Array.from(logEvents).sort(),
     needsReviewMessages: logs
@@ -228,11 +249,17 @@ async function runSyntheticCustomerJourney() {
       storedOrder
       && storedOrder.paymentStatus === 'paid'
       && storedOrder.intakeStatus === 'complete'
+      && webhook.ok
+      && duplicateWebhook.ok
+      && logEvents.has('payment_duplicate')
       && tableChecks.ordersWrite
       && tableChecks.orderEventsWrite
       && tableChecks.intakeSubmissionsWrite
+      && tableChecks.uploadsWrite
+      && tableChecks.briefsWrite
       && logEvents.has('fulfillment_job_queued')
       && logEvents.has('interview_prep_kb_reused')
+      && logEvents.has('openai_generation_completed')
       && (logEvents.has('qa_validation_passed') || logEvents.has('qa_validation_failed'))
       && cleanup.ok
     ),
@@ -240,12 +267,81 @@ async function runSyntheticCustomerJourney() {
     orderId: updatedOrder.id,
     ordersWrite: tableChecks.ordersWrite,
     paymentStatus: storedOrder?.paymentStatus,
+    signedWebhook: webhook,
     source: 'codex_storage_smoke_test',
     status: storedOrder?.status,
     tables: tableChecks.tables,
     uploadLogPresent: logEvents.has('files_uploaded_to_drive')
       || logEvents.has('drive_upload_skipped')
       || logEvents.has('drive_upload_failed'),
+  };
+}
+
+async function postSignedStripeWebhook({
+  amountTotal,
+  customerEmail,
+  customerName,
+  origin,
+  paymentIntentId,
+  sessionId,
+}: {
+  amountTotal: number;
+  customerEmail: string;
+  customerName: string;
+  origin: string;
+  paymentIntentId: string;
+  sessionId: string;
+}) {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    throw new Error('STRIPE_WEBHOOK_SECRET is not configured.');
+  }
+
+  const payload = JSON.stringify({
+    id: `evt_codex_smoke_${sessionId}`,
+    object: 'event',
+    api_version: '2024-06-20',
+    created: Math.floor(Date.now() / 1000),
+    data: {
+      object: {
+        id: sessionId,
+        object: 'checkout.session',
+        amount_total: amountTotal,
+        customer_details: {
+          email: customerEmail,
+          name: customerName,
+        },
+        metadata: {
+          package: 'full-interview-brief',
+          packageName: 'Interview Professional',
+          source: 'codex_storage_smoke_test',
+        },
+        mode: 'payment',
+        payment_intent: paymentIntentId,
+        payment_status: 'paid',
+      },
+    },
+    livemode: true,
+    pending_webhooks: 1,
+    type: 'checkout.session.completed',
+  });
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = createHmac('sha256', webhookSecret)
+    .update(`${timestamp}.${payload}`)
+    .digest('hex');
+  const response = await fetch(`${origin}/api/stripe/webhook`, {
+    body: payload,
+    headers: {
+      'content-type': 'application/json',
+      'stripe-signature': `t=${timestamp},v1=${signature}`,
+    },
+    method: 'POST',
+  });
+
+  return {
+    ok: response.ok,
+    status: response.status,
   };
 }
 
@@ -332,11 +428,15 @@ async function verifySupabaseTables(orderId: string) {
   const orderRows = await supabaseRequest<{ id: string }[]>(`/rest/v1/orders?id=eq.${orderId}&select=id`);
   const eventRows = await supabaseRequest<{ id: string }[]>(`/rest/v1/order_events?order_id=eq.${orderId}&select=id`);
   const intakeRows = await supabaseRequest<{ id: string }[]>(`/rest/v1/intake_submissions?order_id=eq.${orderId}&select=id`);
+  const uploadRows = await supabaseRequest<{ id: string }[]>(`/rest/v1/uploads?order_id=eq.${orderId}&select=id`);
+  const briefRows = await supabaseRequest<{ id: string }[]>(`/rest/v1/briefs?order_id=eq.${orderId}&select=id`);
 
   return {
+    briefsWrite: briefRows.length > 0,
     intakeSubmissionsWrite: intakeRows.length > 0,
     orderEventsWrite: eventRows.length > 0,
     ordersWrite: orderRows.length > 0,
+    uploadsWrite: uploadRows.length > 0,
     tables: Object.fromEntries(tables),
   };
 }
@@ -355,6 +455,14 @@ async function cleanupSyntheticData() {
     '/rest/v1/orders?select=id&or=(customer_email.ilike.*codex-smoke*,customer_email.eq.codex-smoke-answerbrief@example.com)'
   );
   const orderIds = matchingOrders.map((order) => order.id);
+
+  for (const order of await supabaseRequest<{ drive_folder_id?: string | null }[]>(
+    '/rest/v1/orders?select=drive_folder_id&or=(customer_email.ilike.*codex-smoke*,customer_email.eq.codex-smoke-answerbrief@example.com)'
+  )) {
+    if (order.drive_folder_id) {
+      await deleteDriveFile(order.drive_folder_id).catch(() => false);
+    }
+  }
 
   if (orderIds.length > 0) {
     const orderIdFilter = `order_id=in.(${orderIds.join(',')})`;

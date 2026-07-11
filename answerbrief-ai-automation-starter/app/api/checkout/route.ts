@@ -42,7 +42,8 @@ export async function GET(request: NextRequest) {
     success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${baseUrl}/#packages`,
     metadata: {
-      package: pkg.name,
+      package: packageKey,
+      packageName: pkg.name,
     },
   });
 
@@ -78,7 +79,8 @@ export async function POST(request: NextRequest) {
     success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${baseUrl}/#packages`,
     metadata: {
-      package: pkg.name,
+      package: body.packageKey,
+      packageName: pkg.name,
     },
   });
 

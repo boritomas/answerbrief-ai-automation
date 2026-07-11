@@ -27,6 +27,7 @@ export async function runAnswerBriefFulfillmentJob(order: Order, uploads: Intake
         contentType: 'text/markdown; charset=utf-8',
         filename: 'missing-intake.md',
         mode: 'answerbrief_fulfillment_v1',
+        provider: 'deterministic',
         qa: {
           issues: ['Missing intake data.'],
           passed: false,
@@ -55,6 +56,9 @@ export async function runAnswerBriefFulfillmentJob(order: Order, uploads: Intake
     { event: 'resume_role_alignment_completed', message: 'Resume-to-role alignment and gap analysis completed.' },
     { event: 'interview_questions_generated', message: 'Likely behavioral, situational, leadership, technical, and follow-up questions generated as applicable.' },
     { event: 'star_guidance_generated', message: 'STAR story guidance generated without inventing customer experience.' },
+    brief.provider === 'openai'
+      ? { event: 'openai_generation_completed', message: 'Production OpenAI provider generated the AnswerBrief deliverable.' }
+      : { event: 'openai_generation_skipped', message: 'OPENAI_API_KEY is not configured; deterministic generator produced the deliverable.', severity: 'warning' },
     { event: 'answerbrief_composed', message: 'Package-specific AnswerBrief deliverable assembled.' },
     {
       event: brief.qa.passed ? 'qa_validation_passed' : 'qa_validation_failed',
