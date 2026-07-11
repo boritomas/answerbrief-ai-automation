@@ -318,6 +318,9 @@ async function runSyntheticCustomerJourney(
       && cleanup.ok
     ),
     orderEventsWrite: tableChecks.orderEventsWrite,
+    amountPaid: preserveProof ? 4900 : 14900,
+    packageName: storedOrder?.packageName,
+    packageKey: storedOrder?.packageKey,
     proofPreserved: preserveProof,
     proofReviewNote: preserveProof
       ? 'Synthetic proof data was intentionally preserved. Run cleanup only after Tomas confirms review.'
@@ -325,6 +328,8 @@ async function runSyntheticCustomerJourney(
     orderId: updatedOrder.id,
     ordersWrite: tableChecks.ordersWrite,
     paymentStatus: storedOrder?.paymentStatus,
+    stripePaymentIntentId: storedOrder?.stripePaymentId,
+    stripeSessionId: storedOrder?.stripeSessionId,
     proofCustomerEmail: preserveProof ? email : undefined,
     driveFolderUrl: preserveProof ? storedOrder?.driveFolderUrl : undefined,
     generatedBriefUrl: preserveProof ? storedOrder?.generatedBriefUrl : undefined,
@@ -408,6 +413,7 @@ async function postSignedStripeWebhook({
   });
 
   return {
+    eventId: `evt_codex_smoke_${sessionId}`,
     ok: response.ok,
     status: response.status,
   };
