@@ -65,8 +65,8 @@ AnswerBrief AI provides interview preparation materials only. It does not guaran
 - Expo account: `tomasnieves`
 - Expo project: `AnswerBrief AI`
 - App display name: `AnswerBrief AI`
-- iOS bundle identifier: `com.nieveslabs.answerbrief`
-- Android package name: `com.nieveslabs.answerbrief`
+- iOS bundle identifier: `com.nieveslabs.answerbriefai`
+- Android package name: `com.nieveslabs.answerbriefai`
 - Version: `1.0.0`
 - iOS build number: `1`
 - Android version code: `1`

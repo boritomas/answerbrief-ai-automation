@@ -2,4 +2,8 @@
 dist/
 node_modules/
 *.log
-
+credentials.json
+*.jks
+*.keystore
+*.p12
+*.pfx

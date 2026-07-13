@@ -77,8 +77,8 @@ Before store builds:
 
 Production profiles:
 
-- iOS bundle identifier: `com.nieveslabs.answerbrief`
-- Android package: `com.nieveslabs.answerbrief`
+- iOS bundle identifier: `com.nieveslabs.answerbriefai`
+- Android package: `com.nieveslabs.answerbriefai`
 - Version: `1.0.0`
 - iOS build number: `1`
 - Android version code: `1`

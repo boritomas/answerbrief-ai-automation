@@ -31,7 +31,7 @@ const config: ExpoConfig = {
   ios: {
     buildNumber: '1',
     supportsTablet: true,
-    bundleIdentifier: 'com.nieveslabs.answerbrief',
+    bundleIdentifier: 'com.nieveslabs.answerbriefai',
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
       NSDocumentsFolderUsageDescription: 'AnswerBrief AI lets you select resume and job posting documents for your interview brief.',
@@ -39,7 +39,7 @@ const config: ExpoConfig = {
     }
   },
   android: {
-    package: 'com.nieveslabs.answerbrief',
+    package: 'com.nieveslabs.answerbriefai',
     versionCode: 1,
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
