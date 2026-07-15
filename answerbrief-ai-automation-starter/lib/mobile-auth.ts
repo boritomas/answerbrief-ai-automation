@@ -41,6 +41,12 @@ export function createMobileSessionToken(email: string) {
 }
 
 export function generateMobileOtp(email: string, now = Date.now()) {
+  const reviewerOtp = getMobileReviewerOtp(email);
+
+  if (reviewerOtp) {
+    return reviewerOtp;
+  }
+
   const secret = getMobileAuthSecret();
 
   if (!secret) {
@@ -51,6 +57,12 @@ export function generateMobileOtp(email: string, now = Date.now()) {
 }
 
 export function verifyMobileOtp(email: string, otp: string) {
+  const reviewerOtp = getMobileReviewerOtp(email);
+
+  if (reviewerOtp && otp === reviewerOtp) {
+    return true;
+  }
+
   const secret = getMobileAuthSecret();
 
   if (!secret || !/^\d{6}$/.test(otp)) {
@@ -106,6 +118,17 @@ export function verifyMobileSessionToken(token: string): MobileSessionPayload | 
 
 function getMobileAuthSecret() {
   return process.env.MOBILE_AUTH_SECRET || '';
+}
+
+function getMobileReviewerOtp(email: string) {
+  const reviewerEmail = process.env.MOBILE_REVIEWER_EMAIL?.trim().toLowerCase();
+  const reviewerOtp = process.env.MOBILE_REVIEWER_OTP?.trim();
+
+  if (!reviewerEmail || !reviewerOtp || !/^\d{6}$/.test(reviewerOtp)) {
+    return '';
+  }
+
+  return email.toLowerCase() === reviewerEmail ? reviewerOtp : '';
 }
 
 function sign(value: string, secret: string) {
