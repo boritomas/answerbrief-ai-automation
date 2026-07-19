@@ -241,12 +241,13 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
   const pilotWorkflow = evidence.workflowEvents.filter((event) => event.opportunity_id === pilot?.id);
   const kb = evidence.employerKnowledgeBase;
   const affirmEmployer = kb.employers.find((employer) => employer.id === 'employer-affirm' || employer.canonical_name === 'Affirm');
-  const greenhouseProfile = kb.platformProfiles.find((profile) => profile.employer_id === affirmEmployer?.id && profile.platform_name === 'Greenhouse');
-  const affirmProcess = kb.applicationProcesses.find((process) => process.employer_id === affirmEmployer?.id && process.platform_name === 'Greenhouse');
-  const affirmQuestions = kb.questionCatalog.filter((question) => question.employer_id === affirmEmployer?.id && question.platform_name === 'Greenhouse');
+  const affirmEmployerId = String(affirmEmployer?.id || '');
+  const greenhouseProfile = kb.platformProfiles.find((profile) => profile.employer_id === affirmEmployerId && normalizedPlatformName(profile.platform_name) === 'greenhouse');
+  const affirmProcess = kb.applicationProcesses.find((process) => process.employer_id === affirmEmployerId && normalizedPlatformName(process.platform_name) === 'greenhouse');
+  const affirmQuestions = kb.questionCatalog.filter((question) => question.employer_id === affirmEmployerId && normalizedPlatformName(question.platform_name) === 'greenhouse');
   const approvedMappings = kb.questionMappings.filter((mapping) => mapping.approved_for_auto_fill === true && mapping.verification_state === 'tomas_verified');
-  const affirmTemplate = kb.sessionTemplates.find((template) => template.employer_id === affirmEmployer?.id && template.platform_name === 'Greenhouse');
-  const affirmAccount = kb.employerAccounts.find((account) => account.employer_id === affirmEmployer?.id && account.platform_name === 'Greenhouse');
+  const affirmTemplate = kb.sessionTemplates.find((template) => template.employer_id === affirmEmployerId && normalizedPlatformName(template.platform_name) === 'greenhouse');
+  const affirmAccount = kb.employerAccounts.find((account) => account.employer_id === affirmEmployerId && normalizedPlatformName(account.platform_name) === 'greenhouse');
   const profileValidation = validateProfile(evidence.profile);
   const sourceRunCurrent = evidence.latestSourceRun && new Date(String(evidence.latestSourceRun.executed_at)).getTime() > Date.now() - 1000 * 60 * 60 * 24 * 7;
   const qualifiedHumanGate = pilotWorkflow.some((event) => {
@@ -280,7 +281,7 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
     row('Submission or qualifying human-only gate reached', submissionConfirmed || qualifiedHumanGate, qualifiedHumanGate || submissionConfirmed ? '' : 'Human-only gate exists, but resume upload/submission prerequisites are not complete.'),
     row('Employer knowledge base exists', Boolean(kb.employers.length && kb.platformProfiles.length && kb.applicationProcesses.length && kb.questionCatalog.length && kb.questionMappings.length && kb.sessionTemplates.length)),
     row('Affirm employer record saved', Boolean(affirmEmployer && affirmEmployer.status === 'active')),
-    row('Greenhouse platform record saved', Boolean(greenhouseProfile && greenhouseProfile.platform_name === 'Greenhouse')),
+    row('Greenhouse platform record saved', Boolean(greenhouseProfile)),
     row('Affirm process steps captured', Boolean(affirmProcess && arrayLength(affirmProcess.ordered_onboarding_steps) > 0 && arrayLength(affirmProcess.required_fields) > 0)),
     row('Employer questions cataloged', affirmQuestions.length >= 10, `${affirmQuestions.length} Affirm Greenhouse question(s) cataloged.`),
     row('Approved question mappings created', approvedMappings.length >= 7, `${approvedMappings.length} verified mapping(s) approved for auto-fill.`),
@@ -339,6 +340,10 @@ function hasKeys(value: unknown) {
 
 function arrayLength(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
+}
+
+function normalizedPlatformName(value: unknown) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function buildSalaryRange(jobs: JsonRecord[]) {
