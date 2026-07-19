@@ -6,11 +6,10 @@ const path = require('node:path');
 (async () => {
   const {
     appRoot,
-    evaluateProductionEvidence,
-    fileExistsAndReadable,
+    defaultProductionStatusUrl,
+    evaluateStatusApiEvidence,
+    fetchProductionStatusEvidence,
     formatRows,
-    loadProductionEvidenceIfPresent,
-    productionEvidencePath,
     repoRoot,
   } = await import('./career-os-mission-lib.mjs');
 
@@ -41,16 +40,13 @@ const path = require('node:path');
   run('TypeScript type check passes', 'npx', ['tsc', '--noEmit'], appRoot);
   run('Next production build passes', 'npm', ['run', 'build'], appRoot);
 
-  const evidence = loadProductionEvidenceIfPresent();
-  if (!evidence) {
-    add('Production evidence file exists', false, `missing ${path.relative(repoRoot, productionEvidencePath)}`);
-  } else {
-    add('Production evidence file exists', true);
-    for (const row of evaluateProductionEvidence(evidence)) rows.push(row);
-    if (evidence?.pilot?.resumeArtifact?.path) {
-      const resumePath = path.resolve(repoRoot, evidence.pilot.resumeArtifact.path);
-      add('Production resume artifact opens', await fileExistsAndReadable(resumePath), path.relative(repoRoot, resumePath));
-    }
+  const statusUrl = process.env.CAREER_OS_VERIFY_URL || defaultProductionStatusUrl;
+  try {
+    const statusPayload = await fetchProductionStatusEvidence(statusUrl);
+    add('Production status API reachable', true, statusUrl);
+    for (const row of evaluateStatusApiEvidence(statusPayload)) rows.push(row);
+  } catch (error) {
+    add('Production status API reachable', false, compact(error instanceof Error ? error.message : String(error)));
   }
 
   console.log('Career OS mission verification');

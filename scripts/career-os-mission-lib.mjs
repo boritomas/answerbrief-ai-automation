@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 export const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 export const appRoot = path.join(repoRoot, 'answerbrief-ai-automation-starter');
 export const syntheticRoot = path.join(repoRoot, 'fixtures', 'synthetic-career-os');
-export const productionEvidencePath = path.join(repoRoot, 'data', 'career-os-production-evidence.json');
+export const defaultProductionStatusUrl = 'https://www.answer-brief.com/api/career-os/status';
 
 export const qualifyingHumanOnlyGates = new Set([
   'CAPTCHA',
@@ -249,9 +249,31 @@ export function evaluateProductionEvidence(evidence) {
   return rows;
 }
 
-export function loadProductionEvidenceIfPresent() {
-  if (!existsSync(productionEvidencePath)) return null;
-  return readJson(productionEvidencePath);
+export async function fetchProductionStatusEvidence(statusUrl = process.env.CAREER_OS_VERIFY_URL || defaultProductionStatusUrl) {
+  const response = await fetch(statusUrl, {
+    headers: { accept: 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`GET ${statusUrl} returned ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+export function evaluateStatusApiEvidence(payload) {
+  const status = payload?.status || payload;
+  const rows = [];
+  const add = (name, passed, detail = '') => rows.push({ name, passed: Boolean(passed), detail });
+
+  add('Production status API returns normalized status', Boolean(status?.environment && status?.evidence && Array.isArray(status?.verificationRows)));
+  add('Production status is Supabase-backed', status?.environment === 'production' && status?.evidence?.ownerEmail === 'tomas@nieves.com');
+
+  for (const row of status?.verificationRows || []) {
+    add(row.name, row.passed, row.detail || '');
+  }
+
+  return rows;
 }
 
 export function formatRows(rows) {

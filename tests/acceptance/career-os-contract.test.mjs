@@ -166,3 +166,16 @@ test('live-site status response and snapshot summary are factual and not hard-co
   assert.match(summary.salary, /\$235K-\$285K/);
   assert.equal(status.productionEvidenceReady, false);
 });
+
+test('production status implementation has no manual evidence file dependency', () => {
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+  const verifier = readFileSync(path.join(repoRoot, 'scripts', 'verify-career-os-mission'), 'utf8');
+  const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
+  const sourceRunner = readFileSync(path.join(repoRoot, 'scripts', 'run-career-os-source.mjs'), 'utf8');
+
+  assert.doesNotMatch(statusSource, /CAREER_OS_PRODUCTION_EVIDENCE_PATH|CAREER_OS_STATUS_PATH|career-os-production-evidence\.json/);
+  assert.doesNotMatch(verifier, /Production evidence file|loadProductionEvidenceIfPresent|career-os-production-evidence\.json/);
+  assert.doesNotMatch(page, /View Status JSON/);
+  assert.match(sourceRunner, /boards-api\.greenhouse\.io/);
+  assert.match(sourceRunner, /career_os_job_postings/);
+});

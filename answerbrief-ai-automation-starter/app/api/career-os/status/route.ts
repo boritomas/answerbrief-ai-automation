@@ -4,7 +4,7 @@ import { getCareerOsStatus, summarizeCareerOsStatus } from '@/lib/career-os-stat
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const status = getCareerOsStatus();
+  const status = await getCareerOsStatus();
 
   return NextResponse.json({
     status,

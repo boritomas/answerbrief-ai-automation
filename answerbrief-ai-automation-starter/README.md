@@ -74,8 +74,9 @@ FROM_ADDRESS=hello@answer-brief.com
 FROM_NAME=AnswerBrief AI
 REPLY_TO=hello@answer-brief.com
 OPENAI_API_KEY=
-CAREER_OS_PRODUCTION_EVIDENCE_PATH=
-CAREER_OS_STATUS_PATH=
+CAREER_OS_OWNER_EMAIL=tomas@nieves.com
+CAREER_OS_VERIFY_URL=https://www.answer-brief.com/api/career-os/status
+CAREER_OS_SOURCE_BOARDS=affirm
 ```
 
 In Stripe, create one Payment Link for each package:
@@ -158,7 +159,15 @@ The private Career OS status surface is available at:
 http://localhost:3000/career-os
 ```
 
-It reads factual production status only from `CAREER_OS_PRODUCTION_EVIDENCE_PATH` or `CAREER_OS_STATUS_PATH`. If neither variable points to a production evidence file, the page and `/api/career-os/status` report that production discovery evidence is not connected.
+It reads factual production status from the existing Career OS Supabase tables using the server-side Supabase service role key. The page no longer depends on a manually maintained evidence JSON file.
+
+Run the public Greenhouse source adapter from the repo root:
+
+```bash
+node scripts/run-career-os-source.mjs --boards affirm
+```
+
+Use `--persist` only in a runtime that has the production Supabase service role secret.
 
 Run the repository completion gate from the repo root:
 
