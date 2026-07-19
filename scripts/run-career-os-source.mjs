@@ -2,21 +2,43 @@
 import crypto from 'node:crypto';
 
 const ownerEmail = process.env.CAREER_OS_OWNER_EMAIL || 'tomas@nieves.com';
-const boards = argValue('--boards', process.env.CAREER_OS_SOURCE_BOARDS || 'affirm')
+const market = argValue('--market', process.env.CAREER_OS_MARKET || 'telecom');
+const expandedTelecomBoards = [
+  'affirm',
+  'bandwidth',
+  'boxinc',
+  'braze',
+  'cloudflare',
+  'datadog',
+  'dialpad',
+  'five9',
+  'googlefiber',
+  'intercom',
+  'mongodb',
+  'nice',
+  'okta',
+  'samsara',
+  'toast',
+  'twilio',
+  'vonage',
+];
+const boards = argValue('--boards', process.env.CAREER_OS_SOURCE_BOARDS || (market === 'telecom' ? expandedTelecomBoards.join(',') : 'affirm'))
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
 const persist = process.argv.includes('--persist') || process.env.CAREER_OS_SOURCE_PERSIST === '1';
-const minFitScore = Number(argValue('--min-fit-score', process.env.CAREER_OS_MIN_FIT_SCORE || '70'));
+const minFitScore = Number(argValue('--min-fit-score', process.env.CAREER_OS_MIN_FIT_SCORE || (market === 'telecom' ? '85' : '70')));
 const executedAt = new Date().toISOString();
 const runDay = executedAt.slice(0, 10);
-const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:greenhouse:${boards.join(',')}:${runDay}`);
+const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:${market}:greenhouse:${boards.join(',')}:${runDay}`);
 
 const sourceRun = {
   id: sourceRunId,
   owner_email: ownerEmail,
-  source_type: 'public_ats_api',
-  source_name: `Greenhouse public job boards: ${boards.join(', ')}`,
+  source_type: market === 'telecom' ? 'expanded_public_ats_api' : 'public_ats_api',
+  source_name: market === 'telecom'
+    ? 'Expanded telecom, communications, connectivity, cloud, and adjacent platform official Greenhouse sources'
+    : `Greenhouse public job boards: ${boards.join(', ')}`,
   source_url: 'https://boards-api.greenhouse.io/v1/boards',
   status: 'succeeded',
   executed_at: executedAt,
@@ -24,12 +46,47 @@ const sourceRun = {
   number_accepted: 0,
   number_skipped: 0,
   search_config: {
+    market,
     boards,
-    role_keywords: ['senior director', 'director', 'product management', 'platform', 'customer experience', 'automation'],
+    market_scope: market === 'telecom' ? [
+      'telecommunications carriers',
+      'cable broadband internet providers',
+      'wireless network telecom infrastructure',
+      'satellite and next-generation connectivity',
+      'communications software and cloud platforms',
+      'devices connected experiences',
+      'telecom consulting and systems integration',
+      'adjacent digital platform industries',
+    ] : undefined,
+    role_keywords: [
+      'senior director',
+      'director',
+      'vice president',
+      'head of product',
+      'principal product manager',
+      'group product manager',
+      'product management',
+      'platform',
+      'customer experience',
+      'contact center',
+      'communications',
+      'transformation',
+      'automation',
+      'ai',
+    ],
     min_fit_score: minFitScore,
+    texas_remote_filter: 'remote_us_texas_or_reasonable_texas_markets',
+    automatic_submission_limit: 3,
     invoked_by: process.env.CAREER_OS_INVOKED_BY || 'manual-codex-run',
     daily_automation_id: process.env.CAREER_OS_DAILY_AUTOMATION_ID || 'daily-tomas-career-os-run',
-    idempotency_key: `${ownerEmail}:greenhouse:${boards.join(',')}:${runDay}`,
+    idempotency_key: `${ownerEmail}:${market}:greenhouse:${boards.join(',')}:${runDay}`,
+    cost_controls: [
+      'official_public_apis_first',
+      'deterministic_hard_filters_before_analysis',
+      'dedupe_by_company_requisition_and_description_fingerprint',
+      'full_analysis_only_for_shortlist',
+      'reuse_verified_application_answers',
+    ],
   },
   evidence: [],
 };
@@ -174,18 +231,22 @@ async function supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows) {
 function scorePosting(job, description) {
   const title = String(job.title || '').toLowerCase();
   const text = `${title} ${job.location?.name || ''} ${description}`.toLowerCase();
-  let score = 30;
-  if (hasPhrase(title, 'senior director')) score += 22;
-  else if (hasPhrase(title, 'director')) score += 14;
+  let score = market === 'telecom' ? 34 : 30;
+  if (hasPhrase(title, 'senior director') || hasPhrase(title, 'vice president')) score += 22;
+  else if (hasPhrase(title, 'director') || hasPhrase(title, 'head of')) score += 16;
+  else if (hasPhrase(title, 'principal') || hasPhrase(title, 'group product')) score += 14;
   if (hasPhrase(title, 'product management')) score += 25;
-  else if (hasPhrase(title, 'product manager') || /\bproduct\b/.test(title)) score += 18;
-  if (hasPhrase(title, 'platform') || hasPhrase(text, 'platform strategy') || hasPhrase(text, 'card platform')) score += 8;
-  if (hasPhrase(text, 'consumer experience') || hasPhrase(text, 'customer')) score += 4;
-  if (hasPhrase(text, 'automation') || /\bai\b/.test(text)) score += 4;
-  if (hasPhrase(text, 'payments') || hasPhrase(text, 'cards') || hasPhrase(text, 'fintech')) score += 5;
-  if (/remote us/i.test(job.location?.name || '')) score += 5;
-  if (/remote canada|remote uk|remote poland|remote spain/i.test(job.location?.name || '')) score -= 20;
-  if (!/\bproduct\b/.test(title) && /compliance|counsel|sales|marketing|software engineer|learning|account|finance|analytics|designer/i.test(title)) score -= 30;
+  else if (hasPhrase(title, 'product manager') || /\bproduct\b/.test(title)) score += 19;
+  if (hasPhrase(title, 'transformation') || hasPhrase(text, 'business transformation')) score += 13;
+  if (hasPhrase(title, 'platform') || hasPhrase(text, 'platform strategy') || hasPhrase(text, 'workflow')) score += 8;
+  if (hasPhrase(text, 'customer experience') || hasPhrase(text, 'contact center') || hasPhrase(text, 'ccaas') || hasPhrase(text, 'ucaas')) score += 9;
+  if (hasPhrase(text, 'telecom') || hasPhrase(text, 'communications') || hasPhrase(text, 'connectivity') || hasPhrase(text, 'wireless') || hasPhrase(text, 'broadband')) score += 8;
+  if (hasPhrase(text, 'automation') || /\bai\b/.test(text) || hasPhrase(text, 'agentic')) score += 6;
+  if (hasPhrase(text, 'payments') || hasPhrase(text, 'cards') || hasPhrase(text, 'fintech')) score += market === 'telecom' ? 2 : 5;
+  if (/remote\s*-\s*us|remote,\s*us|united states \(remote\)|usa\s*-\s*remote|work from home - us/i.test(job.location?.name || '')) score += 7;
+  if (/austin|dallas|plano|irving|houston|san antonio|texas/i.test(`${job.location?.name || ''} ${description}`)) score += 5;
+  if (/remote canada|remote uk|remote poland|remote spain|india|ireland|london|dublin|germany|japan|israel/i.test(job.location?.name || '')) score -= 25;
+  if (!/\b(product|transformation|strategy|customer experience)\b/.test(title) && /compliance|counsel|sales|marketing|software engineer|learning|account|finance|analytics|designer|intern|apprentice/i.test(title)) score -= 34;
   return Math.min(score, 95);
 }
 

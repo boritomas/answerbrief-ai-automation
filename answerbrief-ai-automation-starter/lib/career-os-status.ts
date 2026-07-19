@@ -202,7 +202,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     submittedApplications,
     humanOnlyGates,
     salaryRange,
-    nextAction: buildNextAction(evidence, openTasks),
+    nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates),
     productionEvidenceReady: supabaseConnected,
     blocker: evidence.diagnostics[0],
     evidence,
@@ -210,8 +210,8 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   };
 }
 
-function buildNextAction(evidence: CareerOsEvidence, openTasks: JsonRecord[]) {
-  const latestHumanGate = evidence.workflowEvents.find((event) => String(event.event_type || '').includes('human_only_gate'));
+function buildNextAction(evidence: CareerOsEvidence, openTasks: JsonRecord[], openHumanOnlyGates: JsonRecord[]) {
+  const latestHumanGate = openHumanOnlyGates[0];
 
   if (latestHumanGate) {
     return {

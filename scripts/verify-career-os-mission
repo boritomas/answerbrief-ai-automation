@@ -15,10 +15,17 @@ const path = require('node:path');
 
   const rows = [];
   const add = (name, passed, detail = '') => rows.push({ name, passed: Boolean(passed), detail });
+  const localTsc = path.join(appRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc');
 
-  function run(name, command, args, cwd) {
-    const result = spawnSync(command, args, { cwd, encoding: 'utf8', stdio: 'pipe' });
-    add(name, result.status === 0, result.status === 0 ? '' : compact(result.stderr || result.stdout || `${command} failed`));
+  function run(name, command, args, cwd, timeout = 180000) {
+    const result = spawnSync(command, args, {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
+      stdio: 'pipe',
+      timeout,
+    });
+    add(name, result.status === 0, result.status === 0 ? '' : compact(result.stderr || result.stdout || result.error?.message || `${command} failed`));
     return result.status === 0;
   }
 
@@ -37,8 +44,8 @@ const path = require('node:path');
 
   run('Acceptance tests pass', 'node', ['--test', 'tests/acceptance/career-os-contract.test.mjs'], repoRoot);
   run('Career OS source lint passes', 'npm', ['run', 'lint'], appRoot);
-  run('TypeScript type check passes', 'npx', ['tsc', '--noEmit'], appRoot);
-  run('Next production build passes', 'npm', ['run', 'build'], appRoot);
+  run('TypeScript type check passes', localTsc, ['--noEmit', '--incremental', 'false'], appRoot);
+  run('Next production build passes', 'npx', ['-y', 'node@20', 'node_modules/next/dist/bin/next', 'build'], appRoot, 600000);
 
   const statusUrl = process.env.CAREER_OS_VERIFY_URL || defaultProductionStatusUrl;
   try {
