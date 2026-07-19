@@ -2,7 +2,7 @@ import { getCareerOsStatus, summarizeCareerOsStatus } from '@/lib/career-os-stat
 
 export const dynamic = 'force-dynamic';
 
-const navItems = ['Home', 'Opportunities', 'Applications', 'Knowledge', 'Interviews', 'Contacts', 'Documents'];
+const navItems = ['Home', 'Daily', 'Opportunities', 'Applications', 'Knowledge', 'Interviews', 'Contacts', 'Documents'];
 
 export default async function CareerOsPage() {
   const status = await getCareerOsStatus();
@@ -11,6 +11,8 @@ export default async function CareerOsPage() {
   const artifacts = status.evidence.artifacts.filter((artifact) => artifact.artifact_type === 'targeted_resume' || artifact.artifact_type === 'application_package');
   const knowledgeBase = status.evidence.employerKnowledgeBase;
   const affirmEmployer = knowledgeBase.employers.find((employer) => String(employer.id) === 'employer-affirm' || String(employer.canonical_name) === 'Affirm');
+  const dailyWorkflow = status.dailyWorkflow;
+  const queueItems = flattenActionQueue(dailyWorkflow.consolidatedActionQueue.groups);
 
   return (
     <main className="career-os-shell">
@@ -34,6 +36,12 @@ export default async function CareerOsPage() {
             <Metric label="Applications Remaining" value={status.remainingQualifiedApplications} />
             <Metric label="Waiting on Tomas" value={status.waitingOnTomas} />
           </div>
+          <div className="career-os-metrics secondary" aria-label="Career OS daily pipeline health">
+            <Metric label="Ready for Automation" value={status.readyForAutomation} />
+            <Metric label="New Jobs Today" value={dailyWorkflow.pipelineHealth.newOpportunitiesToday} />
+            <Metric label="Submitted Today" value={dailyWorkflow.pipelineHealth.applicationsSubmittedToday} />
+            <Metric label="Interviews" value={dailyWorkflow.pipelineHealth.interviews} />
+          </div>
           <div className="career-os-summary">
             <p>{summary.applyLine}</p>
             <p>{summary.remainingLine}</p>
@@ -41,6 +49,7 @@ export default async function CareerOsPage() {
             <p>{summary.packageExplanation}</p>
             <p>{summary.submittedLine}</p>
             <p>{summary.needsLine}</p>
+            <p>{summary.dailyWorkflowLine}</p>
             <p>Posted compensation across matched jobs: {summary.postedCompensationRange}</p>
             <p>{summary.compensationPreferenceLine}</p>
           </div>
@@ -65,6 +74,28 @@ export default async function CareerOsPage() {
             </>
           )}
         </aside>
+      </section>
+
+      <section id="daily" className="career-os-band">
+        <h2>Daily Pipeline Health</h2>
+        <p>{dailyWorkflow.status} · {dailyWorkflow.dailyReportStatus}</p>
+        <p>Daily schedule: {dailyWorkflow.dailySchedule.phases.map((phase) => `${phase.name} ${phase.timeCentral}`).join('; ')}.</p>
+        <p>Recruiter responses: {dailyWorkflow.pipelineHealth.recruiterResponses}. Rejections: {dailyWorkflow.pipelineHealth.rejectedByEmployers}. Offers: {dailyWorkflow.pipelineHealth.offers}.</p>
+        <p>Automation completion: {dailyWorkflow.pipelineHealth.automationCompletionRate.toFixed(1)}%. Human intervention: {dailyWorkflow.pipelineHealth.humanInterventionRate.toFixed(1)}%.</p>
+        <p>Next exact action: {status.nextAction?.label || dailyWorkflow.actionQueueStatus}</p>
+        <div className="career-os-list">
+          {queueItems.slice(0, 8).map((item) => (
+            <article className="career-os-row" key={`${item.group}-${item.employer}-${item.role}-${item.exactQuestionOrAction}`}>
+              <div>
+                <h3>{item.employer}: {item.exactQuestionOrAction}</h3>
+                <p>{item.role} · {item.group.replace(/_/g, ' ')} · unlocks {item.applicationsUnlocked}</p>
+                {item.exactOptions.length ? <p>Options: {item.exactOptions.join(', ')}</p> : null}
+                {item.resumePath ? <p>Resume: {item.resumePath}</p> : null}
+              </div>
+              <span>{item.estimatedMinutes} min</span>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section id="opportunities" className="career-os-band">
@@ -157,4 +188,29 @@ function Metric({ label, value }: { label: string; value: number }) {
 function formatDate(value: unknown) {
   if (!value) return 'not recorded';
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(String(value)));
+}
+
+function flattenActionQueue(groups: {
+  accountMfaCaptchaIdentity: Array<Record<string, unknown>>;
+  compensationDecisions: Array<Record<string, unknown>>;
+  factualQuestions: Array<Record<string, unknown>>;
+  legalPolicyApprovals: Array<Record<string, unknown>>;
+  oneClickOrBrowserActions: Array<Record<string, unknown>>;
+}) {
+  return [
+    ...groups.oneClickOrBrowserActions,
+    ...groups.factualQuestions,
+    ...groups.legalPolicyApprovals,
+    ...groups.compensationDecisions,
+    ...groups.accountMfaCaptchaIdentity,
+  ].map((item) => ({
+    applicationsUnlocked: Number(item.applicationsUnlocked || 0),
+    employer: String(item.employer || 'Employer'),
+    estimatedMinutes: Number(item.estimatedMinutes || 1),
+    exactOptions: Array.isArray(item.exactOptions) ? item.exactOptions.map(String) : [],
+    exactQuestionOrAction: String(item.exactQuestionOrAction || 'Tomas action required'),
+    group: String(item.group || 'factual_questions'),
+    resumePath: item.resumePath ? String(item.resumePath) : '',
+    role: String(item.role || 'Role'),
+  }));
 }

@@ -179,3 +179,20 @@ test('production status implementation has no manual evidence file dependency', 
   assert.match(sourceRunner, /boards-api\.greenhouse\.io/);
   assert.match(sourceRunner, /career_os_job_postings/);
 });
+
+test('permanent daily workflow is scheduled, secured, and verified', () => {
+  const vercelConfig = readJson(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'vercel.json'));
+  const dailyCycleSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-daily-cycle.ts'), 'utf8');
+  const cronRoute = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'daily-run', 'route.ts'), 'utf8');
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+
+  assert.deepEqual(vercelConfig.crons, [{ path: '/api/career-os/daily-run', schedule: '0 12 * * *' }]);
+  assert.match(cronRoute, /CRON_SECRET|CAREER_OS_CRON_SECRET/);
+  assert.match(dailyCycleSource, /DAILY_TARGET_NEWLY_IDENTIFIED = 20/);
+  assert.match(dailyCycleSource, /DAILY_TARGET_ACTIVE_QUALIFIED = 15/);
+  assert.match(dailyCycleSource, /incremental_discovery_only/);
+  assert.match(dailyCycleSource, /consolidatedActionQueue/);
+  assert.match(dailyCycleSource, /required_total_compensation/);
+  assert.match(statusSource, /Permanent daily workflow configured/);
+  assert.match(statusSource, /focusedVerificationRows/);
+});

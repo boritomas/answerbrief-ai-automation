@@ -31,6 +31,8 @@ Completion requires all of the following:
 - the workflow reached confirmed submission or a documented qualifying human-only gate;
 - the live application reports factual state;
 - daily automation invokes the same real pipeline;
+- permanent scheduled daily workflow is configured;
+- incremental discovery, posting freshness, deduplication, qualification, Texas eligibility, package reuse, application checkpoints, submission evidence, daily report accuracy, action-queue consolidation, pipeline replenishment, retry protection, and cost controls are verified;
 - no duplicate application was created;
 - remote commit contains the changes;
 - production deployment corresponds to that commit;
@@ -64,6 +66,9 @@ Tests under `tests/acceptance/` use synthetic data only. They must cover:
 - submission evidence handling;
 - duplicate-application prevention;
 - daily-run idempotency;
+- permanent scheduled daily workflow;
+- consolidated Tomas action queue;
+- daily pipeline health and cost controls;
 - RLS contract;
 - cross-user isolation;
 - admin authorization;

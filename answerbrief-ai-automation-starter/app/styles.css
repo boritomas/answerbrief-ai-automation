@@ -1015,6 +1015,10 @@ th { background: #eef1f3; }
   margin: 28px 0;
 }
 
+.career-os-metrics.secondary {
+  margin-top: -12px;
+}
+
 .career-os-metric {
   background: #eef3f8;
   border: 1px solid #dbe3ec;

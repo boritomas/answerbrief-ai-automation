@@ -19,6 +19,22 @@ Career OS is an evidence-first orchestration layer. It may use AI for language w
 - Daily Autonomous Agent: scheduled execution of the same production pipeline used by interactive actions.
 - System Administration: adapter health, credentials, raw logs, queues, migrations, tests, and cost controls.
 
+## Daily Operating Cycle
+
+Career OS runs one idempotent production cron every day through `/api/career-os/daily-run`. The run performs the daily operating cycle with phase evidence for morning discovery, application processing, and afternoon status refresh while respecting once-per-day cron constraints.
+
+The daily cycle:
+
+- uses official sources first and records the source registry used;
+- deduplicates before scoring or package generation;
+- verifies posting freshness and Texas eligibility before package creation;
+- keeps unique job count, application count, and package-asset count separate;
+- reuses unchanged packages by fingerprint;
+- submits only when the employer route, verified answers, legal approvals, compensation answers, resume upload, and confirmation capture are all safe;
+- consolidates unresolved Tomas decisions into one daily action queue;
+- records recruiter, interview, rejection, withdrawal, offer, follow-up, and last-activity state when evidence exists;
+- stores cost-control evidence and retry-protection evidence on each daily report.
+
 ## State Model
 
 Career OS state must be auditable. Every opportunity, package, adapter run, and submission attempt records:

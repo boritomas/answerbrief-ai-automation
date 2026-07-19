@@ -1,3 +1,8 @@
+import {
+  buildDailyOperatingCycleStatus,
+  type DailyOperatingCycleStatus,
+} from './career-os-daily-cycle';
+
 type JsonRecord = Record<string, unknown>;
 
 export type CareerOsStatus = {
@@ -34,6 +39,7 @@ export type CareerOsStatus = {
   };
   releaseCompletionPercentage: number;
   actionableProgressPercentage: number;
+  dailyWorkflow: DailyOperatingCycleStatus;
   nextAction?: {
     label: string;
     reason: string;
@@ -190,6 +196,7 @@ export function summarizeCareerOsStatus(status: CareerOsStatus) {
     needsLine: `${status.waitingOnTomas} application${status.waitingOnTomas === 1 ? '' : 's'} waiting on Tomas.`,
     postedCompensationRange: salary,
     compensationPreferenceLine: `Tomas preferred minimum base salary: ${preferredBase}; optional desired-compensation fields stay blank.`,
+    dailyWorkflowLine: `${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new job record${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? '' : 's'} today; ${status.dailyWorkflow.pipelineHealth.readyForAutomation} ready for automation; ${status.dailyWorkflow.pipelineHealth.interviews} interview${status.dailyWorkflow.pipelineHealth.interviews === 1 ? '' : 's'}.`,
   };
 }
 
@@ -211,7 +218,8 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   const preparedPackages = canonicalRelease.totalPackages;
   const salaryRange = buildSalaryRange(activeJobPostings);
   const compensationPreference = buildCompensationPreference(evidence.profile);
-  const verificationRows = buildVerificationRows(evidence, supabaseConnected);
+  const dailyWorkflow = buildDailyOperatingCycleStatus(evidence, canonicalRelease);
+  const verificationRows = buildVerificationRows(evidence, supabaseConnected, dailyWorkflow);
 
   return {
     environment: supabaseConnected ? 'production' : 'unconfigured',
@@ -240,6 +248,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     compensationPreference,
     releaseCompletionPercentage: canonicalRelease.releaseCompletionPercentage,
     actionableProgressPercentage: canonicalRelease.actionableProgressPercentage,
+    dailyWorkflow,
     nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates),
     productionEvidenceReady: supabaseConnected,
     blocker: evidence.diagnostics[0],
@@ -273,7 +282,7 @@ function buildNextAction(evidence: CareerOsEvidence, openTasks: JsonRecord[], op
   return undefined;
 }
 
-function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: boolean): VerificationRow[] {
+function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: boolean, dailyWorkflow: DailyOperatingCycleStatus): VerificationRow[] {
   const pilot = evidence.jobPostings.find((job) => job.selected_for_pilot) || evidence.jobPostings[0];
   const pilotArtifacts = evidence.artifacts.filter((artifact) => artifact.opportunity_id === pilot?.id);
   const pilotWorkflow = evidence.workflowEvents.filter((event) => event.opportunity_id === pilot?.id);
@@ -331,6 +340,8 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
     row('Production health passes', supabaseConnected && evidence.diagnostics.length === 0),
     row('Deployment evidence exists', Boolean(evidence.deployment.deploymentUrl)),
     row('Production browser validation evidence exists', evidence.workflowEvents.some((event) => event.event_type === 'production_browser_validation')),
+    row('Permanent daily workflow configured', dailyWorkflow.status === 'configured', `${dailyWorkflow.dailySchedule.path} ${dailyWorkflow.dailySchedule.cron}`),
+    ...dailyWorkflow.focusedVerificationRows,
   ];
 }
 
