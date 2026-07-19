@@ -946,8 +946,120 @@ td {
 
 th { background: #eef1f3; }
 
+.career-os-shell {
+  background: #f6f7f9;
+  min-height: 100vh;
+}
+
+.career-os-nav {
+  align-items: center;
+  background: rgba(255, 255, 255, .92);
+  border-bottom: 1px solid #d9e0e8;
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 7%;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.career-os-nav nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: .94rem;
+}
+
+.career-os-nav nav a {
+  border-radius: 8px;
+  color: #344256;
+  padding: 8px 11px;
+  text-decoration: none;
+}
+
+.career-os-nav nav a:hover {
+  background: #e9edf3;
+}
+
+.career-os-home {
+  align-items: stretch;
+  display: grid;
+  gap: 32px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr);
+  padding-top: 72px;
+}
+
+.career-os-briefing,
+.career-os-action {
+  background: #ffffff;
+  border: 1px solid #d9e0e8;
+  border-radius: 8px;
+  box-shadow: 0 12px 34px rgba(15, 39, 72, .07);
+  padding: 28px;
+}
+
+.career-os-briefing h1 {
+  font-size: clamp(2.1rem, 4vw, 4rem);
+  margin-bottom: 20px;
+}
+
+.career-os-action h2,
+.career-os-band h2 {
+  font-size: clamp(1.45rem, 2.5vw, 2.25rem);
+}
+
+.career-os-metrics {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 28px 0;
+}
+
+.career-os-metric {
+  background: #eef3f8;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  min-height: 112px;
+  padding: 18px;
+}
+
+.career-os-metric strong {
+  color: #0f2748;
+  display: block;
+  font-size: 2.15rem;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+
+.career-os-metric span {
+  color: #53657d;
+  display: block;
+  font-size: .9rem;
+  line-height: 1.35;
+}
+
+.career-os-summary {
+  color: #344256;
+  display: grid;
+  gap: 6px;
+  margin: 18px 0 0;
+}
+
+.career-os-summary p {
+  margin: 0;
+}
+
+.career-os-band {
+  background: #ffffff;
+  border-top: 1px solid #d9e0e8;
+  padding-bottom: 56px;
+  padding-top: 56px;
+}
+
 @media (max-width: 980px) {
   .hero-grid,
+  .career-os-home,
+  .career-os-metrics,
   .steps,
   .timeline-steps,
   .why-grid,
@@ -976,7 +1088,8 @@ th { background: #eef1f3; }
 }
 
 @media (max-width: 720px) {
-  .nav {
+  .nav,
+  .career-os-nav {
     align-items: flex-start;
     flex-direction: column;
     gap: 12px;

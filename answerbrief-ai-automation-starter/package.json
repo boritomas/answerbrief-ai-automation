@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "node ../scripts/lint-career-os-source.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test ../tests/acceptance/career-os-contract.test.mjs"
   },
   "dependencies": {
     "@stripe/stripe-js": "^4.0.0",

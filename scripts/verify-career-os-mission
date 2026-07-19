@@ -1,0 +1,70 @@
+#!/usr/bin/env node
+const { spawnSync } = require('node:child_process');
+const { existsSync } = require('node:fs');
+const path = require('node:path');
+
+(async () => {
+  const {
+    appRoot,
+    evaluateProductionEvidence,
+    fileExistsAndReadable,
+    formatRows,
+    loadProductionEvidenceIfPresent,
+    productionEvidencePath,
+    repoRoot,
+  } = await import('./career-os-mission-lib.mjs');
+
+  const rows = [];
+  const add = (name, passed, detail = '') => rows.push({ name, passed: Boolean(passed), detail });
+
+  function run(name, command, args, cwd) {
+    const result = spawnSync(command, args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+    add(name, result.status === 0, result.status === 0 ? '' : compact(result.stderr || result.stdout || `${command} failed`));
+    return result.status === 0;
+  }
+
+  add('AGENTS.md installed', existsSync(path.join(repoRoot, 'AGENTS.md')));
+  for (const doc of [
+    'CAREER_OS_MISSION.md',
+    'CAREER_OS_ARCHITECTURE.md',
+    'VERIFIED_PROFILE_AND_EVIDENCE_RULES.md',
+    'EMPLOYER_AUTOMATION_BOUNDARIES.md',
+    'CAREER_OS_ACCEPTANCE_CRITERIA.md',
+    'CODEX_COST_CONTROL.md',
+  ]) {
+    add(`docs/${doc} exists`, existsSync(path.join(repoRoot, 'docs', doc)));
+  }
+  add('Synthetic fixture set exists', existsSync(path.join(repoRoot, 'fixtures', 'synthetic-career-os', 'pilot-evidence.json')));
+
+  run('Acceptance tests pass', 'node', ['--test', 'tests/acceptance/career-os-contract.test.mjs'], repoRoot);
+  run('Career OS source lint passes', 'npm', ['run', 'lint'], appRoot);
+  run('TypeScript type check passes', 'npx', ['tsc', '--noEmit'], appRoot);
+  run('Next production build passes', 'npm', ['run', 'build'], appRoot);
+
+  const evidence = loadProductionEvidenceIfPresent();
+  if (!evidence) {
+    add('Production evidence file exists', false, `missing ${path.relative(repoRoot, productionEvidencePath)}`);
+  } else {
+    add('Production evidence file exists', true);
+    for (const row of evaluateProductionEvidence(evidence)) rows.push(row);
+    if (evidence?.pilot?.resumeArtifact?.path) {
+      const resumePath = path.resolve(repoRoot, evidence.pilot.resumeArtifact.path);
+      add('Production resume artifact opens', await fileExistsAndReadable(resumePath), path.relative(repoRoot, resumePath));
+    }
+  }
+
+  console.log('Career OS mission verification');
+  console.log(formatRows(rows));
+
+  const failed = rows.filter((row) => !row.passed);
+  if (failed.length) {
+    console.error(`\n${failed.length} criterion/criteria failed. Production mission completion is not established.`);
+    process.exit(1);
+  }
+
+  console.log('\nAll Career OS mission criteria passed with production evidence.');
+})();
+
+function compact(value) {
+  return String(value).split('\n').map((line) => line.trim()).filter(Boolean).slice(-4).join(' | ');
+}

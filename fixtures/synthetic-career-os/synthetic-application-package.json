@@ -1,0 +1,28 @@
+{
+  "environment": "synthetic",
+  "packageId": "synthetic-package-SYN-2026-1001",
+  "profileVersion": "synthetic-profile-v1",
+  "opportunityRequisitionId": "SYN-2026-1001",
+  "artifacts": [
+    {
+      "type": "targeted_resume",
+      "path": "fixtures/synthetic-career-os/synthetic-targeted-resume.md",
+      "validationStatus": "passed",
+      "approvalStatus": "approved_for_synthetic_test"
+    }
+  ],
+  "applicationAnswers": [
+    {
+      "question": "Are you authorized to work in the United States?",
+      "answer": "Authorized to work in the United States",
+      "verificationState": "tomas_provided_fact",
+      "evidenceReference": "fixture://synthetic-career-os/profile#work-auth"
+    },
+    {
+      "question": "Will you now or in the future require sponsorship?",
+      "answer": "No sponsorship required",
+      "verificationState": "tomas_provided_fact",
+      "evidenceReference": "fixture://synthetic-career-os/profile#sponsorship"
+    }
+  ]
+}

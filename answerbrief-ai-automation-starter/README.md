@@ -74,6 +74,8 @@ FROM_ADDRESS=hello@answer-brief.com
 FROM_NAME=AnswerBrief AI
 REPLY_TO=hello@answer-brief.com
 OPENAI_API_KEY=
+CAREER_OS_PRODUCTION_EVIDENCE_PATH=
+CAREER_OS_STATUS_PATH=
 ```
 
 In Stripe, create one Payment Link for each package:
@@ -147,6 +149,24 @@ After intake is submitted, the app:
 7. Logs fallback/skipped states for manual review when email or Drive is not configured.
 
 The current brief generator is a clean fallback implementation. It produces a structured, realistic interview-prep brief without claiming full AI resume parsing. `OPENAI_API_KEY` is reserved for a future real AI generation adapter.
+
+## Tomas Career OS evidence gate
+
+The private Career OS status surface is available at:
+
+```text
+http://localhost:3000/career-os
+```
+
+It reads factual production status only from `CAREER_OS_PRODUCTION_EVIDENCE_PATH` or `CAREER_OS_STATUS_PATH`. If neither variable points to a production evidence file, the page and `/api/career-os/status` report that production discovery evidence is not connected.
+
+Run the repository completion gate from the repo root:
+
+```bash
+./scripts/verify-career-os-mission
+```
+
+That command runs the synthetic acceptance tests, lint, type check, production build, and production evidence checks. Synthetic fixtures prove contracts only; they cannot satisfy production completion.
 
 ## NAIP-OS transactional email
 

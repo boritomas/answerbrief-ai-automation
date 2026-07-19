@@ -1,0 +1,69 @@
+[
+  {
+    "environment": "synthetic",
+    "source": {
+      "type": "permitted_job_board",
+      "name": "Synthetic Executive Jobs",
+      "runId": "synthetic-run-2026-07-19",
+      "fetchedAt": "2026-07-19T12:00:00.000Z"
+    },
+    "requisitionId": "SYN-2026-1001",
+    "canonicalUrl": "https://jobs.example.com/synthetic/SYN-2026-1001",
+    "company": "Example Regulated Tech",
+    "title": "Senior Director, AI Transformation",
+    "location": "Remote US",
+    "employmentType": "Full-time",
+    "active": true,
+    "postedAt": "2026-07-15T00:00:00.000Z",
+    "expiresAt": "2026-08-15T00:00:00.000Z",
+    "compensation": {
+      "minUsd": 235000,
+      "maxUsd": 285000
+    },
+    "description": "Synthetic role for validating Career OS without confidential or real employer data. Leads AI transformation, product operations, stakeholder alignment, governance, and measurable workflow improvement.",
+    "requirements": [
+      "Executive product operations leadership",
+      "AI workflow transformation",
+      "Regulated industry judgment",
+      "Cross-functional stakeholder influence"
+    ]
+  },
+  {
+    "environment": "synthetic",
+    "source": {
+      "type": "permitted_job_board",
+      "name": "Synthetic Executive Jobs",
+      "runId": "synthetic-run-2026-07-19",
+      "fetchedAt": "2026-07-19T12:00:00.000Z"
+    },
+    "requisitionId": "SYN-2026-1001-DUP",
+    "canonicalUrl": "https://jobs.example.com/synthetic/SYN-2026-1001?ref=duplicate",
+    "company": "Example Regulated Tech",
+    "title": "Senior Director, AI Transformation",
+    "location": "Remote US",
+    "employmentType": "Full-time",
+    "active": true,
+    "postedAt": "2026-07-15T00:00:00.000Z",
+    "expiresAt": "2026-08-15T00:00:00.000Z",
+    "description": "Duplicate synthetic posting for deduplication tests."
+  },
+  {
+    "environment": "synthetic",
+    "source": {
+      "type": "permitted_job_board",
+      "name": "Synthetic Executive Jobs",
+      "runId": "synthetic-run-2026-07-19",
+      "fetchedAt": "2026-07-19T12:00:00.000Z"
+    },
+    "requisitionId": "SYN-2026-0000",
+    "canonicalUrl": "https://jobs.example.com/synthetic/SYN-2026-0000",
+    "company": "Expired Example Co",
+    "title": "Director, Legacy Operations",
+    "location": "On-site",
+    "employmentType": "Full-time",
+    "active": false,
+    "postedAt": "2026-05-01T00:00:00.000Z",
+    "expiresAt": "2026-06-01T00:00:00.000Z",
+    "description": "Expired synthetic posting used to prove stale roles are rejected."
+  }
+]

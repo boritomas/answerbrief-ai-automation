@@ -1,0 +1,70 @@
+{
+  "environment": "synthetic",
+  "profileVersion": "synthetic-profile-v1",
+  "candidate": {
+    "legalName": "Tomas Synthetic Candidate",
+    "preferredName": "Tomas",
+    "contact": {
+      "email": "tomas.synthetic@example.com",
+      "phone": "+1-555-0100",
+      "city": "San Antonio",
+      "state": "TX",
+      "country": "US",
+      "linkedInUrl": "https://www.linkedin.com/in/synthetic-tomas",
+      "portfolioUrl": "https://example.com/synthetic-portfolio"
+    }
+  },
+  "facts": [
+    {
+      "id": "fact-employment-001",
+      "claim": "Led cross-functional product operations programs for a regulated technology organization.",
+      "source": "synthetic-resume",
+      "evidenceReference": "fixture://synthetic-career-os/resume#employment-001",
+      "verificationState": "verified_fact",
+      "confidence": 0.96,
+      "profileVersion": "synthetic-profile-v1",
+      "lastReviewedAt": "2026-07-19T00:00:00.000Z"
+    },
+    {
+      "id": "fact-ai-001",
+      "claim": "Applied AI-assisted workflow design to intake, fulfillment, and quality-control processes.",
+      "source": "synthetic-project-library",
+      "evidenceReference": "fixture://synthetic-career-os/projects#ai-001",
+      "verificationState": "tomas_provided_fact",
+      "confidence": 0.9,
+      "profileVersion": "synthetic-profile-v1",
+      "lastReviewedAt": "2026-07-19T00:00:00.000Z"
+    }
+  ],
+  "targetRoles": ["Director Product Operations", "Senior Director AI Transformation"],
+  "excludedRoles": ["Entry-level analyst"],
+  "targetIndustries": ["telecom", "regulated technology", "fintech"],
+  "excludedCompanies": ["Synthetic Blocked Employer"],
+  "preferences": {
+    "remote": true,
+    "hybrid": true,
+    "onSite": false,
+    "relocation": false,
+    "travelPercentMax": 25,
+    "compensationTargetMinUsd": 220000
+  },
+  "applicationPolicy": {
+    "mode": "Review Before Submit",
+    "automaticFitThreshold": 0.9,
+    "dailyLimit": 2
+  },
+  "reusableApplicationAnswers": {
+    "workAuthorization": {
+      "value": "Authorized to work in the United States",
+      "verificationState": "tomas_provided_fact",
+      "evidenceReference": "fixture://synthetic-career-os/profile#work-auth",
+      "lastReviewedAt": "2026-07-19T00:00:00.000Z"
+    },
+    "sponsorshipNeed": {
+      "value": "No sponsorship required",
+      "verificationState": "tomas_provided_fact",
+      "evidenceReference": "fixture://synthetic-career-os/profile#sponsorship",
+      "lastReviewedAt": "2026-07-19T00:00:00.000Z"
+    }
+  }
+}

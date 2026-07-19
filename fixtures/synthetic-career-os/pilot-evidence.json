@@ -1,0 +1,60 @@
+{
+  "environment": "synthetic",
+  "sourceRun": {
+    "id": "synthetic-run-2026-07-19",
+    "sourceName": "Synthetic Executive Jobs",
+    "successful": true,
+    "current": true,
+    "fetchedAt": "2026-07-19T12:00:00.000Z"
+  },
+  "pilot": {
+    "opportunityKey": "example-regulated-tech::senior-director-ai-transformation::SYN-2026-1001",
+    "fitScore": 0.93,
+    "postingEvidence": "fixture://synthetic-career-os/opportunities#SYN-2026-1001",
+    "answerBriefAnalyses": {
+      "ats": { "score": 0.89, "status": "generated" },
+      "aiReadiness": { "score": 0.95, "status": "generated" },
+      "recruiterIntelligence": { "score": 0.88, "status": "generated" },
+      "hiringManagerEvidence": { "status": "generated", "mappedRequirements": 4 }
+    },
+    "resumeArtifact": {
+      "path": "fixtures/synthetic-career-os/synthetic-targeted-resume.md",
+      "opens": true,
+      "profileVersion": "synthetic-profile-v1"
+    },
+    "applicationPackage": {
+      "path": "fixtures/synthetic-career-os/synthetic-application-package.json",
+      "driveDelivery": null
+    },
+    "employerWorkflow": {
+      "adapter": "synthetic-workday",
+      "attempted": true,
+      "supportedStepsCompleted": [
+        "posting_validation",
+        "profile_reuse_check",
+        "verified_answer_population",
+        "resume_upload"
+      ],
+      "resumeUploadEvidence": "fixture://synthetic-career-os/adapter-run#resume-upload",
+      "verifiedAnswersUsed": true,
+      "terminalState": "human_only_gate",
+      "gate": {
+        "type": "MFA",
+        "qualifies": true,
+        "evidence": "fixture://synthetic-career-os/adapter-run#mfa-required",
+        "precedingSupportedStepsCompleted": true
+      }
+    },
+    "dailyAutomation": {
+      "usesSamePipeline": true,
+      "lastRunId": "synthetic-daily-run-2026-07-19",
+      "idempotencyKey": "synthetic-profile-v1:SYN-2026-1001:2026-07-19"
+    },
+    "cost": {
+      "modelCalls": [],
+      "totalUsd": 0,
+      "deterministicSteps": 18
+    }
+  },
+  "productionWarning": "This fixture is synthetic and must never satisfy production mission verification."
+}

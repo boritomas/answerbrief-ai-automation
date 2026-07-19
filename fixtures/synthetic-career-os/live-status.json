@@ -1,0 +1,22 @@
+{
+  "environment": "synthetic",
+  "generatedAt": "2026-07-19T12:00:00.000Z",
+  "greetingName": "Tomas",
+  "dailyDiscoveries": 3,
+  "activeOpportunities": 1,
+  "worthApplyingToday": 1,
+  "preparedPackages": 1,
+  "submittedApplications": 0,
+  "humanOnlyGates": 1,
+  "salaryRange": {
+    "minUsd": 235000,
+    "maxUsd": 285000,
+    "complete": true
+  },
+  "nextAction": {
+    "label": "Example Regulated Tech MFA confirmation",
+    "reason": "Synthetic Workday adapter reached a qualifying MFA gate after resume upload.",
+    "estimatedMinutes": 1
+  },
+  "productionEvidenceReady": false
+}
