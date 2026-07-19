@@ -2,13 +2,15 @@ import { getCareerOsStatus, summarizeCareerOsStatus } from '@/lib/career-os-stat
 
 export const dynamic = 'force-dynamic';
 
-const navItems = ['Home', 'Opportunities', 'Applications', 'Interviews', 'Contacts', 'Documents'];
+const navItems = ['Home', 'Opportunities', 'Applications', 'Knowledge', 'Interviews', 'Contacts', 'Documents'];
 
 export default async function CareerOsPage() {
   const status = await getCareerOsStatus();
   const summary = summarizeCareerOsStatus(status);
   const opportunities = status.evidence.jobPostings.length ? status.evidence.jobPostings : status.evidence.seededOpportunities;
   const artifacts = status.evidence.artifacts.filter((artifact) => artifact.artifact_type === 'targeted_resume' || artifact.artifact_type === 'application_package');
+  const knowledgeBase = status.evidence.employerKnowledgeBase;
+  const affirmEmployer = knowledgeBase.employers.find((employer) => String(employer.id) === 'employer-affirm' || String(employer.canonical_name) === 'Affirm');
 
   return (
     <main className="career-os-shell">
@@ -94,6 +96,22 @@ export default async function CareerOsPage() {
         </div>
       </section>
 
+      <section id="knowledge" className="career-os-band">
+        <h2>Knowledge Base</h2>
+        <p>{knowledgeBase.employers.length} employer process{knowledgeBase.employers.length === 1 ? '' : 'es'}, {knowledgeBase.questionCatalog.length} question{knowledgeBase.questionCatalog.length === 1 ? '' : 's'}, and {knowledgeBase.questionMappings.length} approved mapping{knowledgeBase.questionMappings.length === 1 ? '' : 's'} are available for reuse.</p>
+        <div className="career-os-list">
+          {affirmEmployer ? (
+            <article className="career-os-row">
+              <div>
+                <h3>{String(affirmEmployer.canonical_name)}</h3>
+                <p>{String(affirmEmployer.ats_platform)} · {String(affirmEmployer.status)} · last verified {formatDate(affirmEmployer.last_verified_at)}</p>
+              </div>
+              <span>{knowledgeBase.sessionTemplates.length} template{knowledgeBase.sessionTemplates.length === 1 ? '' : 's'}</span>
+            </article>
+          ) : null}
+        </div>
+      </section>
+
       <section id="interviews" className="career-os-band">
         <h2>Interviews</h2>
         <p>Interview packages appear here only after a connected production application reaches the interview stage.</p>
@@ -130,4 +148,9 @@ function Metric({ label, value }: { label: string; value: number }) {
       <span>{label}</span>
     </div>
   );
+}
+
+function formatDate(value: unknown) {
+  if (!value) return 'not recorded';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(String(value)));
 }

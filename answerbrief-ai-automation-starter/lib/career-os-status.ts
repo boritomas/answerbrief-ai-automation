@@ -37,6 +37,7 @@ export type CareerOsEvidence = {
   tasks: JsonRecord[];
   artifacts: JsonRecord[];
   workflowEvents: JsonRecord[];
+  employerKnowledgeBase: EmployerKnowledgeBaseEvidence;
   dailyReport?: JsonRecord;
   automationRuns: JsonRecord[];
   diagnostics: string[];
@@ -45,6 +46,16 @@ export type CareerOsEvidence = {
     deploymentUrl?: string;
     vercelEnv?: string;
   };
+};
+
+type EmployerKnowledgeBaseEvidence = {
+  employers: JsonRecord[];
+  platformProfiles: JsonRecord[];
+  applicationProcesses: JsonRecord[];
+  questionCatalog: JsonRecord[];
+  questionMappings: JsonRecord[];
+  employerAccounts: JsonRecord[];
+  sessionTemplates: JsonRecord[];
 };
 
 type VerificationRow = {
@@ -73,6 +84,13 @@ export async function getCareerOsStatus(): Promise<CareerOsStatus> {
       tasks,
       artifacts,
       workflowEvents,
+      employers,
+      platformProfiles,
+      applicationProcesses,
+      questionCatalog,
+      questionMappings,
+      employerAccounts,
+      sessionTemplates,
       dailyReports,
       automationRuns,
     ] = await Promise.all([
@@ -84,6 +102,13 @@ export async function getCareerOsStatus(): Promise<CareerOsStatus> {
       supabaseSelect(configuration, 'career_os_tasks', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
       supabaseSelect(configuration, 'career_os_artifacts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=created_at.desc&limit=20`),
       supabaseSelect(configuration, 'career_os_employer_workflow_events', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=occurred_at.desc&limit=30`),
+      supabaseSelect(configuration, 'career_os_employers', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
+      supabaseSelect(configuration, 'career_os_employer_platform_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
+      supabaseSelect(configuration, 'career_os_employer_application_processes', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
+      supabaseSelect(configuration, 'career_os_employer_question_catalog', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`),
+      supabaseSelect(configuration, 'career_os_question_mappings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`),
+      supabaseSelect(configuration, 'career_os_employer_accounts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
+      supabaseSelect(configuration, 'career_os_application_session_templates', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
       supabaseSelect(configuration, 'career_os_daily_operating_reports', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=generated_at.desc&limit=1`),
       supabaseSelect(configuration, 'career_os_automation_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=started_at.desc&limit=5`),
     ]);
@@ -98,6 +123,15 @@ export async function getCareerOsStatus(): Promise<CareerOsStatus> {
       tasks,
       artifacts,
       workflowEvents,
+      employerKnowledgeBase: {
+        employers,
+        platformProfiles,
+        applicationProcesses,
+        questionCatalog,
+        questionMappings,
+        employerAccounts,
+        sessionTemplates,
+      },
       dailyReport: dailyReports[0],
       automationRuns,
       diagnostics,
@@ -143,7 +177,12 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   const workflowEvents = evidence.workflowEvents;
   const sourceRunAccepted = numberValue(evidence.latestSourceRun?.number_accepted);
   const openTasks = evidence.tasks.filter((task) => !['approved', 'rejected', 'deferred', 'completed', 'dismissed'].includes(String(task.status || 'open')));
-  const humanOnlyGates = workflowEvents.filter((event) => String(event.event_type || '').includes('human_only_gate')).length + openTasks.length;
+  const openHumanOnlyGates = workflowEvents.filter((event) => {
+    const status = String(event.status || 'blocked');
+    return String(event.event_type || '').includes('human_only_gate')
+      && !['approved', 'resolved', 'cleared', 'completed', 'dismissed', 'submitted'].includes(status);
+  });
+  const humanOnlyGates = openHumanOnlyGates.length + openTasks.length;
   const submittedApplications = applications.filter((application) => application.confirmation_number || application.submission_evidence).length;
   const preparedPackages = new Set([
     ...applications.filter((application) => Boolean(application.exact_resume)).map((application) => String(application.id)),
@@ -200,6 +239,14 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
   const pilot = evidence.jobPostings.find((job) => job.selected_for_pilot) || evidence.jobPostings[0];
   const pilotArtifacts = evidence.artifacts.filter((artifact) => artifact.opportunity_id === pilot?.id);
   const pilotWorkflow = evidence.workflowEvents.filter((event) => event.opportunity_id === pilot?.id);
+  const kb = evidence.employerKnowledgeBase;
+  const affirmEmployer = kb.employers.find((employer) => employer.id === 'employer-affirm' || employer.canonical_name === 'Affirm');
+  const greenhouseProfile = kb.platformProfiles.find((profile) => profile.employer_id === affirmEmployer?.id && profile.platform_name === 'Greenhouse');
+  const affirmProcess = kb.applicationProcesses.find((process) => process.employer_id === affirmEmployer?.id && process.platform_name === 'Greenhouse');
+  const affirmQuestions = kb.questionCatalog.filter((question) => question.employer_id === affirmEmployer?.id && question.platform_name === 'Greenhouse');
+  const approvedMappings = kb.questionMappings.filter((mapping) => mapping.approved_for_auto_fill === true && mapping.verification_state === 'tomas_verified');
+  const affirmTemplate = kb.sessionTemplates.find((template) => template.employer_id === affirmEmployer?.id && template.platform_name === 'Greenhouse');
+  const affirmAccount = kb.employerAccounts.find((account) => account.employer_id === affirmEmployer?.id && account.platform_name === 'Greenhouse');
   const profileValidation = validateProfile(evidence.profile);
   const sourceRunCurrent = evidence.latestSourceRun && new Date(String(evidence.latestSourceRun.executed_at)).getTime() > Date.now() - 1000 * 60 * 60 * 24 * 7;
   const qualifiedHumanGate = pilotWorkflow.some((event) => {
@@ -231,6 +278,14 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
     row('Resume upload evidence exists if reached', pilotWorkflow.some((event) => event.event_type === 'resume_upload_completed') || !pilotWorkflow.some((event) => event.event_type === 'resume_upload_reached')),
     row('Verified answers were used', pilotWorkflow.some((event) => event.event_type === 'verified_answers_populated')),
     row('Submission or qualifying human-only gate reached', submissionConfirmed || qualifiedHumanGate, qualifiedHumanGate || submissionConfirmed ? '' : 'Human-only gate exists, but resume upload/submission prerequisites are not complete.'),
+    row('Employer knowledge base exists', Boolean(kb.employers.length && kb.platformProfiles.length && kb.applicationProcesses.length && kb.questionCatalog.length && kb.questionMappings.length && kb.sessionTemplates.length)),
+    row('Affirm employer record saved', Boolean(affirmEmployer && affirmEmployer.status === 'active')),
+    row('Greenhouse platform record saved', Boolean(greenhouseProfile && greenhouseProfile.platform_name === 'Greenhouse')),
+    row('Affirm process steps captured', Boolean(affirmProcess && arrayLength(affirmProcess.ordered_onboarding_steps) > 0 && arrayLength(affirmProcess.required_fields) > 0)),
+    row('Employer questions cataloged', affirmQuestions.length >= 10, `${affirmQuestions.length} Affirm Greenhouse question(s) cataloged.`),
+    row('Approved question mappings created', approvedMappings.length >= 7, `${approvedMappings.length} verified mapping(s) approved for auto-fill.`),
+    row('Application session template saved', Boolean(affirmTemplate)),
+    row('Employer account record saved', Boolean(affirmAccount)),
     row('Live UI shows factual production state', supabaseConnected && Boolean(pilot && evidence.latestSourceRun)),
     row('Daily automation uses same workflow', automationUsesSamePipeline),
     row('Duplicate prevention passes', evidence.jobPostings.length === new Set(evidence.jobPostings.map((job) => `${job.company}:${job.external_requisition_id}`)).size),
@@ -260,10 +315,18 @@ function validateProfile(profile?: JsonRecord) {
 function missingFactsConsolidated(evidence: CareerOsEvidence) {
   const verifiedProfile = evidence.profile?.verified_profile as JsonRecord | undefined;
   const missingFactsValue = verifiedProfile?.missing_reusable_facts;
-  const missingFacts = Array.isArray(missingFactsValue) && missingFactsValue.length > 0;
+  const missingFacts = Array.isArray(missingFactsValue) ? missingFactsValue : [];
   const onboardingTask = evidence.tasks.some((task) => task.id === 'career-os-profile-reusable-legal-answers' && task.status === 'open');
+  const reusableAnswers = verifiedProfile?.reusable_application_answers as JsonRecord | undefined;
+  const reusableFactsVerified = Boolean(
+    verifiedProfile?.work_authorization
+    && verifiedProfile?.sponsorship_requirement
+    && verifiedProfile?.application_policy
+    && reusableAnswers
+    && reusableAnswers.verification_state === 'tomas_verified'
+  );
 
-  return Boolean(missingFacts && onboardingTask);
+  return reusableFactsVerified || Boolean(missingFacts.length && onboardingTask);
 }
 
 function row(name: string, passed: boolean, detail = ''): VerificationRow {
@@ -272,6 +335,10 @@ function row(name: string, passed: boolean, detail = ''): VerificationRow {
 
 function hasKeys(value: unknown) {
   return Boolean(value && typeof value === 'object' && Object.keys(value).length > 0);
+}
+
+function arrayLength(value: unknown) {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function buildSalaryRange(jobs: JsonRecord[]) {
@@ -302,6 +369,15 @@ function emptyEvidence(ownerEmail: string, diagnostics: string[]): CareerOsEvide
     tasks: [],
     artifacts: [],
     workflowEvents: [],
+    employerKnowledgeBase: {
+      employers: [],
+      platformProfiles: [],
+      applicationProcesses: [],
+      questionCatalog: [],
+      questionMappings: [],
+      employerAccounts: [],
+      sessionTemplates: [],
+    },
     automationRuns: [],
     diagnostics,
     deployment: {},
