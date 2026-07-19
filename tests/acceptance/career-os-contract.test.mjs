@@ -196,3 +196,21 @@ test('permanent daily workflow is scheduled, secured, and verified', () => {
   assert.match(statusSource, /Permanent daily workflow configured/);
   assert.match(statusSource, /focusedVerificationRows/);
 });
+
+test('Career OS dashboard exposes v2 operating sections without replacing the existing page', () => {
+  const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
+
+  assert.match(page, /Executive Summary/);
+  assert.match(page, /Application Funnel/);
+  assert.match(page, /New Jobs Discovered/);
+  assert.match(page, /Submitted Today/);
+  assert.match(page, /Ready for Automation/);
+  assert.match(page, /Waiting on Tomas/);
+  assert.match(page, /Recruiter Activity and Follow-ups/);
+  assert.match(page, /Resume Performance/);
+  assert.match(page, /Employer Intelligence/);
+  assert.match(page, /Compensation and Offers/);
+  assert.match(page, /Daily Automation Health/);
+  assert.match(page, /Exact next action/);
+  assert.doesNotMatch(page, /hard-coded production metrics/i);
+});
