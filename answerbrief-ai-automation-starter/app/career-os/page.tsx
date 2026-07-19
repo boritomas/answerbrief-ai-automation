@@ -29,17 +29,20 @@ export default async function CareerOsPage() {
           <h1>{summary.greeting}</h1>
           <p className="subhead">{summary.discoveryLine}</p>
           <div className="career-os-metrics" aria-label="Career OS daily status">
-            <Metric label="Worth applying today" value={status.worthApplyingToday} />
-            <Metric label="Packages prepared" value={status.preparedPackages} />
-            <Metric label="Submitted" value={status.submittedApplications} />
-            <Metric label="Needs Tomas" value={status.humanOnlyGates} />
+            <Metric label="Qualified Jobs" value={status.activeQualifiedOpportunities} />
+            <Metric label="Applications Submitted" value={status.submittedApplications} />
+            <Metric label="Applications Remaining" value={status.remainingQualifiedApplications} />
+            <Metric label="Waiting on Tomas" value={status.waitingOnTomas} />
           </div>
           <div className="career-os-summary">
             <p>{summary.applyLine}</p>
+            <p>{summary.remainingLine}</p>
             <p>{summary.packageLine}</p>
+            <p>{summary.packageExplanation}</p>
             <p>{summary.submittedLine}</p>
             <p>{summary.needsLine}</p>
-            <p>Estimated salary: {summary.salary}</p>
+            <p>Posted compensation across matched jobs: {summary.postedCompensationRange}</p>
+            <p>{summary.compensationPreferenceLine}</p>
           </div>
           <div className="cta-row">
             <a className="button primary" href="#applications">Review Applications</a>
@@ -66,7 +69,7 @@ export default async function CareerOsPage() {
 
       <section id="opportunities" className="career-os-band">
         <h2>Opportunities</h2>
-        <p>{status.activeOpportunities} active production opportunit{status.activeOpportunities === 1 ? 'y' : 'ies'} are currently represented in Career OS production records.</p>
+        <p>{status.totalUniqueOpportunities} unique production opportunit{status.totalUniqueOpportunities === 1 ? 'y is' : 'ies are'} represented; {status.activeQualifiedOpportunities} are active qualified jobs.</p>
         <div className="career-os-list">
           {opportunities.slice(0, 5).map((opportunity) => (
             <article className="career-os-row" key={String(opportunity.id)}>
@@ -82,7 +85,8 @@ export default async function CareerOsPage() {
 
       <section id="applications" className="career-os-band">
         <h2>Applications</h2>
-        <p>{status.preparedPackages} package{status.preparedPackages === 1 ? '' : 's'} prepared and {status.submittedApplications} submission{status.submittedApplications === 1 ? '' : 's'} confirmed.</p>
+        <p>{status.submittedApplications} submission{status.submittedApplications === 1 ? '' : 's'} confirmed, {status.remainingQualifiedApplications} qualified application{status.remainingQualifiedApplications === 1 ? '' : 's'} remaining, and {status.totalPackages} package asset{status.totalPackages === 1 ? '' : 's'} generated.</p>
+        <p>Release completion: {status.releaseCompletionPercentage.toFixed(1)}%. Actionable progress: {status.actionableProgressPercentage.toFixed(1)}%.</p>
         <div className="career-os-list">
           {status.evidence.applications.slice(0, 5).map((application) => (
             <article className="career-os-row" key={String(application.id)}>

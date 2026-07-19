@@ -7,7 +7,20 @@ export type CareerOsStatus = {
   dailyDiscoveries: number;
   activeOpportunities: number;
   worthApplyingToday: number;
+  totalUniqueOpportunities: number;
+  activeQualifiedOpportunities: number;
+  remainingQualifiedApplications: number;
+  waitingOnTomas: number;
+  readyForAutomation: number;
+  inProgress: number;
+  ineligible: number;
+  inactive: number;
+  duplicateRecordsRemoved: number;
   preparedPackages: number;
+  totalPackages: number;
+  packagesCoveringQualifiedJobs: number;
+  packageAssetsOnQualifiedJobs: number;
+  orphanedPackages: number;
   submittedApplications: number;
   humanOnlyGates: number;
   salaryRange?: {
@@ -15,6 +28,12 @@ export type CareerOsStatus = {
     maxUsd?: number;
     complete: boolean;
   };
+  compensationPreference?: {
+    preferredMinimumBaseSalaryUsd?: number;
+    openToNegotiation?: boolean;
+  };
+  releaseCompletionPercentage: number;
+  actionableProgressPercentage: number;
   nextAction?: {
     label: string;
     reason: string;
@@ -96,12 +115,12 @@ export async function getCareerOsStatus(): Promise<CareerOsStatus> {
     ] = await Promise.all([
       supabaseSelect(configuration, 'career_os_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&limit=1`),
       supabaseSelect(configuration, 'career_os_source_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=executed_at.desc&limit=1`),
-      supabaseSelect(configuration, 'career_os_job_postings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=fit_score.desc.nullslast,last_checked_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_opportunities', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_applications', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
+      supabaseSelect(configuration, 'career_os_job_postings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=fit_score.desc.nullslast,last_checked_at.desc&limit=100`),
+      supabaseSelect(configuration, 'career_os_opportunities', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=100`),
+      supabaseSelect(configuration, 'career_os_applications', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=100`),
       supabaseSelect(configuration, 'career_os_tasks', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_artifacts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=created_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_employer_workflow_events', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=occurred_at.desc&limit=30`),
+      supabaseSelect(configuration, 'career_os_artifacts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=created_at.desc&limit=100`),
+      supabaseSelect(configuration, 'career_os_employer_workflow_events', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=occurred_at.desc&limit=100`),
       supabaseSelect(configuration, 'career_os_employers', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
       supabaseSelect(configuration, 'career_os_employer_platform_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
       supabaseSelect(configuration, 'career_os_employer_application_processes', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
@@ -154,26 +173,31 @@ export function summarizeCareerOsStatus(status: CareerOsStatus) {
   const salary = status.salaryRange?.complete && status.salaryRange.minUsd && status.salaryRange.maxUsd
     ? `$${Math.round(status.salaryRange.minUsd / 1000)}K-$${Math.round(status.salaryRange.maxUsd / 1000)}K`
     : 'Salary information is incomplete.';
+  const preferredBase = status.compensationPreference?.preferredMinimumBaseSalaryUsd
+    ? `$${Math.round(status.compensationPreference.preferredMinimumBaseSalaryUsd / 1000)}K`
+    : 'not set';
 
   return {
     greeting: `Good morning, ${status.greetingName}.`,
     discoveryLine: status.productionEvidenceReady
-      ? `I found ${status.dailyDiscoveries} jobs that match your background.`
+      ? `${status.totalUniqueOpportunities} unique jobs are represented in production.`
       : 'Career OS production systems are not connected in this runtime.',
-    applyLine: `${status.worthApplyingToday} are worth applying to today.`,
-    packageLine: `${status.preparedPackages} application package${status.preparedPackages === 1 ? '' : 's'} prepared.`,
+    applyLine: `${status.activeQualifiedOpportunities} qualified active job${status.activeQualifiedOpportunities === 1 ? '' : 's'}.`,
+    remainingLine: `${status.remainingQualifiedApplications} qualified application${status.remainingQualifiedApplications === 1 ? '' : 's'} remaining.`,
+    packageLine: `${status.totalPackages} package asset${status.totalPackages === 1 ? '' : 's'} generated, covering ${status.packagesCoveringQualifiedJobs} qualified job${status.packagesCoveringQualifiedJobs === 1 ? '' : 's'}.`,
+    packageExplanation: 'Packages are application assets and may include multiple versions. Package count does not equal the number of unique jobs.',
     submittedLine: `${status.submittedApplications} submitted application${status.submittedApplications === 1 ? '' : 's'} with confirmation evidence.`,
-    needsLine: `${status.humanOnlyGates} item${status.humanOnlyGates === 1 ? '' : 's'} need Tomas.`,
-    salary,
+    needsLine: `${status.waitingOnTomas} application${status.waitingOnTomas === 1 ? '' : 's'} waiting on Tomas.`,
+    postedCompensationRange: salary,
+    compensationPreferenceLine: `Tomas preferred minimum base salary: ${preferredBase}; optional desired-compensation fields stay blank.`,
   };
 }
 
 function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean): CareerOsStatus {
+  const canonicalRelease = buildCanonicalReleaseMetrics(evidence);
   const activeJobPostings = evidence.jobPostings.filter((job) => job.posting_validation_status === 'active');
-  const strongMatches = activeJobPostings.filter((job) => numberValue(job.fit_score) >= 70);
-  const activeSeeded = evidence.seededOpportunities.filter((job) => !String(job.status || '').includes('unavailable'));
+  const activeSeeded = evidence.seededOpportunities.filter((job) => !isInactiveStatus(String(job.status || '')));
   const applications = evidence.applications;
-  const artifacts = evidence.artifacts;
   const workflowEvents = evidence.workflowEvents;
   const sourceRunAccepted = numberValue(evidence.latestSourceRun?.number_accepted);
   const openTasks = evidence.tasks.filter((task) => !['approved', 'rejected', 'deferred', 'completed', 'dismissed'].includes(String(task.status || 'open')));
@@ -182,26 +206,40 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     return String(event.event_type || '').includes('human_only_gate')
       && !['approved', 'resolved', 'cleared', 'completed', 'dismissed', 'submitted'].includes(status);
   });
-  const humanOnlyGates = openHumanOnlyGates.length + openTasks.length;
-  const submittedApplications = applications.filter((application) => application.confirmation_number || application.submission_evidence).length;
-  const preparedPackages = new Set([
-    ...applications.filter((application) => Boolean(application.exact_resume)).map((application) => String(application.id)),
-    ...artifacts.filter((artifact) => ['targeted_resume', 'application_package'].includes(String(artifact.artifact_type))).map((artifact) => String(artifact.application_id || artifact.opportunity_id || artifact.id)),
-  ]).size;
+  const humanOnlyGates = canonicalRelease.waitingOnTomas || openHumanOnlyGates.length + openTasks.length;
+  const submittedApplications = canonicalRelease.submittedApplications || applications.filter((application) => application.confirmation_number || application.submission_evidence).length;
+  const preparedPackages = canonicalRelease.totalPackages;
   const salaryRange = buildSalaryRange(activeJobPostings);
+  const compensationPreference = buildCompensationPreference(evidence.profile);
   const verificationRows = buildVerificationRows(evidence, supabaseConnected);
 
   return {
     environment: supabaseConnected ? 'production' : 'unconfigured',
     generatedAt: new Date().toISOString(),
     greetingName: 'Tomas',
-    dailyDiscoveries: sourceRunAccepted || activeJobPostings.length || activeSeeded.length,
-    activeOpportunities: activeJobPostings.length || activeSeeded.length,
-    worthApplyingToday: strongMatches.length || activeSeeded.filter((job) => numberValue(job.match_score) >= 70).length,
+    dailyDiscoveries: sourceRunAccepted || canonicalRelease.totalUniqueOpportunities || activeJobPostings.length || activeSeeded.length,
+    activeOpportunities: canonicalRelease.totalUniqueOpportunities || activeJobPostings.length || activeSeeded.length,
+    worthApplyingToday: canonicalRelease.activeQualifiedOpportunities,
+    totalUniqueOpportunities: canonicalRelease.totalUniqueOpportunities,
+    activeQualifiedOpportunities: canonicalRelease.activeQualifiedOpportunities,
+    remainingQualifiedApplications: canonicalRelease.remainingQualifiedApplications,
+    waitingOnTomas: canonicalRelease.waitingOnTomas,
+    readyForAutomation: canonicalRelease.readyForAutomation,
+    inProgress: canonicalRelease.inProgress,
+    ineligible: canonicalRelease.ineligible,
+    inactive: canonicalRelease.inactive,
+    duplicateRecordsRemoved: canonicalRelease.duplicateRecordsRemoved,
     preparedPackages,
+    totalPackages: canonicalRelease.totalPackages,
+    packagesCoveringQualifiedJobs: canonicalRelease.packagesCoveringQualifiedJobs,
+    packageAssetsOnQualifiedJobs: canonicalRelease.packageAssetsOnQualifiedJobs,
+    orphanedPackages: canonicalRelease.orphanedPackages,
     submittedApplications,
     humanOnlyGates,
     salaryRange,
+    compensationPreference,
+    releaseCompletionPercentage: canonicalRelease.releaseCompletionPercentage,
+    actionableProgressPercentage: canonicalRelease.actionableProgressPercentage,
     nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates),
     productionEvidenceReady: supabaseConnected,
     blocker: evidence.diagnostics[0],
@@ -363,6 +401,208 @@ function buildSalaryRange(jobs: JsonRecord[]) {
     minUsd: Math.min(...ranges.map((range) => range.min)),
     maxUsd: Math.max(...ranges.map((range) => range.max)),
   };
+}
+
+type NormalizedOpportunity = ReturnType<typeof normalizeOpportunityIdentity>;
+
+type CanonicalOpportunity = {
+  applications: JsonRecord[];
+  className: 'active_qualified' | 'ineligible' | 'inactive' | 'not_qualified';
+  key: string;
+  packageAssets: number;
+  releaseState: 'submitted' | 'waiting_on_tomas' | 'ready_for_automation' | 'in_progress' | 'ineligible' | 'inactive';
+  sourceOpportunityIds: Set<string>;
+  submitted: boolean;
+};
+
+function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence) {
+  const keyed = [
+    ...evidence.jobPostings.map((job) => normalizeOpportunityIdentity(job, 'posting')),
+    ...evidence.seededOpportunities.map((job) => normalizeOpportunityIdentity(job, 'opportunity')),
+  ];
+
+  const groups = new Map<string, NormalizedOpportunity[]>();
+  for (const item of keyed) {
+    const bucket = groups.get(item.key) || [];
+    bucket.push(item);
+    groups.set(item.key, bucket);
+  }
+
+  const canonical: CanonicalOpportunity[] = [];
+
+  for (const [key, records] of Array.from(groups.entries())) {
+    const preferred = records.slice().sort((a, b) => {
+      if (a.sourceType !== b.sourceType) return a.sourceType === 'posting' ? -1 : 1;
+      return b.updatedAt - a.updatedAt;
+    })[0];
+    const sourceOpportunityIds = new Set<string>(records.flatMap((record: NormalizedOpportunity) => [record.sourceId, record.opportunityId]).filter((value): value is string => Boolean(value)));
+    const applications = evidence.applications.filter((application) => applicationMatchesCanonical(application, preferred, sourceOpportunityIds));
+    const submitted = applications.some((application) => Boolean(application.confirmation_number || application.submission_evidence));
+    const packageAssets = evidence.artifacts.filter((artifact) => {
+      if (!['targeted_resume', 'application_package'].includes(String(artifact.artifact_type))) return false;
+      const artifactOpportunityId = String(artifact.opportunity_id || '');
+      const artifactApplicationId = String(artifact.application_id || '');
+      return sourceOpportunityIds.has(artifactOpportunityId)
+        || applications.some((application) => String(application.id) === artifactApplicationId);
+    }).length;
+    const className = classifyOpportunity(preferred);
+
+    canonical.push({
+      applications,
+      className,
+      key,
+      packageAssets,
+      releaseState: classifyReleaseState(preferred.status, className, submitted),
+      sourceOpportunityIds,
+      submitted,
+    });
+  }
+
+  const activeQualified = canonical.filter((item) => item.className === 'active_qualified');
+  const submittedActive = activeQualified.filter((item) => item.submitted);
+  const exactTomasCheckpoint = activeQualified.filter((item) => item.releaseState === 'waiting_on_tomas');
+  const totalPackages = evidence.artifacts.filter((artifact) => ['targeted_resume', 'application_package'].includes(String(artifact.artifact_type))).length;
+  const packagesCoveringQualifiedJobs = activeQualified.filter((item) => item.packageAssets > 0).length;
+  const packageAssetsOnQualifiedJobs = activeQualified.reduce((sum, item) => sum + item.packageAssets, 0);
+  const activeSourceIds = new Set(activeQualified.flatMap((item) => Array.from(item.sourceOpportunityIds)));
+  const activeApplicationIds = new Set(activeQualified.flatMap((item) => item.applications.map((application) => String(application.id))));
+  const orphanedPackages = evidence.artifacts.filter((artifact) => {
+    if (!['targeted_resume', 'application_package'].includes(String(artifact.artifact_type))) return false;
+    return !activeSourceIds.has(String(artifact.opportunity_id || '')) && !activeApplicationIds.has(String(artifact.application_id || ''));
+  }).length;
+
+  return {
+    totalUniqueOpportunities: canonical.length,
+    activeQualifiedOpportunities: activeQualified.length,
+    submittedApplications: submittedActive.length,
+    remainingQualifiedApplications: Math.max(activeQualified.length - submittedActive.length, 0),
+    waitingOnTomas: activeQualified.filter((item) => item.releaseState === 'waiting_on_tomas').length,
+    readyForAutomation: activeQualified.filter((item) => item.releaseState === 'ready_for_automation').length,
+    inProgress: activeQualified.filter((item) => item.releaseState === 'in_progress').length,
+    ineligible: canonical.filter((item) => item.className === 'ineligible').length,
+    inactive: canonical.filter((item) => item.className === 'inactive').length,
+    duplicateRecordsRemoved: Math.max(keyed.length - canonical.length, 0),
+    totalPackages,
+    packagesCoveringQualifiedJobs,
+    packageAssetsOnQualifiedJobs,
+    orphanedPackages,
+    releaseCompletionPercentage: percentage(submittedActive.length, activeQualified.length),
+    actionableProgressPercentage: percentage(submittedActive.length + exactTomasCheckpoint.length, activeQualified.length),
+  };
+}
+
+function normalizeOpportunityIdentity(record: JsonRecord, sourceType: 'posting' | 'opportunity') {
+  const employer = String(sourceType === 'posting' ? record.company || '' : record.employer || '').trim();
+  const position = String(sourceType === 'posting' ? record.title || '' : record.position || '').trim();
+  const requisitionId = String(sourceType === 'posting' ? record.external_requisition_id || '' : record.requisition || '').trim();
+  const url = String(sourceType === 'posting' ? record.canonical_url || '' : record.job_url || '').trim();
+  const sourceId = String(record.id || '');
+  const description = String(record.normalized_description || record.job_description || record.evidence || record.raw_record || '');
+  const descriptionFingerprint = simpleHash(description);
+  const employerKey = compactKey(employer);
+  const titleKey = normalizeTitle(position);
+  const normalizedUrl = normalizeUrl(url);
+  const key = [
+    requisitionId ? `${employerKey}:req:${requisitionId.toLowerCase()}` : '',
+    normalizedUrl ? `url:${normalizedUrl}` : '',
+    employerKey && titleKey ? `${employerKey}:title:${titleKey}:desc:${descriptionFingerprint}` : '',
+    sourceId,
+  ].find(Boolean) || sourceId;
+
+  return {
+    employer,
+    key,
+    opportunityId: sourceId,
+    position,
+    requisitionId,
+    score: numberValue(sourceType === 'posting' ? record.fit_score : record.match_score),
+    sourceId,
+    sourceType,
+    status: String(record.status || ''),
+    postingValidationStatus: String(record.posting_validation_status || ''),
+    titleKey,
+    updatedAt: Date.parse(String(record.updated_at || record.last_checked_at || record.discovered_at || 0)) || 0,
+  };
+}
+
+function applicationMatchesCanonical(application: JsonRecord, canonical: NormalizedOpportunity, sourceIds: Set<string>) {
+  const opportunityId = String(application.opportunity_id || '');
+  if (sourceIds.has(opportunityId)) return true;
+
+  return compactKey(application.employer) === compactKey(canonical.employer)
+    && normalizeTitle(application.position) === canonical.titleKey;
+}
+
+function classifyOpportunity(item: NormalizedOpportunity): CanonicalOpportunity['className'] {
+  if (isInactiveStatus(item.status) || isInactiveStatus(item.postingValidationStatus)) return 'inactive';
+  if (item.status.startsWith('ineligible')) return 'ineligible';
+  const activePosting = !item.postingValidationStatus || item.postingValidationStatus === 'active';
+  return activePosting && item.score >= 70 ? 'active_qualified' : 'not_qualified';
+}
+
+function classifyReleaseState(status: string, className: CanonicalOpportunity['className'], submitted: boolean): CanonicalOpportunity['releaseState'] {
+  if (submitted) return 'submitted';
+  if (className === 'ineligible') return 'ineligible';
+  if (className === 'inactive') return 'inactive';
+  if (hasAnyStatus(status, ['compensation', 'legal', 'privacy', 'human', 'account'])) return 'waiting_on_tomas';
+  if (hasAnyStatus(status, ['technical'])) return 'in_progress';
+  return 'ready_for_automation';
+}
+
+function buildCompensationPreference(profile?: JsonRecord) {
+  const verifiedProfile = profile?.verified_profile as JsonRecord | undefined;
+  const strategy = verifiedProfile?.candidate_preferences_strategy as JsonRecord | undefined;
+  const compensation = strategy?.compensation_strategy as JsonRecord | undefined;
+  const reusableAnswers = verifiedProfile?.reusable_application_answers as JsonRecord | undefined;
+  const preferredMinimumBaseSalaryUsd = numberValue(compensation?.preferred_minimum_base_salary_usd || reusableAnswers?.preferred_minimum_base_salary_usd);
+
+  return {
+    preferredMinimumBaseSalaryUsd: preferredMinimumBaseSalaryUsd || undefined,
+    openToNegotiation: compensation?.open_to_negotiation === true,
+  };
+}
+
+function isInactiveStatus(status: string) {
+  return hasAnyStatus(status, ['inactive', 'closed', 'expired', 'unavailable']);
+}
+
+function hasAnyStatus(status: string, terms: string[]) {
+  const value = String(status || '').toLowerCase();
+  return terms.some((term) => value.includes(term));
+}
+
+function compactKey(value: unknown) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function normalizeTitle(value: unknown) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function normalizeUrl(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    url.hash = '';
+    url.search = '';
+    return `${url.hostname}${url.pathname}`.toLowerCase().replace(/\/$/, '');
+  } catch {
+    return text.toLowerCase().replace(/\?.*$/, '').replace(/\/$/, '');
+  }
+}
+
+function simpleHash(value: unknown) {
+  let hash = 0;
+  const text = String(value || '');
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+  }
+  return String(hash);
+}
+
+function percentage(numerator: number, denominator: number) {
+  return denominator ? Math.round((numerator / denominator) * 1000) / 10 : 0;
 }
 
 function emptyEvidence(ownerEmail: string, diagnostics: string[]): CareerOsEvidence {
