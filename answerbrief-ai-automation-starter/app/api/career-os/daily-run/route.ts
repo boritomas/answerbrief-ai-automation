@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
 
   const before = await getCareerOsStatus();
-  const discovery = await runDailyGreenhouseDiscovery(before.evidence.ownerEmail);
+  const discovery = await runDailyGreenhouseDiscovery(before.evidence.ownerEmail, before.evidence);
   const queueProcessor = await processCareerOsQueue({ ownerEmail: before.evidence.ownerEmail, trigger: 'cron' });
   const afterDiscovery = await getCareerOsStatus();
   const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, {

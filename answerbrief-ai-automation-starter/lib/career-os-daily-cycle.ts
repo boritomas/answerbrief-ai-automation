@@ -1,4 +1,14 @@
 import crypto from 'node:crypto';
+import {
+  CAREER_OS_EMPLOYER_UNIVERSE,
+  CAREER_OS_MARKET_UNIVERSE_VERSION,
+  CAREER_OS_ROLE_PRIORITIES,
+  CAREER_OS_SOURCE_REGISTRY,
+  buildCareerOsDiscoveryPlan,
+  careerOsSourceForBoard,
+  type CareerOsDiscoveryPlan,
+  type CareerOsSourceCandidate,
+} from './career-os-market-universe';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -39,6 +49,10 @@ type DailyCycleEvidence = {
   artifacts: JsonRecord[];
   automationRuns: JsonRecord[];
   dailyReport?: JsonRecord;
+  employerKnowledgeBase?: {
+    employers: JsonRecord[];
+    platformProfiles: JsonRecord[];
+  };
   jobPostings: JsonRecord[];
   latestSourceRun?: JsonRecord;
   ownerEmail: string;
@@ -161,6 +175,21 @@ export type DailyOperatingCycleStatus = {
     status: 'idle' | 'queued' | 'running' | 'blocked';
     submittedThisRun: number;
   };
+  marketCoverage: {
+    applicationsSubmitted: number;
+    applicationsWaitingOnTomas: number;
+    discoveryMode: string;
+    employerSourcesFailed: number;
+    employersSearched: number;
+    officialCareerSitesChecked: number;
+    qualifiedMatches: number;
+    rawJobsReviewed: number;
+    sourceFailures: Array<{ employer: string; reason: string; source: string }>;
+    supportedOfficialSources: number;
+    technicalBlockers: number;
+    topTelecomEmployersWithNewMatches: Array<{ employer: string; matches: number }>;
+    unsupportedSourceCandidates: number;
+  };
   minimumActivePipelineTarget: number;
   newOpportunityTarget: number;
   packageGenerationStatus: string;
@@ -196,7 +225,7 @@ export type DailyOperatingCycleStatus = {
   version: string;
 };
 
-export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-19-v2-global-autonomous';
+export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-20-v2-global-market-search';
 export const DAILY_CRON_PATH = '/api/career-os/daily-run';
 export const DAILY_CRON_SCHEDULE = '0 12 * * *';
 export const DAILY_TARGET_NEWLY_IDENTIFIED = 20;
@@ -205,25 +234,7 @@ export const GLOBAL_DISCOVERY_BATCH_SIZE = 100;
 export const GLOBAL_DISCOVERY_MAX_CONCURRENCY = 4;
 export const GLOBAL_DISCOVERY_RETRY_LIMIT = 2;
 
-export const DAILY_DISCOVERY_BOARDS = [
-  'affirm',
-  'bandwidth',
-  'boxinc',
-  'braze',
-  'cloudflare',
-  'datadog',
-  'dialpad',
-  'five9',
-  'googlefiber',
-  'intercom',
-  'mongodb',
-  'nice',
-  'okta',
-  'samsara',
-  'toast',
-  'twilio',
-  'vonage',
-];
+export const DAILY_DISCOVERY_BOARDS = buildCareerOsDiscoveryPlan().greenhouseBoards;
 
 export const DAILY_OPERATING_CYCLE = {
   creditSavingControls: [
@@ -241,58 +252,9 @@ export const DAILY_OPERATING_CYCLE = {
     'per_employer_and_per_ats_throttling',
     'no_reanalysis_when_posting_fingerprint_unchanged',
   ],
-  discoverySourcesEnabled: [
-    'Greenhouse official board API',
-    'Workday official career portals when adapter evidence exists',
-    'Lever official postings when adapter evidence exists',
-    'Ashby official postings when adapter evidence exists',
-    'SmartRecruiters official postings when adapter evidence exists',
-    'iCIMS official postings when adapter evidence exists',
-    'Phenom official portals when adapter evidence exists',
-    'SuccessFactors official portals when adapter evidence exists',
-    'Oracle Recruiting official portals when adapter evidence exists',
-    'company-hosted official career portals',
-  ],
-  employerUniverseCovered: [
-    'telecommunications carriers',
-    'wireless providers',
-    'broadband and fiber companies',
-    'cable and media companies',
-    'satellite and connectivity providers',
-    'telecom infrastructure companies',
-    'networking companies',
-    'cloud communications',
-    'contact-center and customer-experience platforms',
-    'enterprise SaaS',
-    'AI platforms',
-    'digital commerce',
-    'fintech and payments',
-    'cybersecurity',
-    'large technology companies',
-    'consulting and transformation organizations',
-  ],
-  rolePriorities: [
-    'Vice President of Product',
-    'VP Product Management',
-    'VP Digital Product',
-    'VP Customer Experience',
-    'VP Digital Transformation',
-    'Head of Product',
-    'Head of Digital',
-    'Head of Customer Experience',
-    'Head of AI Products',
-    'Head of Platform',
-    'Senior Director of Product',
-    'Executive Director of Product',
-    'Group Product Manager',
-    'Principal Product Manager',
-    'Product Portfolio Leader',
-    'Digital Commerce Leader',
-    'Customer Journey Leader',
-    'Product Transformation Leader',
-    'AI Product Leader',
-    'Platform Product Leader',
-  ],
+  discoverySourcesEnabled: CAREER_OS_SOURCE_REGISTRY,
+  employerUniverseCovered: CAREER_OS_EMPLOYER_UNIVERSE,
+  rolePriorities: CAREER_OS_ROLE_PRIORITIES,
   schedule: {
     cron: DAILY_CRON_SCHEDULE,
     path: DAILY_CRON_PATH,
@@ -332,6 +294,7 @@ export function buildDailyOperatingCycleStatus(
   const immediateQueueProcessor = buildImmediateQueueProcessor(evidence, dailyFunnel, generatedAt);
   const pipelineHealth = buildPipelineHealth(evidence, releaseMetrics, centralToday, dailyFunnel);
   const globalLifecycle = buildGlobalLifecycle(evidence, releaseMetrics, dailyFunnel, immediateQueueProcessor);
+  const marketCoverage = buildMarketCoverage(evidence, releaseMetrics, dailyFunnel, latestSearchConfig);
   const dailyAutomationId = String(latestSearchConfig.daily_automation_id || reportCycle.automation_id || '');
   const sourceRunCurrent = isRecentIso(String(evidence.latestSourceRun?.executed_at || ''), 36);
   const latestReportCurrent = isRecentIso(String(evidence.dailyReport?.generated_at || ''), 36);
@@ -396,6 +359,7 @@ export function buildDailyOperatingCycleStatus(
     focusedVerificationRows,
     globalLifecycle,
     immediateQueueProcessor,
+    marketCoverage,
     minimumActivePipelineTarget: DAILY_TARGET_ACTIVE_QUALIFIED,
     newOpportunityTarget: DAILY_TARGET_NEWLY_IDENTIFIED,
     packageGenerationStatus: 'active: packages remain separate from jobs/applications and unchanged package fingerprints are reused',
@@ -414,26 +378,37 @@ export function buildDailyOperatingCycleStatus(
   };
 }
 
-export async function runDailyGreenhouseDiscovery(ownerEmail: string) {
+export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?: Partial<DailyCycleEvidence>) {
   const executedAt = new Date().toISOString();
   const runDay = executedAt.slice(0, 10);
-  const boards = DAILY_DISCOVERY_BOARDS;
+  const discoveryPlan = buildCareerOsDiscoveryPlan({
+    employerRecords: evidence?.employerKnowledgeBase?.employers || [],
+    extraGreenhouseBoards: parseCsv(process.env.CAREER_OS_SOURCE_BOARDS),
+    platformProfiles: evidence?.employerKnowledgeBase?.platformProfiles || [],
+    previousSearchConfig: asRecord(evidence?.latestSourceRun?.search_config),
+  });
+  const boards = discoveryPlan.greenhouseBoards;
   const minFitScore = 85;
-  const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:telecom:greenhouse:${boards.join(',')}:${runDay}`);
-  const settled = await Promise.allSettled(boards.map((board) => fetchGreenhouseJobs(board)));
+  const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:global-telecom:${discoveryPlan.fingerprint}:${runDay}`);
   const errors: string[] = [];
   const postings: JsonRecord[] = [];
+  const sourceStatuses: JsonRecord[] = [];
   let reviewed = 0;
 
-  settled.forEach((result, index) => {
-    const board = boards[index];
+  const settled = await fetchGreenhouseSourceBatches(discoveryPlan, boards);
+
+  settled.forEach((result) => {
     if (result.status === 'rejected') {
-      errors.push(`${board}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      errors.push(`${result.board}: ${reason}`);
+      sourceStatuses.push(sourceStatus(result.source, result.board, 'failed', 0, reason));
       return;
     }
-    reviewed += result.value.length;
-    for (const job of result.value) {
-      const posting = normalizePosting(ownerEmail, board, job, executedAt, sourceRunId, minFitScore);
+    const { board, source } = result.value;
+    reviewed += result.value.jobs.length;
+    sourceStatuses.push(sourceStatus(source, board, 'succeeded', result.value.jobs.length));
+    for (const job of result.value.jobs) {
+      const posting = normalizePosting(ownerEmail, board, job, executedAt, sourceRunId, minFitScore, source);
       postings.push(posting);
     }
   });
@@ -449,15 +424,15 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string) {
   const sourceRun = {
     id: sourceRunId,
     owner_email: ownerEmail,
-    source_type: 'expanded_public_ats_api',
-    source_name: 'Daily telecom, communications, connectivity, cloud, and adjacent platform official Greenhouse sources',
-    source_url: 'https://boards-api.greenhouse.io/v1/boards',
+    source_type: 'global_supported_official_source_plan',
+    source_name: 'Global telecom, connectivity, broadband, cloud communications, infrastructure, and adjacent technology official sources',
+    source_url: 'https://boards-api.greenhouse.io/v1/boards plus Career OS official-source registry',
     status: reviewed > 0 ? 'succeeded' : 'error',
     executed_at: executedAt,
     number_reviewed: reviewed,
     number_accepted: qualifiedPostings.length,
     number_skipped: Math.max(reviewed - qualifiedPostings.length, 0),
-    search_config: buildDailySearchConfig(boards, minFitScore, runDay),
+    search_config: buildDailySearchConfig(discoveryPlan, sourceStatuses, reviewed, qualifiedPostings.length, minFitScore, runDay),
     evidence: qualifiedPostings.slice(0, 15).map((posting) => ({
       company: posting.company,
       title: posting.title,
@@ -578,6 +553,53 @@ export async function persistDailyCycleReport(
   ]);
 
   return { automationRun, report };
+}
+
+function buildMarketCoverage(
+  evidence: DailyCycleEvidence,
+  releaseMetrics: DailyReleaseMetrics,
+  dailyFunnel: DailyOperatingCycleStatus['dailyFunnel'],
+  latestSearchConfig: JsonRecord,
+): DailyOperatingCycleStatus['marketCoverage'] {
+  const coverage = asRecord(latestSearchConfig.coverage_summary);
+  const sourceStatuses = arrayValue(latestSearchConfig.source_statuses).map(asRecord);
+  const failedSources = sourceStatuses.filter((source) => String(source.status || '') === 'failed');
+  const employersFromSources = uniqueStrings(sourceStatuses.map((source) => String(source.employer || source.board || '')).filter(Boolean));
+
+  return {
+    applicationsSubmitted: releaseMetrics.submittedApplications,
+    applicationsWaitingOnTomas: releaseMetrics.waitingOnTomas,
+    discoveryMode: String(coverage.discovery_mode || latestSearchConfig.discovery_mode || 'broad_dynamic_supported_source_plan'),
+    employerSourcesFailed: numberValue(coverage.employer_sources_failed) || failedSources.length,
+    employersSearched: numberValue(coverage.employers_searched) || employersFromSources.length || uniqueStrings(evidence.jobPostings.map((posting) => String(posting.company || ''))).length,
+    officialCareerSitesChecked: numberValue(coverage.official_career_sites_checked) || sourceStatuses.filter((source) => String(source.status || '') === 'succeeded').length,
+    qualifiedMatches: numberValue(coverage.qualified_matches) || numberValue(evidence.latestSourceRun?.number_accepted) || dailyFunnel.qualificationToday.qualified,
+    rawJobsReviewed: numberValue(coverage.raw_jobs_reviewed) || numberValue(evidence.latestSourceRun?.number_reviewed) || dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed,
+    sourceFailures: failedSources.slice(0, 10).map((source) => ({
+      employer: String(source.employer || source.board || 'Employer'),
+      reason: String(source.error || 'Source failed.'),
+      source: String(source.ats || source.source || 'official source'),
+    })),
+    supportedOfficialSources: numberValue(coverage.supported_official_sources) || sourceStatuses.length,
+    technicalBlockers: dailyFunnel.applicationExecutionToday.technicallyBlocked,
+    topTelecomEmployersWithNewMatches: topEmployersWithMatches(evidence.jobPostings),
+    unsupportedSourceCandidates: numberValue(coverage.unsupported_source_candidates),
+  };
+}
+
+function topEmployersWithMatches(postings: JsonRecord[]) {
+  const counts = new Map<string, number>();
+  for (const posting of postings) {
+    const text = `${posting.source_category || ''} ${posting.source_business_type || ''} ${posting.title || ''} ${posting.job_description || ''}`.toLowerCase();
+    if (!hasAny(text, ['telecom', 'connectivity', 'wireless', 'broadband', 'fiber', 'cloud communications', 'contact center', 'network'])) continue;
+    if (numberValue(posting.fit_score) < 70) continue;
+    const employer = String(posting.company || posting.source_employer || 'Employer');
+    counts.set(employer, (counts.get(employer) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 8)
+    .map(([employer, matches]) => ({ employer, matches }));
 }
 
 function buildConsolidatedActionQueue(evidence: DailyCycleEvidence): DailyOperatingCycleStatus['consolidatedActionQueue'] {
@@ -1043,6 +1065,43 @@ function estimateMinutes(action: string) {
   return 1;
 }
 
+async function fetchGreenhouseSourceBatches(discoveryPlan: CareerOsDiscoveryPlan, boards: string[]) {
+  const results: Array<
+    | { status: 'fulfilled'; value: { board: string; jobs: JsonRecord[]; source: CareerOsSourceCandidate } }
+    | { board: string; reason: unknown; source: CareerOsSourceCandidate; status: 'rejected' }
+  > = [];
+
+  for (let index = 0; index < boards.length; index += GLOBAL_DISCOVERY_MAX_CONCURRENCY) {
+    const batch = boards.slice(index, index + GLOBAL_DISCOVERY_MAX_CONCURRENCY);
+    const settled = await Promise.all(batch.map(async (board) => {
+      const source = careerOsSourceForBoard(discoveryPlan, board);
+      try {
+        const jobs = await fetchGreenhouseJobs(board);
+        return { status: 'fulfilled' as const, value: { board, jobs, source } };
+      } catch (error) {
+        return { board, reason: error, source, status: 'rejected' as const };
+      }
+    }));
+    results.push(...settled);
+  }
+
+  return results;
+}
+
+function sourceStatus(source: CareerOsSourceCandidate, board: string, status: 'succeeded' | 'failed', jobsReviewed: number, error = '') {
+  return {
+    ats: source.ats,
+    board,
+    business_type: source.businessType,
+    category: source.category,
+    employer: source.employer,
+    error,
+    jobs_reviewed: jobsReviewed,
+    source: 'official_greenhouse_board_api',
+    status,
+  };
+}
+
 async function fetchGreenhouseJobs(board: string) {
   const url = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs?content=true`;
   const response = await fetch(url, { headers: { accept: 'application/json' } });
@@ -1051,7 +1110,7 @@ async function fetchGreenhouseJobs(board: string) {
   return Array.isArray(payload.jobs) ? payload.jobs.map(asRecord) : [];
 }
 
-function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number): JsonRecord {
+function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
   const company = companyName(board, job);
   const description = htmlToText(String(job.content || ''));
   const compensation = extractCompensation(description);
@@ -1078,6 +1137,9 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
     posting_validation_status: 'active',
     last_checked_at: lastCheckedAt,
     raw_record: job,
+    source_category: source.category,
+    source_employer: source.employer,
+    source_business_type: source.businessType,
     fit_score: fitScore,
     ats_analysis: {
       method: 'deterministic_greenhouse_daily_cycle_v1',
@@ -1144,7 +1206,17 @@ function processDiscoveryBacklogBatches(records: JsonRecord[], sourceRunId: stri
   };
 }
 
-function buildDailySearchConfig(boards: string[], minFitScore: number, runDay: string) {
+function buildDailySearchConfig(
+  discoveryPlan: CareerOsDiscoveryPlan,
+  sourceStatuses: JsonRecord[],
+  rawJobsReviewed: number,
+  qualifiedMatches: number,
+  minFitScore: number,
+  runDay: string,
+) {
+  const boards = discoveryPlan.greenhouseBoards;
+  const sourceFailures = sourceStatuses.filter((source) => String(source.status || '') === 'failed');
+  const succeededSources = sourceStatuses.filter((source) => String(source.status || '') === 'succeeded');
   return {
     automatic_submission_limit: 3,
     batch_processing: {
@@ -1155,6 +1227,17 @@ function buildDailySearchConfig(boards: string[], minFitScore: number, runDay: s
       throttle_policy: 'per_employer_and_per_ats',
     },
     boards,
+    coverage_summary: {
+      discovery_mode: discoveryPlan.coverageSummary.discoveryMode,
+      employer_sources_failed: sourceFailures.length,
+      employers_searched: sourceStatuses.length,
+      official_career_sites_checked: succeededSources.length,
+      qualified_matches: qualifiedMatches,
+      raw_jobs_reviewed: rawJobsReviewed,
+      supported_official_sources: discoveryPlan.coverageSummary.supportedOfficialSources,
+      total_employer_candidates: discoveryPlan.coverageSummary.totalEmployerCandidates,
+      unsupported_source_candidates: discoveryPlan.coverageSummary.unsupportedSourceCandidates,
+    },
     compensation_policy: {
       never_invent_bonus_equity_commission_or_total_compensation: true,
       never_treat_base_and_total_compensation_as_equivalent: true,
@@ -1167,14 +1250,16 @@ function buildDailySearchConfig(boards: string[], minFitScore: number, runDay: s
     },
     cost_controls: DAILY_OPERATING_CYCLE.creditSavingControls,
     daily_automation_id: 'daily-tomas-career-os-run',
+    discovery_mode: 'global_telecom_connectivity_adjacent_market',
     enqueue_qualified_package_ready_applications: true,
     employer_universe: DAILY_OPERATING_CYCLE.employerUniverseCovered,
     freshness_windows: ['24_hours', '3_days', '7_days', '14_days_if_active_exceptional_fit'],
-    idempotency_key: `tomas@nieves.com:telecom:greenhouse:${boards.join(',')}:${runDay}`,
+    idempotency_key: `tomas@nieves.com:global-telecom:${discoveryPlan.fingerprint}:${runDay}`,
     invoked_by: 'vercel-cron',
     last_processed_cursor: `${runDay}:complete-result-set`,
     location_policy: 'verify remote from Texas, employment from Texas, Dallas-Fort Worth, or Texas hybrid before package generation',
     market: 'telecom',
+    market_universe_version: CAREER_OS_MARKET_UNIVERSE_VERSION,
     min_fit_score: minFitScore,
     pipeline_targets: {
       active_qualified_minimum: DAILY_TARGET_ACTIVE_QUALIFIED,
@@ -1183,7 +1268,16 @@ function buildDailySearchConfig(boards: string[], minFitScore: number, runDay: s
       qualified_unique_adds_when_available: 5,
     },
     role_keywords: DAILY_OPERATING_CYCLE.rolePriorities,
+    source_candidates: discoveryPlan.sourceCandidates.map((candidate) => ({
+      ats: candidate.ats,
+      board: candidate.board,
+      business_type: candidate.businessType,
+      category: candidate.category,
+      employer: candidate.employer,
+      supported: candidate.supported,
+    })),
     source_registry: DAILY_OPERATING_CYCLE.discoverySourcesEnabled,
+    source_statuses: sourceStatuses,
     standing_trusted_auto_apply_policy: {
       ordinary_application_approval_required: false,
       legal_fingerprint_reuse: 'reuse_when_materially_identical_fingerprint_matches',
@@ -1382,6 +1476,14 @@ function asRecord(value: unknown): JsonRecord {
 
 function arrayValue(value: unknown) {
   return Array.isArray(value) ? value : [];
+}
+
+function parseCsv(value: unknown) {
+  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
 function numberValue(value: unknown) {

@@ -232,6 +232,11 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
   assert.match(page, /Daily Automation Health/);
   assert.match(page, /Immediate queue processor/);
   assert.match(page, /Exact next action/);
+  assert.match(page, /Complete Market Search Coverage/);
+  assert.match(page, /Employers Searched/);
+  assert.match(page, /Career Sites Checked/);
+  assert.match(page, /Raw Jobs Reviewed/);
+  assert.equal(page.includes('Top telecom/connectivity employer'), true);
   assert.match(page, /Autonomous operating status/);
   assert.match(page, /Trusted Auto-Apply/);
   assert.match(page, /Global Lifecycle Counts/);
@@ -264,6 +269,7 @@ test('Career OS daily execution separates raw records, qualification, queueing, 
 
 test('global autonomous discovery supports complete result sets, checkpoints, and canonical queue states', () => {
   const dailyCycleSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-daily-cycle.ts'), 'utf8');
+  const marketUniverseSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-market-universe.ts'), 'utf8');
   const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
   const cronRoute = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'daily-run', 'route.ts'), 'utf8');
 
@@ -281,13 +287,27 @@ test('global autonomous discovery supports complete result sets, checkpoints, an
   assert.match(dailyCycleSource, /GLOBAL_DISCOVERY_BATCH_SIZE/);
   assert.match(dailyCycleSource, /GLOBAL_DISCOVERY_MAX_CONCURRENCY/);
   assert.match(dailyCycleSource, /GLOBAL_DISCOVERY_RETRY_LIMIT/);
+  assert.match(dailyCycleSource, /buildCareerOsDiscoveryPlan/);
+  assert.match(dailyCycleSource, /fetchGreenhouseSourceBatches/);
+  assert.match(dailyCycleSource, /source_statuses/);
+  assert.match(dailyCycleSource, /coverage_summary/);
+  assert.match(dailyCycleSource, /marketCoverage/);
   assert.match(dailyCycleSource, /processDiscoveryBacklogBatches/);
   assert.match(dailyCycleSource, /postings\.push\(posting\)/);
   assert.match(dailyCycleSource, /postings_persisted/);
   assert.match(dailyCycleSource, /global_lifecycle/);
   assert.match(dailyCycleSource, /trusted_auto_apply_policy/);
   assert.match(dailyCycleSource, /canonicalExecutionState/);
+  assert.match(marketUniverseSource, /CAREER_OS_MARKET_UNIVERSE_VERSION/);
+  assert.equal(marketUniverseSource.includes('U.S. wireless and telecom carriers'), true);
+  assert.match(marketUniverseSource, /broadband, fiber, cable, and internet providers/);
+  assert.match(marketUniverseSource, /satellite, fixed wireless, and connectivity/);
+  assert.match(marketUniverseSource, /towers, fiber infrastructure, and digital real estate/);
+  assert.match(marketUniverseSource, /dynamic employer discovery/);
+  assert.match(marketUniverseSource, /unsupportedSourceCandidates/);
+  assert.match(marketUniverseSource, /greenhouseBoards/);
   assert.match(cronRoute, /postingsPersisted/);
+  assert.equal(cronRoute.includes('before.evidence'), true);
 });
 
 test('minimal employment history model maps only ATS employment fields and validates Cisco safely', () => {

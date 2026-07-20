@@ -31,6 +31,7 @@ export default async function CareerOsPage() {
   const dailyWorkflow = status.dailyWorkflow;
   const pipelineHealth = dailyWorkflow.pipelineHealth;
   const dailyFunnel = dailyWorkflow.dailyFunnel;
+  const marketCoverage = dailyWorkflow.marketCoverage;
   const globalLifecycle = status.globalLifecycle;
   const trustedAutoApplyPolicy = status.trustedAutoApplyPolicy;
   const queueItems = flattenActionQueue(dailyWorkflow.consolidatedActionQueue.groups);
@@ -149,11 +150,59 @@ export default async function CareerOsPage() {
         <p>Autonomous operating status: {dailyWorkflow.autonomousOperatingStatus}.</p>
         <p>Trusted Auto-Apply: {dailyWorkflow.trustedAutoApplyPolicy.authority}; ordinary application approval required: {dailyWorkflow.trustedAutoApplyPolicy.ordinaryApplicationApprovalRequired ? 'yes' : 'no'}; legal fingerprints reuse only when materially identical.</p>
         <p>Daily schedule: {dailyWorkflow.dailySchedule.phases.map((phase) => `${phase.name} ${phase.timeCentral}`).join('; ')}.</p>
+        <p>Market search: {marketCoverage.rawJobsReviewed} raw job{marketCoverage.rawJobsReviewed === 1 ? '' : 's'} reviewed across {marketCoverage.employersSearched} employer source{marketCoverage.employersSearched === 1 ? '' : 's'}; {marketCoverage.qualifiedMatches} qualified match{marketCoverage.qualifiedMatches === 1 ? '' : 'es'} found.</p>
         <p>Recruiter responses: {pipelineHealth.recruiterResponses}. Rejections: {pipelineHealth.rejectedByEmployers}. Offers: {pipelineHealth.offers}.</p>
         <p>Automation completion: {pipelineHealth.automationCompletionRate.toFixed(1)}%. Human intervention: {pipelineHealth.humanInterventionRate.toFixed(1)}%.</p>
         <p>Exact next action: {nextActionLabel}</p>
         <p>Immediate queue processor: {dailyWorkflow.immediateQueueProcessor.status}; queued immediate {dailyWorkflow.immediateQueueProcessor.queuedImmediate}; running now {dailyWorkflow.immediateQueueProcessor.runningNow}; submitted this run {dailyWorkflow.immediateQueueProcessor.submittedThisRun}; next scheduled run {dailyWorkflow.immediateQueueProcessor.nextScheduledRun}.</p>
         <RunNowControl ownerEmail={status.evidence.ownerEmail} />
+        <h3>Complete Market Search Coverage</h3>
+        <div className="career-os-metrics secondary" aria-label="Career OS market search coverage">
+          <Metric detail={marketCoverage.discoveryMode.replace(/_/g, ' ')} label="Employers Searched" value={marketCoverage.employersSearched} />
+          <Metric detail={`${marketCoverage.supportedOfficialSources} supported sources`} label="Career Sites Checked" value={marketCoverage.officialCareerSitesChecked} />
+          <Metric detail="official source records" label="Raw Jobs Reviewed" value={marketCoverage.rawJobsReviewed} />
+          <Metric detail="deduped this cycle" label="Newly Unique Jobs" value={dailyFunnel.qualificationToday.newlyUniqueOpportunities} />
+          <Metric detail="profile and policy match" label="Qualified Matches" value={marketCoverage.qualifiedMatches} />
+          <Metric detail="confirmation evidence" label="Applications Submitted" value={marketCoverage.applicationsSubmitted} />
+          <Metric detail="legal/factual/account/security/comp" label="Waiting on Tomas" value={marketCoverage.applicationsWaitingOnTomas} />
+          <Metric detail="source or browser adapter" label="Technical Blockers" value={marketCoverage.technicalBlockers} />
+        </div>
+        <div className="career-os-list compact">
+          <DetailRow detail={`${marketCoverage.unsupportedSourceCandidates} employer candidates need additional ATS adapters before they can be automatically checked.`} label="Unsupported official-source candidates" value={String(marketCoverage.unsupportedSourceCandidates)} />
+          <DetailRow detail="Failed sources are isolated so the remaining supported employers keep processing." label="Employer sources failed" value={String(marketCoverage.employerSourcesFailed)} />
+        </div>
+        <div className="career-os-list">
+          {marketCoverage.topTelecomEmployersWithNewMatches.length ? marketCoverage.topTelecomEmployersWithNewMatches.map((item) => (
+            <article className="career-os-row" key={`${item.employer}-top-telecom`}>
+              <div>
+                <h3>{item.employer}</h3>
+                <p>Top telecom/connectivity employer with current matching roles.</p>
+              </div>
+              <span>{item.matches}</span>
+            </article>
+          )) : (
+            <article className="career-os-row">
+              <div>
+                <h3>No telecom match cluster is available yet.</h3>
+                <p>The next daily run will repopulate this from the global supported source plan.</p>
+              </div>
+              <span>0</span>
+            </article>
+          )}
+        </div>
+        {marketCoverage.sourceFailures.length ? (
+          <div className="career-os-list">
+            {marketCoverage.sourceFailures.map((failure) => (
+              <article className="career-os-row" key={`${failure.employer}-${failure.source}`}>
+                <div>
+                  <h3>{failure.employer}: source failed</h3>
+                  <p>{failure.source} · {failure.reason}</p>
+                </div>
+                <span>retry</span>
+              </article>
+            ))}
+          </div>
+        ) : null}
         <h3>Global Lifecycle Counts</h3>
         <div className="career-os-metrics secondary" aria-label="Career OS global lifecycle counts">
           <Metric detail="all discovery history" label="Total raw records ever discovered" value={globalLifecycle.totalRawRecordsEverDiscovered} />
