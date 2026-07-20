@@ -351,8 +351,10 @@ test('Career OS CTAs invoke a secured autonomous queue processor and record audi
   assert.match(page, /ApplicationActionControl/);
   assert.match(page, /nextActionApplication/);
   assert.match(controls, /Run Eligible Applications Now/);
+  assert.match(controls, /Refresh Job Pool/);
   assert.match(controls, /Refresh Status/);
-  assert.match(controls, /Authorize Actions/);
+  assert.doesNotMatch(controls, /Authorize Actions/);
+  assert.match(controls, /router\.refresh\(\)/);
   assert.match(controls, /save_answer/);
   assert.match(controls, /resume_application/);
   assert.match(actionsRoute, /Unauthorized Career OS action/);
@@ -360,6 +362,9 @@ test('Career OS CTAs invoke a secured autonomous queue processor and record audi
   assert.match(actionsRoute, /processCareerOsQueue/);
   assert.match(actionsRoute, /recordCareerOsAction/);
   assert.match(actionsRoute, /run_now/);
+  assert.match(actionsRoute, /refresh_discovery/);
+  assert.match(actionsRoute, /runDailyGreenhouseDiscovery/);
+  assert.match(actionsRoute, /persistDailyCycleReport/);
   assert.match(cronRoute, /processCareerOsQueue/);
   assert.match(queue, /career_os_application_queue_processor/);
   assert.match(queue, /queue_blocker_verified/);
@@ -506,12 +511,18 @@ test('Career OS waiting-on-Tomas CTAs expose one action, resume explicitly, and 
 
 test('Career OS daily discovery is independent from submission queue processing', () => {
   const dailyRun = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'daily-run', 'route.ts'), 'utf8');
+  const actionsRoute = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'actions', 'route.ts'), 'utf8');
+  const dailyCycle = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-daily-cycle.ts'), 'utf8');
 
   assert.match(dailyRun, /runDailyGreenhouseDiscovery/);
   assert.match(dailyRun, /runSubmissionQueueAfterDiscovery/);
   assert.match(dailyRun, /careerOsQueuePaused/);
   assert.match(dailyRun, /career_os_queue_paused/);
   assert.match(dailyRun, /persistDailyCycleReport/);
+  assert.match(actionsRoute, /body\.action === 'refresh_discovery'/);
+  assert.match(actionsRoute, /runDailyGreenhouseDiscovery\(ownerEmail, before\.evidence\)/);
+  assert.match(dailyCycle, /firstPositiveNumber/);
+  assert.match(dailyCycle, /fallbackPlan\.coverageSummary\.supportedOfficialSources/);
 });
 
 test('Career OS dashboard metrics and daily action queue are actionable controls', () => {

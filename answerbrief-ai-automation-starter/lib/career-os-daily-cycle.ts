@@ -568,14 +568,42 @@ function buildMarketCoverage(
   const sourceStatuses = arrayValue(latestSearchConfig.source_statuses).map(asRecord);
   const failedSources = sourceStatuses.filter((source) => String(source.status || '') === 'failed');
   const employersFromSources = uniqueStrings(sourceStatuses.map((source) => String(source.employer || source.board || '')).filter(Boolean));
+  const configuredBoards = uniqueStrings(arrayValue(latestSearchConfig.boards).map(String).filter(Boolean));
+  const configuredCandidates = arrayValue(latestSearchConfig.source_candidates).map(asRecord);
+  const configuredSupportedCandidates = configuredCandidates.filter((candidate) => candidate.supported === true || String(candidate.supported) === 'true');
+  const fallbackPlan = buildCareerOsDiscoveryPlan({
+    applications: evidence.applications,
+    employerRecords: evidence.employerKnowledgeBase?.employers || [],
+    jobPostings: evidence.jobPostings,
+    platformProfiles: evidence.employerKnowledgeBase?.platformProfiles || [],
+    previousSearchConfig: latestSearchConfig,
+    workflowEvents: evidence.workflowEvents,
+  });
+  const supportedOfficialSources = firstPositiveNumber(
+    coverage.supported_official_sources,
+    sourceStatuses.length,
+    configuredSupportedCandidates.length,
+    configuredBoards.length,
+    fallbackPlan.coverageSummary.supportedOfficialSources,
+  );
+  const officialCareerSitesChecked = firstPositiveNumber(
+    coverage.official_career_sites_checked,
+    sourceStatuses.filter((source) => String(source.status || '') === 'succeeded').length,
+    configuredBoards.length,
+  );
 
   return {
     applicationsSubmitted: releaseMetrics.submittedApplications,
     applicationsWaitingOnTomas: releaseMetrics.waitingOnTomas,
     discoveryMode: String(coverage.discovery_mode || latestSearchConfig.discovery_mode || 'broad_dynamic_supported_source_plan'),
     employerSourcesFailed: numberValue(coverage.employer_sources_failed) || failedSources.length,
-    employersSearched: numberValue(coverage.employers_searched) || employersFromSources.length || uniqueStrings(evidence.jobPostings.map((posting) => String(posting.company || ''))).length,
-    officialCareerSitesChecked: numberValue(coverage.official_career_sites_checked) || sourceStatuses.filter((source) => String(source.status || '') === 'succeeded').length,
+    employersSearched: firstPositiveNumber(
+      coverage.employers_searched,
+      employersFromSources.length,
+      configuredCandidates.length,
+      uniqueStrings(evidence.jobPostings.map((posting) => String(posting.company || ''))).length,
+    ),
+    officialCareerSitesChecked,
     qualifiedMatches: numberValue(coverage.qualified_matches) || numberValue(evidence.latestSourceRun?.number_accepted) || dailyFunnel.qualificationToday.qualified,
     rawJobsReviewed: numberValue(coverage.raw_jobs_reviewed) || numberValue(evidence.latestSourceRun?.number_reviewed) || dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed,
     sourceFailures: failedSources.slice(0, 10).map((source) => ({
@@ -583,11 +611,19 @@ function buildMarketCoverage(
       reason: String(source.error || 'Source failed.'),
       source: String(source.ats || source.source || 'official source'),
     })),
-    supportedOfficialSources: numberValue(coverage.supported_official_sources) || sourceStatuses.length,
+    supportedOfficialSources,
     technicalBlockers: dailyFunnel.applicationExecutionToday.technicallyBlocked,
     topTelecomEmployersWithNewMatches: topEmployersWithMatches(evidence.jobPostings),
     unsupportedSourceCandidates: numberValue(coverage.unsupported_source_candidates),
   };
+}
+
+function firstPositiveNumber(...values: unknown[]) {
+  for (const value of values) {
+    const number = numberValue(value);
+    if (number > 0) return number;
+  }
+  return 0;
 }
 
 function topEmployersWithMatches(postings: JsonRecord[]) {

@@ -7,6 +7,12 @@ import {
   processCareerOsQueue,
   recordCareerOsAction,
 } from '@/lib/career-os-queue';
+import { getCareerOsStatus } from '@/lib/career-os-status';
+import {
+  buildDailyOperatingCycleStatus,
+  persistDailyCycleReport,
+  runDailyGreenhouseDiscovery,
+} from '@/lib/career-os-daily-cycle';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -56,6 +62,53 @@ export async function POST(request: NextRequest) {
   if (body.action === 'run_now') {
     const queueResult = await processCareerOsQueue({ ownerEmail, trigger: 'run_now' });
     return NextResponse.json({ ok: true, queueResult, status: queueResult.errors.length ? 'error' : 'success' });
+  }
+
+  if (body.action === 'refresh_discovery') {
+    const before = await getCareerOsStatus();
+    const discovery = await runDailyGreenhouseDiscovery(ownerEmail, before.evidence);
+    const afterDiscovery = await getCareerOsStatus();
+    const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, {
+      activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
+      duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
+      inactive: afterDiscovery.inactive,
+      ineligible: afterDiscovery.ineligible,
+      inProgress: afterDiscovery.inProgress,
+      readyForAutomation: afterDiscovery.readyForAutomation,
+      releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
+      submittedApplications: afterDiscovery.submittedApplications,
+      totalPackages: afterDiscovery.totalPackages,
+      totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
+      waitingOnTomas: afterDiscovery.waitingOnTomas,
+    });
+    const persisted = await persistDailyCycleReport(ownerEmail, dailyCycle, {
+      activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
+      duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
+      inactive: afterDiscovery.inactive,
+      ineligible: afterDiscovery.ineligible,
+      inProgress: afterDiscovery.inProgress,
+      readyForAutomation: afterDiscovery.readyForAutomation,
+      releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
+      submittedApplications: afterDiscovery.submittedApplications,
+      totalPackages: afterDiscovery.totalPackages,
+      totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
+      waitingOnTomas: afterDiscovery.waitingOnTomas,
+    }, discovery);
+
+    return NextResponse.json({
+      dailyDiscovery: {
+        errors: discovery.errors,
+        postingsAccepted: discovery.postingsAccepted,
+        postingsPersisted: discovery.postingsPersisted,
+        postingsReviewed: discovery.postingsReviewed,
+      },
+      ok: true,
+      persisted: {
+        automationRunId: persisted.automationRun.id,
+        dailyReportId: persisted.report.id,
+      },
+      status: discovery.errors.length ? 'error' : 'success',
+    });
   }
 
   if (body.action === 'inspect_application' || body.action === 'resume_application' || body.action === 'save_answer') {

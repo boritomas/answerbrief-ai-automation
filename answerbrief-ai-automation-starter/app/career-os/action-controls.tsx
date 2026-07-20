@@ -4,6 +4,12 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 type ActionResult = {
+  dailyDiscovery?: {
+    errors: string[];
+    postingsAccepted: number;
+    postingsPersisted?: number;
+    postingsReviewed: number;
+  };
   error?: string;
   message?: string;
   ok?: boolean;
@@ -11,6 +17,7 @@ type ActionResult = {
   queueResult?: {
     applicationsAudited: number;
     automaticallyQueued: number;
+    errors?: string[];
     processed: number;
     technical: number;
     waitingOnTomas: number;
@@ -42,6 +49,7 @@ export function RunNowControl({
   const [message, setMessage] = useState('Idle. Ready to queue all eligible applications for secure autonomous execution.');
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'blocked' | 'error'>('idle');
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
   function runNow() {
     startTransition(async () => {
@@ -55,9 +63,34 @@ export function RunNowControl({
       }
       setState('success');
       const queue = result.queueResult;
+      const paused = queue?.errors?.includes('career_os_queue_paused');
       setMessage(queue
-        ? `Complete: audited ${queue.applicationsAudited}, auto-queued ${queue.automaticallyQueued}, processed ${queue.processed}, waiting ${queue.waitingOnTomas}, technical ${queue.technical}.`
+        ? paused
+          ? 'Queue is intentionally paused. Discovery can still refresh the job pool; no employer submissions were attempted.'
+          : queue.automaticallyQueued === 0 && queue.processed === 0
+            ? `No eligible applications are ready to run. Audited ${queue.applicationsAudited}; waiting ${queue.waitingOnTomas}; technical ${queue.technical}.`
+            : `Complete: audited ${queue.applicationsAudited}, auto-queued ${queue.automaticallyQueued}, processed ${queue.processed}, waiting ${queue.waitingOnTomas}, technical ${queue.technical}.`
         : 'Queue processor completed.');
+      router.refresh();
+    });
+  }
+
+  function refreshDiscovery() {
+    startTransition(async () => {
+      setState('loading');
+      setMessage('Refreshing the official-source job pool without running employer submissions...');
+      const result = await postCareerAction({ action: 'refresh_discovery', actionToken, actionTokenExpiresAt, ownerEmail });
+      if (!result.ok) {
+        setState(result.status === 'blocked' ? 'blocked' : 'error');
+        setMessage(result.error || result.message || 'Discovery refresh failed.');
+        return;
+      }
+      setState('success');
+      const discovery = result.dailyDiscovery;
+      setMessage(discovery
+        ? `Discovery refreshed: reviewed ${discovery.postingsReviewed}, persisted ${discovery.postingsPersisted || 0}, qualified ${discovery.postingsAccepted}.`
+        : 'Discovery refreshed.');
+      router.refresh();
     });
   }
 
@@ -65,8 +98,8 @@ export function RunNowControl({
     <div className={`career-os-action-control ${state}`} aria-live="polite">
       <div className="cta-row">
         <button className="button primary" disabled={isPending} onClick={runNow} type="button">Run Eligible Applications Now</button>
+        <button className="button secondary" disabled={isPending} onClick={refreshDiscovery} type="button">Refresh Job Pool</button>
         <button className="button secondary" disabled={isPending} onClick={() => window.location.reload()} type="button">Refresh Status</button>
-        <button aria-disabled="true" className="button secondary" disabled type="button">Authorize Actions</button>
       </div>
       <small>{state}: {message}</small>
     </div>
