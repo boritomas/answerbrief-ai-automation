@@ -214,3 +214,28 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
   assert.match(page, /Exact next action/);
   assert.doesNotMatch(page, /hard-coded production metrics/i);
 });
+
+test('minimal employment history model maps only ATS employment fields and validates Cisco safely', () => {
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+  const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
+  const hashScroll = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'hash-scroll.tsx'), 'utf8');
+
+  assert.match(statusSource, /CanonicalEmploymentRecord/);
+  assert.match(statusSource, /career_os_profiles\.verified_profile\.employment_history/);
+  assert.match(statusSource, /Company', 'Employer', 'Current Employer/);
+  assert.match(statusSource, /Job Title', 'Position', 'Role/);
+  assert.match(statusSource, /From', 'Start Date/);
+  assert.match(statusSource, /To', 'End Date/);
+  assert.match(statusSource, /employment\.company/);
+  assert.match(statusSource, /employment\.title/);
+  assert.match(statusSource, /employment\.start_date/);
+  assert.match(statusSource, /employment\.end_date/);
+  assert.match(statusSource, /employment\.current/);
+  assert.match(statusSource, /Cisco employment mapper validated/);
+  assert.match(statusSource, /missing_verified_information/);
+  assert.doesNotMatch(statusSource, /education\.|certification\.|candidateGraph|interview intelligence|offer engine/i);
+  assert.match(page, /HashScroll/);
+  assert.match(page, /applicationAnchorId/);
+  assert.doesNotMatch(page, /applications\.slice\(0, 5\)\.map/);
+  assert.match(hashScroll, /scrollIntoView/);
+});

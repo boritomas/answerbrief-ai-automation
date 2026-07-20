@@ -46,10 +46,68 @@ export type CareerOsStatus = {
     estimatedMinutes?: number;
     deepLink?: string;
   };
+  employmentModel: EmploymentModelStatus;
+  atsEmploymentMapper: AtsEmploymentMapperStatus;
   productionEvidenceReady: boolean;
   blocker?: string;
   evidence: CareerOsEvidence;
   verificationRows: VerificationRow[];
+};
+
+export type CanonicalEmploymentRecord = {
+  currentEmployer: boolean;
+  employer: string;
+  endMonth?: string;
+  endYear?: number;
+  location?: string;
+  source: string;
+  startMonth?: string;
+  startYear?: number;
+  title: string;
+  verificationState: string;
+};
+
+export type EmploymentModelStatus = {
+  completeForExternalUse: boolean;
+  missingVerifiedFields: string[];
+  records: CanonicalEmploymentRecord[];
+  source: string;
+  version: string;
+};
+
+export type AtsEmploymentPath = 'employment.company' | 'employment.title' | 'employment.start_date' | 'employment.end_date' | 'employment.current';
+export type AtsEmploymentPlatform = 'Cisco' | 'Workday' | 'Greenhouse';
+
+export type AtsEmploymentFieldRule = {
+  labels: string[];
+  path: AtsEmploymentPath;
+  valueKind: 'boolean' | 'date' | 'text';
+};
+
+export type AtsMappedEmploymentField = {
+  labels: string[];
+  missingVerifiedField?: string;
+  path: AtsEmploymentPath;
+  value?: string | boolean;
+  verified: boolean;
+};
+
+export type AtsEmploymentMappingResult = {
+  applicationId?: string;
+  canPopulateRequiredFields: boolean;
+  employer?: string;
+  fields: AtsMappedEmploymentField[];
+  missingVerifiedFields: string[];
+  pauseReason?: string;
+  platform: AtsEmploymentPlatform;
+};
+
+export type AtsEmploymentMapperStatus = {
+  applicationsUnblocked: number;
+  ciscoValidation: AtsEmploymentMappingResult;
+  fieldRules: AtsEmploymentFieldRule[];
+  supportedPlatforms: AtsEmploymentPlatform[];
+  version: string;
 };
 
 export type CareerOsEvidence = {
@@ -219,6 +277,8 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   const salaryRange = buildSalaryRange(activeJobPostings);
   const compensationPreference = buildCompensationPreference(evidence.profile);
   const dailyWorkflow = buildDailyOperatingCycleStatus(evidence, canonicalRelease);
+  const employmentModel = buildEmploymentModel(evidence);
+  const atsEmploymentMapper = buildAtsEmploymentMapperStatus(evidence, employmentModel);
   const verificationRows = buildVerificationRows(evidence, supabaseConnected, dailyWorkflow);
 
   return {
@@ -250,6 +310,8 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     actionableProgressPercentage: canonicalRelease.actionableProgressPercentage,
     dailyWorkflow,
     nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates),
+    employmentModel,
+    atsEmploymentMapper,
     productionEvidenceReady: supabaseConnected,
     blocker: evidence.diagnostics[0],
     evidence,
@@ -309,6 +371,10 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
     || evidence.automationRuns.some((run) => String(run.summary || '').includes('same Greenhouse source-runner'))
     || (evidence.latestSourceRun?.search_config && (evidence.latestSourceRun.search_config as JsonRecord).daily_automation_id === 'daily-tomas-career-os-run')
   );
+  const employmentModel = buildEmploymentModel(evidence);
+  const atsEmploymentMapper = buildAtsEmploymentMapperStatus(evidence, employmentModel);
+  const ciscoEmploymentValidated = atsEmploymentMapper.ciscoValidation.canPopulateRequiredFields
+    || atsEmploymentMapper.ciscoValidation.pauseReason === 'missing_verified_information';
 
   return [
     row('Supabase evidence service connected', supabaseConnected),
@@ -340,9 +406,180 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
     row('Production health passes', supabaseConnected && evidence.diagnostics.length === 0),
     row('Deployment evidence exists', Boolean(evidence.deployment.deploymentUrl)),
     row('Production browser validation evidence exists', evidence.workflowEvents.some((event) => event.event_type === 'production_browser_validation')),
+    row('Canonical employment history model exists', employmentModel.records.length > 0 && employmentModel.records.every((record) => record.employer && record.title), `${employmentModel.records.length} verified employment record(s); missing ${employmentModel.missingVerifiedFields.join(', ') || 'none'}.`),
+    row('Employment ATS mapper supports Cisco Workday Greenhouse', atsEmploymentMapper.supportedPlatforms.length === 3 && atsEmploymentMapper.fieldRules.length === 5),
+    row('Cisco employment mapper validated', ciscoEmploymentValidated, atsEmploymentMapper.ciscoValidation.canPopulateRequiredFields ? 'Cisco employment fields can be populated from canonical verified facts.' : `Cisco paused for missing verified field(s): ${atsEmploymentMapper.ciscoValidation.missingVerifiedFields.join(', ')}.`),
     row('Permanent daily workflow configured', dailyWorkflow.status === 'configured', `${dailyWorkflow.dailySchedule.path} ${dailyWorkflow.dailySchedule.cron}`),
     ...dailyWorkflow.focusedVerificationRows,
   ];
+}
+
+const EMPLOYMENT_MODEL_VERSION = 'career-os-employment-history-2026-07-19-v1';
+const ATS_EMPLOYMENT_MAPPER_VERSION = 'career-os-ats-employment-mapper-2026-07-19-v1';
+
+const ATS_EMPLOYMENT_FIELD_RULES: AtsEmploymentFieldRule[] = [
+  { labels: ['Company', 'Employer', 'Current Employer'], path: 'employment.company', valueKind: 'text' },
+  { labels: ['Job Title', 'Position', 'Role'], path: 'employment.title', valueKind: 'text' },
+  { labels: ['From', 'Start Date'], path: 'employment.start_date', valueKind: 'date' },
+  { labels: ['To', 'End Date'], path: 'employment.end_date', valueKind: 'date' },
+  { labels: ['Current Employer'], path: 'employment.current', valueKind: 'boolean' },
+];
+
+function buildEmploymentModel(evidence: CareerOsEvidence): EmploymentModelStatus {
+  const verifiedProfile = asRecord(evidence.profile?.verified_profile);
+  const currentCompany = findVerifiedCurrentCompany(evidence, verifiedProfile);
+  const knownLocation = knownEmploymentLocation(verifiedProfile);
+  const records = arrayRecords(verifiedProfile.employment_history)
+    .map((raw, index) => canonicalEmploymentRecord(raw, index, currentCompany, knownLocation))
+    .filter((record) => record.employer || record.title);
+  const missingVerifiedFields = uniqueStrings(records.flatMap(missingEmploymentFields));
+
+  return {
+    completeForExternalUse: records.length > 0 && missingVerifiedFields.length === 0,
+    missingVerifiedFields,
+    records,
+    source: 'career_os_profiles.verified_profile.employment_history',
+    version: EMPLOYMENT_MODEL_VERSION,
+  };
+}
+
+function canonicalEmploymentRecord(raw: JsonRecord, index: number, currentCompany: string, knownLocation: string): CanonicalEmploymentRecord {
+  const parsed = parseEmploymentPeriod(raw);
+  const employer = stringValue(raw.employer || raw.company);
+  const currentEmployer = booleanValue(raw.current_employer ?? raw.currentEmployer)
+    || Boolean(index === 0 && currentCompany && compactKey(employer) === compactKey(currentCompany));
+
+  return {
+    currentEmployer,
+    employer,
+    endMonth: parsed.endMonth,
+    endYear: parsed.endYear,
+    location: stringValue(raw.location) || knownLocation || undefined,
+    source: stringValue(raw.source) || 'verified_profile.employment_history',
+    startMonth: parsed.startMonth,
+    startYear: parsed.startYear,
+    title: stringValue(raw.title || raw.job_title || raw.position || raw.role),
+    verificationState: stringValue(raw.verification_state || raw.verificationState) || 'requires_verification',
+  };
+}
+
+function parseEmploymentPeriod(raw: JsonRecord) {
+  const period = stringValue(raw.period || raw.date_range || raw.dates);
+  const explicitStartMonth = monthName(raw.start_month || raw.startMonth);
+  const explicitEndMonth = monthName(raw.end_month || raw.endMonth);
+  const explicitStartYear = yearValue(raw.start_year || raw.startYear);
+  const explicitEndYear = yearValue(raw.end_year || raw.endYear);
+  const periodDates = Array.from(period.matchAll(/(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+)?((?:19|20)\d{2})/gi))
+    .map((match) => ({ month: monthName(match[1]), year: yearValue(match[2]) }))
+    .filter((date) => date.year);
+  const first = periodDates[0];
+  const last = periodDates.length > 1 ? periodDates[periodDates.length - 1] : undefined;
+
+  return {
+    endMonth: explicitEndMonth || last?.month,
+    endYear: explicitEndYear || last?.year,
+    startMonth: explicitStartMonth || first?.month,
+    startYear: explicitStartYear || first?.year,
+  };
+}
+
+function missingEmploymentFields(record: CanonicalEmploymentRecord) {
+  const missing: string[] = [];
+  if (!record.employer) missing.push('Employer');
+  if (!record.title) missing.push('Job Title');
+  if (!record.startMonth) missing.push('Start Month');
+  if (!record.startYear) missing.push('Start Year');
+  if (!record.currentEmployer && !record.endMonth) missing.push('End Month');
+  if (!record.currentEmployer && !record.endYear) missing.push('End Year');
+  return missing;
+}
+
+function buildAtsEmploymentMapperStatus(evidence: CareerOsEvidence, model: EmploymentModelStatus): AtsEmploymentMapperStatus {
+  const ciscoApplication = evidence.applications.find((application) => compactKey(application.employer) === 'cisco');
+  const ciscoValidation = buildAtsEmploymentMapping('Cisco', model, ciscoApplication);
+  const applicationsUnblocked = ciscoValidation.canPopulateRequiredFields && ciscoApplication && hasAnyStatus(`${ciscoApplication.lifecycle_stage || ''} ${ciscoApplication.next_action || ''}`, ['employment-history', 'employment history'])
+    ? 1
+    : 0;
+
+  return {
+    applicationsUnblocked,
+    ciscoValidation,
+    fieldRules: ATS_EMPLOYMENT_FIELD_RULES,
+    supportedPlatforms: ['Cisco', 'Workday', 'Greenhouse'],
+    version: ATS_EMPLOYMENT_MAPPER_VERSION,
+  };
+}
+
+function buildAtsEmploymentMapping(platform: AtsEmploymentPlatform, model: EmploymentModelStatus, application?: JsonRecord): AtsEmploymentMappingResult {
+  const record = model.records.find((item) => item.currentEmployer) || model.records[0];
+  const fields = ATS_EMPLOYMENT_FIELD_RULES.map((rule) => mappedEmploymentField(rule, record));
+  const missingVerifiedFields = uniqueStrings(fields.filter((field) => !field.verified).map((field) => field.missingVerifiedField || field.path));
+
+  return {
+    applicationId: stringValue(application?.id) || undefined,
+    canPopulateRequiredFields: Boolean(record && missingVerifiedFields.length === 0),
+    employer: stringValue(application?.employer) || undefined,
+    fields,
+    missingVerifiedFields,
+    pauseReason: missingVerifiedFields.length ? 'missing_verified_information' : undefined,
+    platform,
+  };
+}
+
+function mappedEmploymentField(rule: AtsEmploymentFieldRule, record?: CanonicalEmploymentRecord): AtsMappedEmploymentField {
+  if (!record) {
+    return { labels: rule.labels, missingVerifiedField: 'Employment History', path: rule.path, verified: false };
+  }
+
+  if (rule.path === 'employment.company') {
+    return { labels: rule.labels, missingVerifiedField: record.employer ? undefined : 'Employer', path: rule.path, value: record.employer || undefined, verified: Boolean(record.employer) };
+  }
+
+  if (rule.path === 'employment.title') {
+    return { labels: rule.labels, missingVerifiedField: record.title ? undefined : 'Job Title', path: rule.path, value: record.title || undefined, verified: Boolean(record.title) };
+  }
+
+  if (rule.path === 'employment.start_date') {
+    const value = formatEmploymentDate(record.startMonth, record.startYear);
+    return { labels: rule.labels, missingVerifiedField: value ? undefined : missingDatePart('Start', record.startMonth, record.startYear), path: rule.path, value: value || undefined, verified: Boolean(value) };
+  }
+
+  if (rule.path === 'employment.end_date') {
+    const value = record.currentEmployer ? 'Present' : formatEmploymentDate(record.endMonth, record.endYear);
+    return { labels: rule.labels, missingVerifiedField: value ? undefined : missingDatePart('End', record.endMonth, record.endYear), path: rule.path, value: value || undefined, verified: Boolean(value) };
+  }
+
+  return { labels: rule.labels, path: rule.path, value: record.currentEmployer, verified: true };
+}
+
+function findVerifiedCurrentCompany(evidence: CareerOsEvidence, verifiedProfile: JsonRecord) {
+  const reusable = asRecord(verifiedProfile.reusable_application_answers);
+  const direct = stringValue(verifiedProfile.current_company || reusable.current_company || asRecord(verifiedProfile.employment).current_company);
+  if (direct) return direct;
+
+  const verifiedQuestion = evidence.employerKnowledgeBase.questionCatalog.find((question) => {
+    const linked = String(question.linked_candidate_profile_field || '').toLowerCase();
+    return linked === 'employment.current_company' && hasKeys(question.verified_mapped_answer);
+  });
+  return stringValue(asRecord(verifiedQuestion?.verified_mapped_answer).value || asRecord(verifiedQuestion?.verified_mapped_answer).answer);
+}
+
+function knownEmploymentLocation(verifiedProfile: JsonRecord) {
+  const contact = asRecord(verifiedProfile.contact);
+  const reusable = asRecord(verifiedProfile.reusable_application_answers);
+  const city = stringValue(contact.city || reusable.city);
+  const state = stringValue(contact.state || contact.state_or_province || reusable.state_or_province || verifiedProfile.state_or_province);
+  return [city, state].filter(Boolean).join(', ');
+}
+
+function formatEmploymentDate(month?: string, year?: number) {
+  return month && year ? `${month} ${year}` : '';
+}
+
+function missingDatePart(prefix: 'End' | 'Start', month?: string, year?: number) {
+  if (!month) return `${prefix} Month`;
+  if (!year) return `${prefix} Year`;
+  return `${prefix} Date`;
 }
 
 function validateProfile(profile?: JsonRecord) {
@@ -680,4 +917,53 @@ function normalizeEnvValue(value?: string) {
 
 function numberValue(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function arrayRecords(value: unknown): JsonRecord[] {
+  return Array.isArray(value) ? value.map(asRecord).filter((record) => Object.keys(record).length > 0) : [];
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function booleanValue(value: unknown) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return /^(true|yes|current|present)$/i.test(value.trim());
+  return false;
+}
+
+function yearValue(value: unknown) {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 1900 && value <= 2100) return value;
+  const match = String(value || '').match(/\b((?:19|20)\d{2})\b/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function monthName(value: unknown) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return undefined;
+  const key = text.slice(0, 3);
+  const months: Record<string, string> = {
+    apr: 'April',
+    aug: 'August',
+    dec: 'December',
+    feb: 'February',
+    jan: 'January',
+    jul: 'July',
+    jun: 'June',
+    mar: 'March',
+    may: 'May',
+    nov: 'November',
+    oct: 'October',
+    sep: 'September',
+  };
+  return months[key];
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
 }

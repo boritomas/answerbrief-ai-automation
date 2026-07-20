@@ -1,21 +1,22 @@
-import { getCareerOsStatus, summarizeCareerOsStatus } from '@/lib/career-os-status';
+import { getCareerOsStatus, summarizeCareerOsStatus, type CareerOsStatus } from '@/lib/career-os-status';
+import { HashScroll } from './hash-scroll';
 
 export const dynamic = 'force-dynamic';
 
-type CareerStatus = Awaited<ReturnType<typeof getCareerOsStatus>>;
+type CareerStatus = CareerOsStatus;
 type JsonRecord = Record<string, unknown>;
 
 const navItems = [
   { href: '/career-os', label: 'Home' },
-  { href: '#funnel', label: 'Funnel' },
-  { href: '#daily', label: 'Daily' },
-  { href: '#opportunities', label: 'Opportunities' },
-  { href: '#applications', label: 'Applications' },
-  { href: '#employers', label: 'Employers' },
-  { href: '#compensation', label: 'Compensation' },
-  { href: '#interviews', label: 'Interviews' },
-  { href: '#contacts', label: 'Contacts' },
-  { href: '#documents', label: 'Documents' },
+  { href: '/career-os#funnel', label: 'Funnel' },
+  { href: '/career-os#daily', label: 'Daily' },
+  { href: '/career-os#opportunities', label: 'Opportunities' },
+  { href: '/career-os#applications', label: 'Applications' },
+  { href: '/career-os#employers', label: 'Employers' },
+  { href: '/career-os#compensation', label: 'Compensation' },
+  { href: '/career-os#interviews', label: 'Interviews' },
+  { href: '/career-os#contacts', label: 'Contacts' },
+  { href: '/career-os#documents', label: 'Documents' },
 ];
 
 export default async function CareerOsPage() {
@@ -36,9 +37,11 @@ export default async function CareerOsPage() {
   const activitySnapshot = buildActivitySnapshot(status.evidence.workflowEvents, applications);
   const automationHealth = buildAutomationHealth(status);
   const nextActionLabel = status.nextAction?.label || queueItems[0]?.exactQuestionOrAction || dailyWorkflow.actionQueueStatus;
+  const requiredStepHref = nextActionApplicationHref(status) || '/career-os#applications';
 
   return (
     <main className="career-os-shell">
+      <HashScroll />
       <header className="career-os-nav" aria-label="Career OS navigation">
         <a className="brand" href="/career-os">Tomas Career OS</a>
         <nav>
@@ -77,7 +80,7 @@ export default async function CareerOsPage() {
             <p>{summary.compensationPreferenceLine}</p>
           </div>
           <div className="cta-row">
-            <a className="button primary" href="#applications">Review Applications</a>
+            <a className="button primary" href="/career-os#applications">Review Applications</a>
           </div>
         </div>
 
@@ -88,7 +91,7 @@ export default async function CareerOsPage() {
               <h2>{status.nextAction.label}</h2>
               <p>{status.nextAction.reason}</p>
               {status.nextAction.estimatedMinutes ? <p>Estimated time: {status.nextAction.estimatedMinutes} minute{status.nextAction.estimatedMinutes === 1 ? '' : 's'}.</p> : null}
-              {status.nextAction.deepLink ? <a className="button primary" href={status.nextAction.deepLink}>Open Required Step</a> : null}
+              <a className="button primary" href={requiredStepHref}>Open Required Step</a>
             </>
           ) : (
             <>
@@ -169,11 +172,12 @@ export default async function CareerOsPage() {
           <Metric detail="human-only gates" label="Waiting on Tomas" value={status.waitingOnTomas} />
         </div>
         <div className="career-os-list">
-          {applications.slice(0, 5).map((application) => (
-            <article className="career-os-row" key={String(application.id)}>
+          {applications.map((application) => (
+            <article className="career-os-row" id={applicationAnchorId(application)} key={String(application.id)}>
               <div>
                 <h3>{String(application.position)}</h3>
                 <p>{String(application.employer)} · {String(application.lifecycle_stage || 'status unavailable')}</p>
+                {application.next_action ? <p>{String(application.next_action)}</p> : null}
               </div>
               <span>{application.submission_evidence ? 'Submitted' : 'Not submitted'}</span>
             </article>
@@ -397,6 +401,19 @@ function buildAutomationHealth(status: CareerStatus) {
   ];
 }
 
+function nextActionApplicationHref(status: CareerStatus) {
+  const label = `${status.nextAction?.label || ''} ${status.nextAction?.reason || ''}`;
+  const application = status.evidence.applications.find((item) => label.toLowerCase().includes(String(item.employer || '').toLowerCase()))
+    || status.evidence.applications.find((item) => !item.submission_evidence && !item.confirmation_number);
+  return application ? `/career-os#${applicationAnchorId(application)}` : '';
+}
+
+function applicationAnchorId(application: JsonRecord) {
+  const employer = String(application.employer || 'application');
+  const id = String(application.id || application.position || employer);
+  return `application-${slug(`${employer}-${id}`)}`;
+}
+
 function compensationRangeText(status: CareerStatus) {
   if (!status.salaryRange?.complete || !status.salaryRange.minUsd || !status.salaryRange.maxUsd) {
     return 'incomplete';
@@ -411,4 +428,8 @@ function formatMoney(value: number) {
 function hasAnyText(value: unknown, terms: string[]) {
   const text = String(value || '').toLowerCase();
   return terms.some((term) => text.includes(term));
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }

@@ -1066,6 +1066,7 @@ th { background: #eef1f3; }
   border-top: 1px solid #d9e0e8;
   padding-bottom: 56px;
   padding-top: 56px;
+  scroll-margin-top: 96px;
 }
 
 .career-os-list {
@@ -1088,6 +1089,7 @@ th { background: #eef1f3; }
   justify-content: space-between;
   min-height: 74px;
   padding: 16px 18px;
+  scroll-margin-top: 104px;
 }
 
 .career-os-row h3 {
