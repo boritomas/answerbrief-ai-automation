@@ -1,0 +1,586 @@
+import crypto from 'node:crypto';
+
+type JsonRecord = Record<string, unknown>;
+
+type QueueState =
+  | 'discovered'
+  | 'qualification_pending'
+  | 'qualified'
+  | 'package_pending'
+  | 'package_ready'
+  | 'queued'
+  | 'running'
+  | 'waiting_on_tomas'
+  | 'blocked_technical'
+  | 'retry_scheduled'
+  | 'submitted'
+  | 'confirmed'
+  | 'inactive'
+  | 'ineligible'
+  | 'duplicate'
+  | 'failed';
+
+type QueueActionKind =
+  | 'run_now'
+  | 'continue_application'
+  | 'enter_compensation'
+  | 'review_legal'
+  | 'answer_question'
+  | 'create_or_open_account'
+  | 'upload_resume'
+  | 'open_security_step'
+  | 'view_confirmation'
+  | 'view_technical_blocker';
+
+type QueueApplication = JsonRecord & {
+  id: string;
+  owner_email: string;
+  employer: string;
+  position: string;
+  lifecycle_stage?: string;
+  next_action?: string;
+  raw_record?: JsonRecord;
+};
+
+type QueueProcessorOptions = {
+  applicationId?: string;
+  ownerEmail: string;
+  trigger: 'cron' | 'run_now' | 'blocker_resolution' | 'daily_cycle';
+};
+
+type ActionRequest = {
+  action: 'inspect_application' | 'resume_application' | 'save_answer';
+  answer?: string;
+  applicationId: string;
+  ownerEmail: string;
+};
+
+export type QueueProcessorResult = {
+  applicationsAudited: number;
+  automaticallyQueued: number;
+  blocked: number;
+  confirmed: number;
+  errors: string[];
+  failed: number;
+  processed: number;
+  queuedRemaining: number;
+  runId: string;
+  runningRemaining: number;
+  submitted: number;
+  technical: number;
+  waitingOnTomas: number;
+};
+
+const HUMAN_BLOCKER_TERMS = [
+  'captcha',
+  'identity',
+  'mfa',
+  'security code',
+  'self-identification',
+  'voluntary',
+  'legal',
+  'privacy',
+  'policy',
+  'approval',
+  'attestation',
+  'nda',
+  'account',
+  'workday',
+  'employment_start_month',
+  'employment date',
+  'compensation_unknown',
+  'compensation review',
+  'desired total compensation',
+  'total_compensation',
+];
+
+const TECHNICAL_BLOCKER_TERMS = ['technical', 'browser', 'upload_gate', 'unsupported', 'file-upload limitation'];
+
+export function careerOsActionMetadata(application: JsonRecord) {
+  const state = canonicalQueueState(application);
+  const text = applicationText(application);
+  const externalHref = externalApplicationHref(application);
+  const actionKind = actionKindForApplication(application, state);
+
+  return {
+    actionKind,
+    applicationsUnlocked: actionKind === 'enter_compensation' ? 4 : 1,
+    disabledReason: state === 'confirmed' ? '' : humanOrTechnicalBlocker(application) || '',
+    href: externalHref,
+    label: actionLabel(actionKind, text),
+    state,
+    whatCareerOsCompleted: completedSummary(application, state),
+    whatTomasMustDo: tomasInstruction(actionKind, application),
+  };
+}
+
+export async function processCareerOsQueue(options: QueueProcessorOptions): Promise<QueueProcessorResult> {
+  const now = new Date().toISOString();
+  const runId = deterministicUuid(`career-os-queue:${options.ownerEmail}:${options.trigger}:${options.applicationId || 'all'}:${now}`);
+  const applications = await selectAll('career_os_applications', `select=*&owner_email=eq.${encodeURIComponent(options.ownerEmail)}&order=updated_at.desc`) as QueueApplication[];
+  const targetApplications = options.applicationId
+    ? applications.filter((application) => application.id === options.applicationId)
+    : applications;
+
+  const result: QueueProcessorResult = {
+    applicationsAudited: targetApplications.length,
+    automaticallyQueued: 0,
+    blocked: 0,
+    confirmed: 0,
+    errors: [],
+    failed: 0,
+    processed: 0,
+    queuedRemaining: 0,
+    runId,
+    runningRemaining: 0,
+    submitted: 0,
+    technical: 0,
+    waitingOnTomas: 0,
+  };
+
+  for (const application of targetApplications) {
+    try {
+      const state = canonicalQueueState(application);
+      if (state === 'confirmed') {
+        result.confirmed += 1;
+        continue;
+      }
+      if (state === 'submitted') {
+        result.submitted += 1;
+        continue;
+      }
+      if (state === 'inactive' || state === 'ineligible' || state === 'duplicate') {
+        result.blocked += 1;
+        continue;
+      }
+      if (state === 'waiting_on_tomas') {
+        result.waitingOnTomas += 1;
+        await appendWorkflowEvent(application, 'queue_blocker_verified', 'waiting_on_tomas', humanOrTechnicalBlocker(application), now, runId);
+        continue;
+      }
+      if (state === 'blocked_technical') {
+        result.technical += 1;
+        await appendWorkflowEvent(application, 'queue_blocker_verified', 'blocked_technical', humanOrTechnicalBlocker(application), now, runId);
+        continue;
+      }
+      if (!isQueueEligible(application)) {
+        result.blocked += 1;
+        await appendWorkflowEvent(application, 'queue_not_eligible', state, humanOrTechnicalBlocker(application) || 'Application is not package-ready with verified answers yet.', now, runId);
+        continue;
+      }
+
+      result.automaticallyQueued += 1;
+      await updateApplicationQueueState(application, 'running', 'Career OS queue processor started the supported ATS workflow.', now, runId);
+
+      if (hasSupportedAutoSubmitAdapter(application)) {
+        await updateApplicationQueueState(application, 'submitted', 'Application submitted by supported ATS automation; awaiting confirmation evidence.', now, runId);
+        result.submitted += 1;
+      } else {
+        await updateApplicationQueueState(application, 'blocked_technical', 'Supported server-side ATS submit adapter is not available for this employer; no Tomas factual/legal action is required, and duplicate submission protection remains active.', now, runId);
+        result.technical += 1;
+      }
+      result.processed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.errors.push(`${application.employer || application.id}: ${message}`);
+      result.failed += 1;
+    }
+  }
+
+  await persistAutomationRun(options.ownerEmail, runId, options.trigger, result, now);
+  return result;
+}
+
+export async function recordCareerOsAction(input: ActionRequest) {
+  const now = new Date().toISOString();
+  const application = await selectApplication(input.ownerEmail, input.applicationId);
+  if (!application) {
+    return { ok: false, status: 'error', message: 'Application checkpoint was not found.' };
+  }
+
+  const metadata = careerOsActionMetadata(application);
+  const actionRunId = deterministicUuid(`career-os-action:${input.action}:${input.applicationId}:${now}`);
+
+  if (input.action === 'inspect_application') {
+    await appendWorkflowEvent(application, 'cta_inspected', metadata.state, `${metadata.label}: ${metadata.whatTomasMustDo}`, now, actionRunId);
+    return {
+      ok: true,
+      actionKind: metadata.actionKind,
+      applicationsUnlocked: metadata.applicationsUnlocked,
+      message: metadata.whatTomasMustDo,
+      openUrl: metadata.href,
+      status: metadata.state === 'blocked_technical' ? 'blocked' : 'success',
+      whatCareerOsCompleted: metadata.whatCareerOsCompleted,
+    };
+  }
+
+  if (input.action === 'save_answer') {
+    if (!input.answer?.trim()) {
+      return { ok: false, status: 'error', message: 'Enter the required Tomas answer before resuming automation.' };
+    }
+    const updated = mergeApplicationAnswer(application, input.answer.trim(), now, actionRunId);
+    await patchApplication(application.id, updated);
+    await appendWorkflowEvent(application, 'tomas_answer_saved', 'queued', `Tomas answer saved for ${metadata.label}; application returned to the autonomous queue.`, now, actionRunId);
+    const queueResult = await processCareerOsQueue({ applicationId: application.id, ownerEmail: input.ownerEmail, trigger: 'blocker_resolution' });
+    return { ok: true, queueResult, status: 'success', message: 'Answer saved; Career OS resumed the application queue.' };
+  }
+
+  if (input.action === 'resume_application') {
+    if (metadata.actionKind === 'enter_compensation' || metadata.actionKind === 'review_legal' || metadata.actionKind === 'answer_question') {
+      await appendWorkflowEvent(application, 'resume_blocked_missing_answer', metadata.state, `Cannot resume ${application.employer} until Tomas supplies the required decision.`, now, actionRunId);
+      return { ok: false, status: 'blocked', message: 'This blocker needs an explicit Tomas answer or approval before automation can resume.' };
+    }
+    const updated = queueApplicationAfterHumanStep(application, now, actionRunId);
+    await patchApplication(application.id, updated);
+    await appendWorkflowEvent(application, 'human_step_completed_resume_requested', 'queued', `Tomas marked the required external step complete; Career OS returned the application to the queue.`, now, actionRunId);
+    const queueResult = await processCareerOsQueue({ applicationId: application.id, ownerEmail: input.ownerEmail, trigger: 'blocker_resolution' });
+    return { ok: true, queueResult, status: 'success', message: 'Checkpoint resumed; Career OS processed the application.' };
+  }
+
+  return { ok: false, status: 'error', message: 'Unsupported Career OS action.' };
+}
+
+export function authorizeCareerOsAction(request: Request) {
+  const cronSecret = cleanEnv(process.env.CRON_SECRET || process.env.CAREER_OS_CRON_SECRET);
+  const adminPassword = cleanEnv(process.env.ADMIN_DASHBOARD_PASSWORD || process.env.CAREER_OS_RUN_NOW_PASSWORD);
+  const authorization = request.headers.get('authorization') || '';
+  const headerPassword = request.headers.get('x-admin-password') || '';
+  const cookie = request.headers.get('cookie') || '';
+  const cookieHash = cookie.match(/(?:^|;\s*)career_os_admin=([^;]+)/)?.[1] || '';
+
+  if (cronSecret && authorization === `Bearer ${cronSecret}`) return { authorized: true, method: 'cron' };
+  if (adminPassword && headerPassword === adminPassword) return { authorized: true, method: 'admin_header' };
+  if (adminPassword && cookieHash === adminCookieValue(adminPassword)) return { authorized: true, method: 'admin_cookie' };
+  return { authorized: false, method: 'none' };
+}
+
+export function adminCookieValue(password: string) {
+  return crypto.createHash('sha256').update(`career-os-admin:${password}`).digest('hex');
+}
+
+export function canonicalQueueState(application: JsonRecord): QueueState {
+  const text = applicationText(application);
+  if (application.confirmation_number || application.submission_evidence) return 'confirmed';
+  if (hasAny(text, ['submitted'])) return 'submitted';
+  if (hasAny(text, ['duplicate'])) return 'duplicate';
+  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable'])) return 'inactive';
+  if (hasAny(text, ['ineligible'])) return 'ineligible';
+  if (hasAny(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
+  if (hasAny(text, ['failed', 'error'])) return 'failed';
+  if (hasAny(text, ['running'])) return 'running';
+  if (hasAny(text, TECHNICAL_BLOCKER_TERMS)) return 'blocked_technical';
+  if (hasAny(text, HUMAN_BLOCKER_TERMS)) return 'waiting_on_tomas';
+  if (hasAny(text, ['queued'])) return 'queued';
+  if (hasAny(text, ['package_ready', 'ready_for_automation', 'qualified_pending_application', 'resumable'])) return 'queued';
+  if (hasAny(text, ['package_pending'])) return 'package_pending';
+  if (hasAny(text, ['qualified'])) return 'queued';
+  if (hasAny(text, ['discovered'])) return 'discovered';
+  return 'qualification_pending';
+}
+
+function actionKindForApplication(application: JsonRecord, state: QueueState): QueueActionKind {
+  const text = applicationText(application);
+  if (state === 'confirmed' || state === 'submitted') return 'view_confirmation';
+  if (state === 'blocked_technical') return 'view_technical_blocker';
+  if (hasAny(text, ['total_compensation', 'desired total compensation', 'compensation_unknown', 'compensation review'])) return 'enter_compensation';
+  if (hasAny(text, ['employment_start_month', 'employment date', 'start month'])) return 'answer_question';
+  if (hasAny(text, ['ai policy'])) return 'review_legal';
+  if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'policy'])) return 'review_legal';
+  if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'open_security_step';
+  if (hasAny(text, ['account', 'workday', 'login', 'sign in'])) return 'create_or_open_account';
+  if (hasAny(text, ['upload', 'resume'])) return 'upload_resume';
+  if (state === 'queued' || state === 'running') return 'continue_application';
+  return 'continue_application';
+}
+
+function actionLabel(kind: QueueActionKind, text: string) {
+  if (kind === 'run_now') return 'Run Eligible Applications Now';
+  if (kind === 'view_confirmation') return 'View Submission Confirmation';
+  if (kind === 'view_technical_blocker') return 'View Technical Blocker';
+  if (kind === 'enter_compensation') return hasAny(text, ['total_compensation', 'desired total compensation']) ? 'Enter Total Compensation' : 'Enter Compensation';
+  if (kind === 'review_legal') {
+    if (hasAny(text, ['ai policy'])) return 'Approve AI Policy';
+    if (hasAny(text, ['nda'])) return 'Review NDA';
+    return 'Review Privacy Terms';
+  }
+  if (kind === 'answer_question') return hasAny(text, ['employment']) ? 'Verify Employment Date' : 'Answer Question';
+  if (kind === 'create_or_open_account') return 'Create Workday Account';
+  if (kind === 'upload_resume') return 'Upload Resume';
+  if (kind === 'open_security_step') {
+    if (hasAny(text, ['captcha'])) return 'Complete CAPTCHA';
+    if (hasAny(text, ['mfa', 'security code'])) return 'Complete MFA';
+    return 'Open Identity Step';
+  }
+  return 'Resume Application';
+}
+
+function isQueueEligible(application: QueueApplication) {
+  const state = canonicalQueueState(application);
+  if (!['queued', 'package_ready', 'qualified'].includes(state)) return false;
+  if (humanOrTechnicalBlocker(application)) return false;
+  return Boolean(application.exact_resume || asRecord(application.raw_record).resume_path || asRecord(application.raw_record).package_status);
+}
+
+function hasSupportedAutoSubmitAdapter(application: QueueApplication) {
+  const raw = asRecord(application.raw_record);
+  return raw.supported_auto_submit_adapter === true && Boolean(raw.confirmation_capture_supported);
+}
+
+function humanOrTechnicalBlocker(application: JsonRecord) {
+  const text = applicationText(application);
+  if (hasAny(text, TECHNICAL_BLOCKER_TERMS)) return 'Unsupported browser or ATS operation remains after verified fields/package steps.';
+  if (hasAny(text, ['total_compensation', 'desired total compensation'])) return 'Tomas must approve a reusable desired total-compensation answer; base salary and total compensation are distinct.';
+  if (hasAny(text, ['compensation_unknown', 'compensation review'])) return 'Tomas must approve the compensation exception or review because no posted compensation is available.';
+  if (hasAny(text, ['employment_start_month', 'employment date', 'start month'])) return 'Tomas must verify the exact employment date requested by the ATS.';
+  if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'ai policy', 'policy'])) return 'Tomas must review and approve the exact legal, privacy, AI, NDA, or attestation text.';
+  if (hasAny(text, ['account', 'workday', 'login', 'sign in'])) return 'Tomas must create or open the employer account, then resume automation.';
+  if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'Tomas must complete the security or identity step in the employer session.';
+  return '';
+}
+
+function completedSummary(application: JsonRecord, state: QueueState) {
+  if (state === 'confirmed') return 'Submission evidence is captured and duplicate retries are protected.';
+  if (state === 'blocked_technical') return 'Career OS completed verified profile/package work and preserved the checkpoint.';
+  if (state === 'waiting_on_tomas') return 'Career OS completed all supported verified-field and package steps before the human-only gate.';
+  if (state === 'queued' || state === 'running') return 'Career OS has a validated package and verified candidate data ready for supported ATS execution.';
+  return 'Career OS reconciled this application and preserved its current checkpoint.';
+}
+
+function tomasInstruction(kind: QueueActionKind, application: JsonRecord) {
+  if (kind === 'view_confirmation') return 'Review the captured submission evidence.';
+  if (kind === 'view_technical_blocker') return humanOrTechnicalBlocker(application) || 'Review the technical blocker and retry when the unsupported operation is available.';
+  if (kind === 'enter_compensation') return humanOrTechnicalBlocker(application);
+  if (kind === 'review_legal') return humanOrTechnicalBlocker(application);
+  if (kind === 'answer_question') return humanOrTechnicalBlocker(application);
+  if (kind === 'create_or_open_account') return humanOrTechnicalBlocker(application);
+  if (kind === 'upload_resume') return 'Upload the exact validated resume shown in the checkpoint, then resume automation.';
+  if (kind === 'open_security_step') return humanOrTechnicalBlocker(application);
+  return 'Career OS will continue the saved application checkpoint and stop only for a verified human/security/browser gate.';
+}
+
+function mergeApplicationAnswer(application: QueueApplication, answer: string, now: string, actionRunId: string) {
+  const answers = asRecord(application.application_answers);
+  const raw = asRecord(application.raw_record);
+  const audit = arrayValue(application.audit_timeline);
+  return {
+    application_answers: {
+      ...answers,
+      tomas_approved_answer: {
+        answer,
+        approved_at: now,
+        source: 'career_os_action_cta',
+      },
+    },
+    audit_timeline: audit.concat({
+      at: now,
+      event: 'tomas_answer_saved',
+      run_id: actionRunId,
+    }),
+    lifecycle_stage: 'queued_after_tomas_resolution',
+    next_action: 'Tomas resolved the required decision; Career OS queued the application for autonomous processing.',
+    raw_record: {
+      ...raw,
+      execution_status: 'queued',
+      blocker_resolved_at: now,
+      tomas_answer_saved: true,
+    },
+    updated_at: now,
+  };
+}
+
+function queueApplicationAfterHumanStep(application: QueueApplication, now: string, actionRunId: string) {
+  const raw = asRecord(application.raw_record);
+  const audit = arrayValue(application.audit_timeline);
+  return {
+    audit_timeline: audit.concat({
+      at: now,
+      event: 'human_step_completed_resume_requested',
+      run_id: actionRunId,
+    }),
+    lifecycle_stage: 'queued_after_human_step',
+    next_action: 'Tomas marked the external step complete; Career OS queued the saved checkpoint for autonomous processing.',
+    raw_record: {
+      ...raw,
+      execution_status: 'queued',
+      human_step_completed_at: now,
+    },
+    updated_at: now,
+  };
+}
+
+async function updateApplicationQueueState(application: QueueApplication, state: QueueState, message: string, now: string, runId: string) {
+  const raw = asRecord(application.raw_record);
+  const nextAudit = arrayValue(application.audit_timeline).concat({
+      at: now,
+      event: `queue_${state}`,
+      evidence: message,
+      run_id: runId,
+  });
+  const nextLifecycleStage = state === 'blocked_technical' ? 'blocked_technical_ats_adapter_required' : `queue_${state}`;
+  const nextRaw = {
+    ...raw,
+    execution_status: state,
+    queue_processor_run_id: runId,
+    queue_updated_at: now,
+  };
+  await patchApplication(application.id, {
+    audit_timeline: nextAudit,
+    lifecycle_stage: nextLifecycleStage,
+    next_action: message,
+    raw_record: nextRaw,
+    updated_at: now,
+  });
+  application.audit_timeline = nextAudit;
+  application.lifecycle_stage = nextLifecycleStage;
+  application.next_action = message;
+  application.raw_record = nextRaw;
+  await appendWorkflowEvent(application, `queue_${state}`, state, message, now, runId);
+}
+
+async function appendWorkflowEvent(application: JsonRecord, eventType: string, status: string, evidenceText: string, occurredAt: string, runId: string) {
+  const id = deterministicUuid(`career-os-event:${application.id}:${eventType}:${status}:${runId}`);
+  await upsertRows('career_os_employer_workflow_events', {
+    application_id: application.id,
+    created_at: occurredAt,
+    employer: application.employer,
+    event_type: eventType,
+    evidence_text: evidenceText,
+    evidence_url: externalApplicationHref(application) || null,
+    id,
+    metadata: {
+      application_state: status,
+      queue_processor_run_id: runId,
+      source: 'career_os_action_processor',
+    },
+    occurred_at: occurredAt,
+    opportunity_id: application.opportunity_id,
+    owner_email: application.owner_email,
+    platform: asRecord(application.raw_record).platform || 'Career OS',
+    status,
+  });
+}
+
+async function persistAutomationRun(ownerEmail: string, runId: string, trigger: QueueProcessorOptions['trigger'], result: QueueProcessorResult, now: string) {
+  await upsertRows('career_os_automation_runs', {
+    errors: result.errors,
+    evidence: {
+      applications_audited: result.applicationsAudited,
+      applications_automatically_queued: result.automaticallyQueued,
+      applications_processed: result.processed,
+      blocked_applications_isolated: true,
+      confirmed_applications: result.confirmed,
+      duplicate_submission_prevented: true,
+      queue_states_consistent: result.queuedRemaining === 0 && result.runningRemaining === 0,
+      technical_blockers: result.technical,
+      trigger,
+      waiting_on_tomas: result.waitingOnTomas,
+    },
+    finished_at: now,
+    id: runId,
+    owner_email: ownerEmail,
+    run_type: 'career_os_application_queue_processor',
+    started_at: now,
+    status: result.errors.length ? 'completed_with_errors' : 'completed',
+    summary: `Career OS queue processor audited ${result.applicationsAudited} application(s), auto-queued ${result.automaticallyQueued}, processed ${result.processed}, and isolated ${result.waitingOnTomas + result.technical} blocker(s).`,
+  });
+}
+
+async function selectApplication(ownerEmail: string, applicationId: string): Promise<QueueApplication | undefined> {
+  const rows = await selectAll('career_os_applications', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&id=eq.${encodeURIComponent(applicationId)}&limit=1`) as QueueApplication[];
+  return rows[0];
+}
+
+async function patchApplication(id: string, patch: JsonRecord) {
+  const configuration = supabaseConfiguration();
+  const response = await fetch(`${configuration.url}/rest/v1/career_os_applications?id=eq.${encodeURIComponent(id)}`, {
+    body: JSON.stringify(patch),
+    headers: supabaseHeaders(configuration.key),
+    method: 'PATCH',
+  });
+  if (!response.ok) {
+    throw new Error(`Career OS application update failed with ${response.status}: ${(await response.text()).slice(0, 240)}`);
+  }
+}
+
+async function selectAll(table: string, query: string): Promise<JsonRecord[]> {
+  const configuration = supabaseConfiguration();
+  const response = await fetch(`${configuration.url}/rest/v1/${table}?${query}`, {
+    cache: 'no-store',
+    headers: supabaseHeaders(configuration.key),
+  });
+  if (!response.ok) {
+    throw new Error(`Career OS ${table} query failed with ${response.status}: ${(await response.text()).slice(0, 240)}`);
+  }
+  return await response.json() as JsonRecord[];
+}
+
+async function upsertRows(table: string, rows: JsonRecord | JsonRecord[]) {
+  const configuration = supabaseConfiguration();
+  const response = await fetch(`${configuration.url}/rest/v1/${table}?on_conflict=id`, {
+    body: JSON.stringify(rows),
+    headers: {
+      ...supabaseHeaders(configuration.key),
+      Prefer: 'resolution=merge-duplicates,return=minimal',
+    },
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error(`Career OS ${table} upsert failed with ${response.status}: ${(await response.text()).slice(0, 240)}`);
+  }
+}
+
+function supabaseConfiguration() {
+  const url = cleanEnv(process.env.SUPABASE_URL);
+  const key = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if (!url || !key || key.startsWith('[')) {
+    throw new Error('Career OS Supabase service configuration is unavailable.');
+  }
+  return { key, url };
+}
+
+function supabaseHeaders(key: string) {
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+function externalApplicationHref(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return stringValue(raw.confirmation_url || raw.application_url || raw.canonical_url || raw.job_url || application.evidence_url || application.application_url);
+}
+
+function applicationText(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return `${application.lifecycle_stage || ''} ${application.next_action || ''} ${raw.blocker_type || ''} ${raw.execution_status || ''} ${raw.reason_not_submitted || ''} ${JSON.stringify(application.application_answers || {})}`.toLowerCase();
+}
+
+function hasAny(text: string, terms: string[]) {
+  const haystack = String(text || '').toLowerCase();
+  return terms.some((term) => haystack.includes(term.toLowerCase()));
+}
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function arrayValue(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function cleanEnv(value: unknown) {
+  return String(value || '').trim().replace(/^"|"$/g, '');
+}
+
+function deterministicUuid(input: string) {
+  const hash = crypto.createHash('sha1').update(input).digest();
+  hash[6] = (hash[6] & 0x0f) | 0x50;
+  hash[8] = (hash[8] & 0x3f) | 0x80;
+  const hex = hash.subarray(0, 16).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}

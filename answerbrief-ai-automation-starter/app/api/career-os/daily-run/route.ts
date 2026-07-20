@@ -6,6 +6,7 @@ import {
   persistDailyCycleReport,
   runDailyGreenhouseDiscovery,
 } from '@/lib/career-os-daily-cycle';
+import { processCareerOsQueue } from '@/lib/career-os-queue';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
 
   const before = await getCareerOsStatus();
   const discovery = await runDailyGreenhouseDiscovery(before.evidence.ownerEmail);
+  const queueProcessor = await processCareerOsQueue({ ownerEmail: before.evidence.ownerEmail, trigger: 'cron' });
   const afterDiscovery = await getCareerOsStatus();
   const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, {
     activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
@@ -68,5 +70,6 @@ export async function GET(request: NextRequest) {
       automationRunId: persisted.automationRun.id,
       dailyReportId: persisted.report.id,
     },
+    queueProcessor,
   });
 }

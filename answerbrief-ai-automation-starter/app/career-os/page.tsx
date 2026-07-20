@@ -1,4 +1,5 @@
 import { getCareerOsStatus, summarizeCareerOsStatus, type CareerOsStatus } from '@/lib/career-os-status';
+import { ApplicationActionControl, RunNowControl } from './action-controls';
 import { HashScroll } from './hash-scroll';
 
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,8 @@ export default async function CareerOsPage() {
   const automationHealth = buildAutomationHealth(status);
   const nextActionLabel = status.nextAction?.label || queueItems[0]?.exactQuestionOrAction || dailyWorkflow.actionQueueStatus;
   const requiredStepHref = nextActionApplicationHref(status) || '/career-os#applications';
+  const nextApplication = nextActionApplication(status);
+  const nextApplicationCta = nextApplication ? applicationExecutionCta(status, nextApplication) : null;
 
   return (
     <main className="career-os-shell">
@@ -93,6 +96,7 @@ export default async function CareerOsPage() {
           </div>
           <div className="cta-row">
             <a className="button primary" href="/career-os#applications">Review Applications</a>
+            <a className="button secondary" href="/career-os#daily">Show All</a>
           </div>
         </div>
 
@@ -101,9 +105,24 @@ export default async function CareerOsPage() {
           {status.nextAction ? (
             <>
               <h2>{status.nextAction.label}</h2>
-              <p>{status.nextAction.reason}</p>
+              {status.nextAction.employer ? <p>{status.nextAction.employer} · {status.nextAction.role}</p> : null}
+              <p>Exact blocker: {status.nextAction.reason}</p>
+              {status.nextAction.whatCareerOsCompleted ? <p>Completed: {status.nextAction.whatCareerOsCompleted}</p> : null}
+              {status.nextAction.whatTomasMustDo ? <p>Tomas: {status.nextAction.whatTomasMustDo}</p> : null}
+              {status.nextAction.applicationsUnlocked ? <p>Unlocks: {status.nextAction.applicationsUnlocked} application{status.nextAction.applicationsUnlocked === 1 ? '' : 's'}.</p> : null}
               {status.nextAction.estimatedMinutes ? <p>Estimated time: {status.nextAction.estimatedMinutes} minute{status.nextAction.estimatedMinutes === 1 ? '' : 's'}.</p> : null}
-              <a className="button primary" href={requiredStepHref}>Open Required Step</a>
+              {nextApplication && nextApplicationCta ? (
+                <ApplicationActionControl
+                  actionKind={nextApplicationCta.actionKind}
+                  applicationId={String(nextApplication.id)}
+                  disabledReason={nextApplicationCta.disabledReason}
+                  href={nextApplicationCta.href || requiredStepHref}
+                  label={nextApplicationCta.label}
+                  whatTomasMustDo={nextApplicationCta.whatTomasMustDo}
+                />
+              ) : (
+                <a className="button primary" href={requiredStepHref}>{status.nextAction.label}</a>
+              )}
             </>
           ) : (
             <>
@@ -134,6 +153,7 @@ export default async function CareerOsPage() {
         <p>Automation completion: {pipelineHealth.automationCompletionRate.toFixed(1)}%. Human intervention: {pipelineHealth.humanInterventionRate.toFixed(1)}%.</p>
         <p>Exact next action: {nextActionLabel}</p>
         <p>Immediate queue processor: {dailyWorkflow.immediateQueueProcessor.status}; queued immediate {dailyWorkflow.immediateQueueProcessor.queuedImmediate}; running now {dailyWorkflow.immediateQueueProcessor.runningNow}; submitted this run {dailyWorkflow.immediateQueueProcessor.submittedThisRun}; next scheduled run {dailyWorkflow.immediateQueueProcessor.nextScheduledRun}.</p>
+        <RunNowControl ownerEmail={status.evidence.ownerEmail} />
         <h3>Global Lifecycle Counts</h3>
         <div className="career-os-metrics secondary" aria-label="Career OS global lifecycle counts">
           <Metric detail="all discovery history" label="Total raw records ever discovered" value={globalLifecycle.totalRawRecordsEverDiscovered} />
@@ -240,7 +260,14 @@ export default async function CareerOsPage() {
                   <p>{applicationExecutionLabel(status, application)}</p>
                   <p>Canonical state: {applicationCanonicalExecutionState(status, application)}</p>
                 </div>
-                <a className="text-link" href={cta.href}>{cta.label}</a>
+                <ApplicationActionControl
+                  actionKind={cta.actionKind}
+                  applicationId={String(application.id)}
+                  disabledReason={cta.disabledReason}
+                  href={cta.href}
+                  label={cta.label}
+                  whatTomasMustDo={cta.whatTomasMustDo}
+                />
               </article>
             );
           })}
@@ -502,8 +529,15 @@ function applicationCanonicalExecutionState(status: CareerStatus, application: J
 function applicationExecutionCta(status: CareerStatus, application: JsonRecord) {
   const execution = matchingApplicationExecution(status, application);
   return execution?.cta || {
+    actionKind: 'continue_application',
+    applicationsUnlocked: 1,
+    disabledReason: '',
     href: `/career-os#${applicationAnchorId(application)}`,
+    kind: 'internal' as const,
     label: 'Review record',
+    serverAction: '/api/career-os/actions' as const,
+    whatCareerOsCompleted: 'Career OS preserved this application checkpoint.',
+    whatTomasMustDo: 'Review the checkpoint, then resume automation if no legal, factual, security, or browser blocker remains.',
   };
 }
 
@@ -515,10 +549,22 @@ function matchingApplicationExecution(status: CareerStatus, application: JsonRec
 }
 
 function nextActionApplicationHref(status: CareerStatus) {
-  const label = `${status.nextAction?.label || ''} ${status.nextAction?.reason || ''}`;
-  const application = status.evidence.applications.find((item) => label.toLowerCase().includes(String(item.employer || '').toLowerCase()))
-    || status.evidence.applications.find((item) => !item.submission_evidence && !item.confirmation_number);
+  const application = nextActionApplication(status);
   return application ? `/career-os#${applicationAnchorId(application)}` : '';
+}
+
+function nextActionApplication(status: CareerStatus) {
+  const employer = String(status.nextAction?.employer || '').toLowerCase();
+  const role = String(status.nextAction?.role || '').toLowerCase();
+  const label = `${status.nextAction?.label || ''} ${status.nextAction?.reason || ''}`.toLowerCase();
+
+  return status.evidence.applications.find((item) => (
+    employer
+      && String(item.employer || '').toLowerCase() === employer
+      && (!role || String(item.position || '').toLowerCase() === role)
+  ))
+    || status.evidence.applications.find((item) => label.includes(String(item.employer || '').toLowerCase()))
+    || status.evidence.applications.find((item) => !item.submission_evidence && !item.confirmation_number);
 }
 
 function applicationAnchorId(application: JsonRecord) {

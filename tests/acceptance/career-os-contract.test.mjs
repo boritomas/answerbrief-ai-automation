@@ -314,3 +314,36 @@ test('minimal employment history model maps only ATS employment fields and valid
   assert.doesNotMatch(page, /applications\.slice\(0, 5\)\.map/);
   assert.match(hashScroll, /scrollIntoView/);
 });
+
+test('Career OS CTAs invoke a secured autonomous queue processor and record audit events', () => {
+  const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
+  const controls = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'action-controls.tsx'), 'utf8');
+  const actionsRoute = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'actions', 'route.ts'), 'utf8');
+  const cronRoute = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'daily-run', 'route.ts'), 'utf8');
+  const queue = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+
+  assert.match(page, /RunNowControl/);
+  assert.match(page, /ApplicationActionControl/);
+  assert.match(page, /nextActionApplication/);
+  assert.match(controls, /Run Eligible Applications Now/);
+  assert.match(controls, /Refresh Status/);
+  assert.match(controls, /Authorize Actions/);
+  assert.match(controls, /save_answer/);
+  assert.match(controls, /resume_application/);
+  assert.match(actionsRoute, /Unauthorized Career OS action/);
+  assert.match(actionsRoute, /authorizeCareerOsAction/);
+  assert.match(actionsRoute, /processCareerOsQueue/);
+  assert.match(actionsRoute, /recordCareerOsAction/);
+  assert.match(actionsRoute, /run_now/);
+  assert.match(cronRoute, /processCareerOsQueue/);
+  assert.match(queue, /career_os_application_queue_processor/);
+  assert.match(queue, /queue_blocker_verified/);
+  assert.match(queue, /cta_inspected/);
+  assert.match(queue, /tomas_answer_saved/);
+  assert.match(queue, /human_step_completed_resume_requested/);
+  assert.match(queue, /duplicate_submission_prevented/);
+  assert.match(queue, /Supported server-side ATS submit adapter is not available/);
+  assert.match(statusSource, /careerOsActionMetadata/);
+  assert.equal(statusSource.includes("serverAction: '/api/career-os/actions'"), true);
+});

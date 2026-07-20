@@ -3,6 +3,7 @@ import {
   DAILY_CRON_PATH,
   type DailyOperatingCycleStatus,
 } from './career-os-daily-cycle';
+import { careerOsActionMetadata } from './career-os-queue';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -50,6 +51,11 @@ export type CareerOsStatus = {
     reason: string;
     estimatedMinutes?: number;
     deepLink?: string;
+    employer?: string;
+    role?: string;
+    whatCareerOsCompleted?: string;
+    whatTomasMustDo?: string;
+    applicationsUnlocked?: number;
   };
   employmentModel: EmploymentModelStatus;
   atsEmploymentMapper: AtsEmploymentMapperStatus;
@@ -261,11 +267,18 @@ export type GlobalLifecycleStatus = {
 };
 
 export type ApplicationExecutionItem = {
+  applicationId?: string;
   canonicalExecutionState: CanonicalApplicationExecutionState;
   cta: {
+    actionKind: string;
+    applicationsUnlocked: number;
+    disabledReason?: string;
     href: string;
     label: string;
     kind: 'external' | 'internal';
+    serverAction: '/api/career-os/actions';
+    whatCareerOsCompleted: string;
+    whatTomasMustDo: string;
   };
   employer: string;
   reason: string;
@@ -484,7 +497,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     releaseCompletionPercentage: canonicalRelease.releaseCompletionPercentage,
     actionableProgressPercentage: canonicalRelease.actionableProgressPercentage,
     dailyWorkflow,
-    nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates),
+    nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates, applicationExecution),
     employmentModel,
     atsEmploymentMapper,
     productionEvidenceReady: supabaseConnected,
@@ -494,7 +507,29 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   };
 }
 
-function buildNextAction(evidence: CareerOsEvidence, openTasks: JsonRecord[], openHumanOnlyGates: JsonRecord[]) {
+function buildNextAction(
+  evidence: CareerOsEvidence,
+  openTasks: JsonRecord[],
+  openHumanOnlyGates: JsonRecord[],
+  applicationExecution: ApplicationExecutionStatus,
+) {
+  const applicationBlocker = applicationExecution.exactStatuses.find((item) => item.canonicalExecutionState === 'waiting_on_tomas')
+    || applicationExecution.exactStatuses.find((item) => item.canonicalExecutionState === 'blocked_technical');
+
+  if (applicationBlocker) {
+    return {
+      applicationsUnlocked: applicationBlocker.cta.applicationsUnlocked,
+      deepLink: applicationBlocker.applicationId ? `/career-os#application-${slug(`${applicationBlocker.employer}-${applicationBlocker.applicationId}`)}` : applicationBlocker.cta.href,
+      employer: applicationBlocker.employer,
+      estimatedMinutes: applicationBlocker.cta.actionKind === 'create_or_open_account' ? 2 : 1,
+      label: applicationBlocker.cta.label,
+      reason: applicationBlocker.reason,
+      role: applicationBlocker.role,
+      whatCareerOsCompleted: applicationBlocker.cta.whatCareerOsCompleted,
+      whatTomasMustDo: applicationBlocker.cta.whatTomasMustDo,
+    };
+  }
+
   const latestHumanGate = openHumanOnlyGates[0];
 
   if (latestHumanGate) {
@@ -1226,6 +1261,7 @@ function classifyApplicationExecution(application: JsonRecord, nextScheduledRun:
   const status = displayStatusForExecutionState(canonicalExecutionState, text);
 
   return {
+    applicationId: stringValue(application.id) || undefined,
     canonicalExecutionState,
     cta: executionCta(application, canonicalExecutionState),
     employer,
@@ -1274,31 +1310,21 @@ function displayStatusForExecutionState(state: CanonicalApplicationExecutionStat
 }
 
 function executionCta(application: JsonRecord, state: CanonicalApplicationExecutionState): ApplicationExecutionItem['cta'] {
-  const rawRecord = asRecord(application.raw_record);
-  const externalHref = stringValue(
-    rawRecord.confirmation_url
-    || rawRecord.application_url
-    || rawRecord.canonical_url
-    || rawRecord.job_url
-    || application.evidence_url
-    || application.application_url,
-  );
+  const metadata = careerOsActionMetadata(application);
+  const externalHref = metadata.href;
   const internalHref = `/career-os#application-${slug(`${application.employer || 'application'}-${application.id || application.position || application.employer || ''}`)}`;
   const href = externalHref || internalHref;
-  const label = state === 'confirmed' || state === 'submitted'
-    ? 'Open confirmation evidence'
-    : state === 'waiting_on_tomas'
-      ? 'Open required step'
-      : state === 'blocked_technical'
-        ? 'Open saved checkpoint'
-        : state === 'queued' || state === 'running'
-          ? 'Open queue item'
-          : 'Review record';
 
   return {
+    actionKind: metadata.actionKind,
+    applicationsUnlocked: metadata.applicationsUnlocked,
+    disabledReason: metadata.disabledReason,
     href,
-    label,
+    label: metadata.label,
     kind: /^https?:\/\//i.test(href) ? 'external' : 'internal',
+    serverAction: '/api/career-os/actions',
+    whatCareerOsCompleted: metadata.whatCareerOsCompleted,
+    whatTomasMustDo: metadata.whatTomasMustDo,
   };
 }
 

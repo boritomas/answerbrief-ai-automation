@@ -1112,6 +1112,49 @@ th { background: #eef1f3; }
   text-align: right;
 }
 
+.career-os-action-control {
+  align-items: flex-start;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  max-width: 520px;
+}
+
+.career-os-action-control .cta-row {
+  margin: 0;
+}
+
+.career-os-action-control small {
+  color: #53657d;
+  font-size: .82rem;
+  line-height: 1.4;
+}
+
+.career-os-action-control.error small,
+.career-os-action-control.blocked small {
+  color: #9f1239;
+}
+
+.career-os-action-control.success small {
+  color: #166534;
+}
+
+.career-os-inline-auth {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.career-os-inline-auth input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: inherit;
+  min-height: 44px;
+  min-width: min(280px, 100%);
+  padding: 10px 12px;
+}
+
 @media (max-width: 980px) {
   .hero-grid,
   .career-os-home,
