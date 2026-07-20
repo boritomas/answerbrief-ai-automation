@@ -225,7 +225,7 @@ export type DailyOperatingCycleStatus = {
   version: string;
 };
 
-export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-20-v2-global-market-search';
+export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-20-v3-broader-greenhouse-autonomy';
 export const DAILY_CRON_PATH = '/api/career-os/daily-run';
 export const DAILY_CRON_SCHEDULE = '0 12 * * *';
 export const DAILY_TARGET_NEWLY_IDENTIFIED = 20;
@@ -382,14 +382,17 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
   const executedAt = new Date().toISOString();
   const runDay = executedAt.slice(0, 10);
   const discoveryPlan = buildCareerOsDiscoveryPlan({
+    applications: evidence?.applications || [],
     employerRecords: evidence?.employerKnowledgeBase?.employers || [],
     extraGreenhouseBoards: parseCsv(process.env.CAREER_OS_SOURCE_BOARDS),
+    jobPostings: evidence?.jobPostings || [],
     platformProfiles: evidence?.employerKnowledgeBase?.platformProfiles || [],
     previousSearchConfig: asRecord(evidence?.latestSourceRun?.search_config),
+    workflowEvents: evidence?.workflowEvents || [],
   });
   const boards = discoveryPlan.greenhouseBoards;
   const minFitScore = 85;
-  const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:global-telecom:${discoveryPlan.fingerprint}:${runDay}`);
+  const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:broader-product-leadership:${discoveryPlan.fingerprint}:${runDay}`);
   const errors: string[] = [];
   const postings: JsonRecord[] = [];
   const sourceStatuses: JsonRecord[] = [];
@@ -425,7 +428,7 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
     id: sourceRunId,
     owner_email: ownerEmail,
     source_type: 'global_supported_official_source_plan',
-    source_name: 'Global telecom, connectivity, broadband, cloud communications, infrastructure, and adjacent technology official sources',
+    source_name: 'Broader product leadership, digital transformation, customer experience, enterprise platform, and human-led AI official sources',
     source_url: 'https://boards-api.greenhouse.io/v1/boards plus Career OS official-source registry',
     status: reviewed > 0 ? 'succeeded' : 'error',
     executed_at: executedAt,
@@ -814,6 +817,9 @@ function canonicalExecutionStateForApplication(application: JsonRecord): Canonic
   const text = `${application.lifecycle_stage || ''} ${application.next_action || ''} ${rawRecord.blocker_type || ''} ${rawRecord.execution_status || ''} ${rawRecord.reason_not_submitted || ''}`.toLowerCase();
 
   if (application.confirmation_number || application.submission_evidence) return 'confirmed';
+  if (hasAny(text, ['waiting_on_tomas_browser_worker'])) return 'waiting_on_tomas';
+  if (hasAny(text, ['queued_for_browser_worker', 'browser_worker_queued'])) return 'queued';
+  if (hasAny(text, ['browser_worker_running'])) return 'running';
   if (hasAny(text, ['submitted'])) return 'submitted';
   if (hasAny(text, ['duplicate'])) return 'duplicate';
   if (hasAny(text, ['ineligible'])) return 'ineligible';
@@ -1250,15 +1256,15 @@ function buildDailySearchConfig(
     },
     cost_controls: DAILY_OPERATING_CYCLE.creditSavingControls,
     daily_automation_id: 'daily-tomas-career-os-run',
-    discovery_mode: 'global_telecom_connectivity_adjacent_market',
+    discovery_mode: 'broader_product_leadership_greenhouse_market',
     enqueue_qualified_package_ready_applications: true,
     employer_universe: DAILY_OPERATING_CYCLE.employerUniverseCovered,
     freshness_windows: ['24_hours', '3_days', '7_days', '14_days_if_active_exceptional_fit'],
-    idempotency_key: `tomas@nieves.com:global-telecom:${discoveryPlan.fingerprint}:${runDay}`,
+    idempotency_key: `tomas@nieves.com:broader-product-leadership:${discoveryPlan.fingerprint}:${runDay}`,
     invoked_by: 'vercel-cron',
     last_processed_cursor: `${runDay}:complete-result-set`,
     location_policy: 'verify remote from Texas, employment from Texas, Dallas-Fort Worth, or Texas hybrid before package generation',
-    market: 'telecom',
+    market: 'broader_product_leadership',
     market_universe_version: CAREER_OS_MARKET_UNIVERSE_VERSION,
     min_fit_score: minFitScore,
     pipeline_targets: {
@@ -1316,22 +1322,24 @@ async function persistRows(table: string, rows: JsonRecord | JsonRecord[]) {
 function scorePosting(job: JsonRecord, description: string) {
   const title = String(job.title || '').toLowerCase();
   const text = `${title} ${String(asRecord(job.location).name || '')} ${description}`.toLowerCase();
-  let score = 34;
+  let score = 30;
   if (hasPhrase(title, 'senior director') || hasPhrase(title, 'vice president')) score += 22;
   else if (hasPhrase(title, 'director') || hasPhrase(title, 'head of')) score += 16;
   else if (hasPhrase(title, 'principal') || hasPhrase(title, 'group product')) score += 14;
   if (hasPhrase(title, 'product management')) score += 25;
   else if (hasPhrase(title, 'product manager') || /\bproduct\b/.test(title)) score += 19;
   if (hasPhrase(title, 'transformation') || hasPhrase(text, 'business transformation')) score += 13;
+  if (hasPhrase(title, 'consultant') || hasPhrase(title, 'strategy') || hasPhrase(title, 'advisor')) score += 8;
+  if (hasPhrase(text, 'digital transformation') || hasPhrase(text, 'operating model') || hasPhrase(text, 'change management')) score += 9;
   if (hasPhrase(title, 'platform') || hasPhrase(text, 'platform strategy') || hasPhrase(text, 'workflow')) score += 8;
-  if (hasPhrase(text, 'customer experience') || hasPhrase(text, 'contact center') || hasPhrase(text, 'ccaas') || hasPhrase(text, 'ucaas')) score += 9;
+  if (hasPhrase(text, 'customer experience') || hasPhrase(text, 'customer journey') || hasPhrase(text, 'contact center') || hasPhrase(text, 'ccaas') || hasPhrase(text, 'ucaas') || hasPhrase(text, 'cxone')) score += 9;
   if (hasPhrase(text, 'telecom') || hasPhrase(text, 'communications') || hasPhrase(text, 'connectivity') || hasPhrase(text, 'wireless') || hasPhrase(text, 'broadband')) score += 8;
-  if (hasPhrase(text, 'automation') || /\bai\b/.test(text) || hasPhrase(text, 'agentic')) score += 6;
+  if (hasPhrase(text, 'automation') || /\bai\b/.test(text) || hasPhrase(text, 'agentic') || hasPhrase(text, 'adoption')) score += 6;
   if (hasPhrase(text, 'payments') || hasPhrase(text, 'cards') || hasPhrase(text, 'fintech')) score += 2;
   if (/remote\s*-\s*us|remote,\s*us|united states \(remote\)|usa\s*-\s*remote|work from home - us/i.test(String(asRecord(job.location).name || ''))) score += 7;
   if (/austin|dallas|plano|irving|houston|san antonio|texas/i.test(`${String(asRecord(job.location).name || '')} ${description}`)) score += 5;
   if (/remote canada|remote uk|remote poland|remote spain|india|ireland|london|dublin|germany|japan|israel/i.test(String(asRecord(job.location).name || ''))) score -= 25;
-  if (!/\b(product|transformation|strategy|customer experience)\b/.test(title) && /compliance|counsel|sales|marketing|software engineer|learning|account|finance|analytics|designer|intern|apprentice/i.test(title)) score -= 34;
+  if (!/\b(product|transformation|strategy|customer experience|consultant|platform|operations)\b/.test(title) && /compliance|counsel|sales|marketing|software engineer|learning|account executive|finance|designer|intern|apprentice/i.test(title)) score -= 34;
   return Math.min(score, 95);
 }
 

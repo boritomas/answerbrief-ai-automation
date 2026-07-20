@@ -1278,6 +1278,9 @@ function canonicalExecutionStateForApplication(application: JsonRecord): Canonic
   const text = `${application.lifecycle_stage || ''} ${application.next_action || ''} ${rawRecord.blocker_type || ''} ${rawRecord.execution_status || ''} ${rawRecord.reason_not_submitted || ''}`.toLowerCase();
 
   if (application.confirmation_number || application.submission_evidence) return 'confirmed';
+  if (hasAnyStatus(text, ['waiting_on_tomas_browser_worker'])) return 'waiting_on_tomas';
+  if (hasAnyStatus(text, ['queued_for_browser_worker', 'browser_worker_queued'])) return 'queued';
+  if (hasAnyStatus(text, ['browser_worker_running'])) return 'running';
   if (hasAnyStatus(text, ['submitted'])) return 'submitted';
   if (hasAnyStatus(text, ['duplicate'])) return 'duplicate';
   if (hasAnyStatus(text, ['ineligible'])) return 'ineligible';

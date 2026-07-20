@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { browserWorkerConfigured } from './career-os-browser-worker';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -55,6 +56,12 @@ type ActionRequest = {
   ownerEmail: string;
 };
 
+type ActionTokenInput = {
+  action: string;
+  expiresAt: string;
+  ownerEmail: string;
+};
+
 export type QueueProcessorResult = {
   applicationsAudited: number;
   automaticallyQueued: number;
@@ -88,6 +95,8 @@ const HUMAN_BLOCKER_TERMS = [
   'workday',
   'employment_start_month',
   'employment date',
+  'employment history facts',
+  'verified employment history',
   'compensation_unknown',
   'compensation review',
   'desired total compensation',
@@ -112,6 +121,29 @@ export function careerOsActionMetadata(application: JsonRecord) {
     whatCareerOsCompleted: completedSummary(application, state),
     whatTomasMustDo: tomasInstruction(actionKind, application),
   };
+}
+
+export function createCareerOsActionToken(input: ActionTokenInput) {
+  const secret = careerOsActionTokenSecret();
+  if (!secret) return '';
+  return crypto
+    .createHmac('sha256', secret)
+    .update(`${input.ownerEmail}:${input.action}:${input.expiresAt}`)
+    .digest('hex');
+}
+
+export function verifyCareerOsActionToken(input: ActionTokenInput & { token?: string }) {
+  const token = cleanEnv(input.token);
+  if (!token) return false;
+  const secret = careerOsActionTokenSecret();
+  if (!secret) return false;
+  const expiresAt = Date.parse(input.expiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return false;
+  const candidates = [
+    createCareerOsActionToken(input),
+    createCareerOsActionToken({ ...input, action: 'career_os_page' }),
+  ].filter(Boolean);
+  return candidates.some((expected) => crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected)));
 }
 
 export async function processCareerOsQueue(options: QueueProcessorOptions): Promise<QueueProcessorResult> {
@@ -171,6 +203,12 @@ export async function processCareerOsQueue(options: QueueProcessorOptions): Prom
 
       result.automaticallyQueued += 1;
       await updateApplicationQueueState(application, 'running', 'Career OS queue processor started the supported ATS workflow.', now, runId);
+
+      if (browserWorkerConfigured()) {
+        await updateApplicationQueueState(application, 'queued', 'Eligible application queued for the paired local browser companion.', now, runId);
+        result.processed += 1;
+        continue;
+      }
 
       if (hasSupportedAutoSubmitAdapter(application)) {
         const confirmation = capturedConfirmationEvidence(application);
@@ -262,6 +300,16 @@ export function authorizeCareerOsAction(request: Request) {
   return { authorized: false, method: 'none' };
 }
 
+function careerOsActionTokenSecret() {
+  return cleanEnv(
+    process.env.CRON_SECRET
+    || process.env.CAREER_OS_CRON_SECRET
+    || process.env.CAREER_OS_BROWSER_WORKER_TOKEN
+    || process.env.ADMIN_DASHBOARD_PASSWORD
+    || process.env.CAREER_OS_RUN_NOW_PASSWORD,
+  );
+}
+
 export function adminCookieValue(password: string) {
   return crypto.createHash('sha256').update(`career-os-admin:${password}`).digest('hex');
 }
@@ -291,7 +339,7 @@ function actionKindForApplication(application: JsonRecord, state: QueueState): Q
   if (state === 'confirmed' || state === 'submitted') return 'view_confirmation';
   if (state === 'blocked_technical') return 'view_technical_blocker';
   if (hasAny(text, ['total_compensation', 'desired total compensation', 'compensation_unknown', 'compensation review'])) return 'enter_compensation';
-  if (hasAny(text, ['employment_start_month', 'employment date', 'start month'])) return 'answer_question';
+  if (hasAny(text, ['employment_start_month', 'employment date', 'start month', 'employment history facts', 'verified employment history'])) return 'answer_question';
   if (hasAny(text, ['ai policy'])) return 'review_legal';
   if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'policy'])) return 'review_legal';
   if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'open_security_step';
@@ -311,7 +359,7 @@ function actionLabel(kind: QueueActionKind, text: string) {
     if (hasAny(text, ['nda'])) return 'Review NDA';
     return 'Review Privacy Terms';
   }
-  if (kind === 'answer_question') return hasAny(text, ['employment']) ? 'Verify Employment Date' : 'Answer Question';
+  if (kind === 'answer_question') return hasAny(text, ['employment']) ? 'Verify Employment History' : 'Answer Question';
   if (kind === 'create_or_open_account') return 'Create Workday Account';
   if (kind === 'upload_resume') return 'Upload Resume';
   if (kind === 'open_security_step') {
@@ -351,7 +399,9 @@ function humanOrTechnicalBlocker(application: JsonRecord) {
   if (hasAny(text, TECHNICAL_BLOCKER_TERMS)) return 'Unsupported browser or ATS operation remains after verified fields/package steps.';
   if (hasAny(text, ['total_compensation', 'desired total compensation'])) return 'Tomas must approve a reusable desired total-compensation answer; base salary and total compensation are distinct.';
   if (hasAny(text, ['compensation_unknown', 'compensation review'])) return 'Tomas must approve the compensation exception or review because no posted compensation is available.';
-  if (hasAny(text, ['employment_start_month', 'employment date', 'start month'])) return 'Tomas must verify the exact employment date requested by the ATS.';
+  if (hasAny(text, ['employment_start_month', 'employment date', 'start month', 'employment history facts', 'verified employment history'])) {
+    return 'Tomas must verify the missing employment history facts requested by the ATS before automation can continue.';
+  }
   if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'ai policy', 'policy'])) return 'Tomas must review and approve the exact legal, privacy, AI, NDA, or attestation text.';
   if (hasAny(text, ['account', 'workday', 'login', 'sign in'])) return 'Tomas must create or open the employer account, then resume automation.';
   if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'Tomas must complete the security or identity step in the employer session.';

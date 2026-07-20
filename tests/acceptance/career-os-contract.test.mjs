@@ -265,6 +265,10 @@ test('Career OS daily execution separates raw records, qualification, queueing, 
   assert.match(statusSource, /total_compensation_exception/);
   assert.match(statusSource, /Compensation review required/);
   assert.match(statusSource, /base_and_total_compensation_not_interchangeable|hasTotalCompensationEvidence/);
+  assert.match(statusSource, /queued_for_browser_worker/);
+  assert.match(statusSource, /waiting_on_tomas_browser_worker/);
+  assert.match(dailyCycleSource, /queued_for_browser_worker/);
+  assert.match(dailyCycleSource, /waiting_on_tomas_browser_worker/);
 });
 
 test('global autonomous discovery supports complete result sets, checkpoints, and canonical queue states', () => {
