@@ -233,6 +233,7 @@ export const DAILY_TARGET_ACTIVE_QUALIFIED = 15;
 export const GLOBAL_DISCOVERY_BATCH_SIZE = 100;
 export const GLOBAL_DISCOVERY_MAX_CONCURRENCY = 4;
 export const GLOBAL_DISCOVERY_RETRY_LIMIT = 2;
+export const GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS = 5000;
 
 export const DAILY_DISCOVERY_BOARDS = buildCareerOsDiscoveryPlan().greenhouseBoards;
 
@@ -1146,7 +1147,10 @@ function sourceStatus(source: CareerOsSourceCandidate, board: string, status: 's
 
 async function fetchGreenhouseJobs(board: string) {
   const url = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs?content=true`;
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  const response = await fetch(url, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS),
+  });
   if (!response.ok) throw new Error(`Greenhouse ${board} returned ${response.status}`);
   const payload = await response.json() as { jobs?: unknown[] };
   return Array.isArray(payload.jobs) ? payload.jobs.map(asRecord) : [];
