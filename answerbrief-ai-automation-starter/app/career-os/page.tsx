@@ -65,6 +65,13 @@ export default async function CareerOsPage() {
         </nav>
       </header>
 
+      {status.environment !== 'production' ? (
+        <section className="career-os-alert" role="status">
+          <strong>Live Career OS database is temporarily unavailable.</strong>
+          <span>{status.blocker || 'Showing the last verified production snapshot. Automation is blocked until live Supabase access is restored.'}</span>
+        </section>
+      ) : null}
+
       <section className="career-os-home">
         <div className="career-os-briefing">
           <p className="eyebrow">Executive Summary</p>

@@ -61,13 +61,36 @@ export async function POST(request: NextRequest) {
   }
 
   if (body.action === 'run_now') {
-    const queueResult = await processCareerOsQueue({ ownerEmail, trigger: 'run_now' });
-    return NextResponse.json({ ok: true, queueResult, status: queueResult.errors.length ? 'error' : 'success' });
+    try {
+      const status = await getCareerOsStatus();
+      if (status.environment !== 'production') {
+        return NextResponse.json({
+          error: status.blocker || 'Career OS live database is unavailable. Automation is blocked until live state can be read safely.',
+          ok: false,
+          status: 'blocked',
+        }, { status: 503 });
+      }
+      const queueResult = await processCareerOsQueue({ ownerEmail, trigger: 'run_now' });
+      return NextResponse.json({ ok: true, queueResult, status: queueResult.errors.length ? 'error' : 'success' });
+    } catch (error) {
+      return NextResponse.json({
+        error: error instanceof Error ? error.message : 'Career OS Run Now failed.',
+        ok: false,
+        status: 'error',
+      }, { status: 502 });
+    }
   }
 
   if (body.action === 'refresh_discovery') {
     try {
       const before = await getCareerOsStatus();
+      if (before.environment !== 'production') {
+        return NextResponse.json({
+          error: before.blocker || 'Career OS live database is unavailable. Discovery refresh is blocked until Supabase access is restored.',
+          ok: false,
+          status: 'blocked',
+        }, { status: 503 });
+      }
       const discovery = await runDailyGreenhouseDiscovery(ownerEmail, before.evidence, { maxBoards: FOREGROUND_DISCOVERY_MAX_BOARDS });
       const afterDiscovery = await getCareerOsStatus();
       const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, {

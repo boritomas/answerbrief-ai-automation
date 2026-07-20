@@ -981,6 +981,25 @@ th { background: #eef1f3; }
   background: #e9edf3;
 }
 
+.career-os-alert {
+  align-items: flex-start;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  color: #7c2d12;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 24px auto 0;
+  max-width: 1320px;
+  padding: 14px 18px;
+  width: 86%;
+}
+
+.career-os-alert span {
+  color: #9a3412;
+}
+
 .career-os-home {
   align-items: stretch;
   display: grid;
