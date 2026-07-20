@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import {
   adminCookieValue,
   authorizeCareerOsAction,
+  verifyCareerOsActionToken,
   processCareerOsQueue,
   recordCareerOsAction,
 } from '@/lib/career-os-queue';
@@ -14,6 +15,8 @@ export const runtime = 'nodejs';
 type ActionBody = {
   action?: string;
   adminPassword?: string;
+  actionToken?: string;
+  actionTokenExpiresAt?: string;
   answer?: string;
   applicationId?: string;
   ownerEmail?: string;
@@ -39,7 +42,13 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  const auth = authorizeCareerOsAction(request);
+  const tokenAuthorized = verifyCareerOsActionToken({
+    action: cleanEnv(body.action),
+    expiresAt: cleanEnv(body.actionTokenExpiresAt),
+    ownerEmail,
+    token: cleanEnv(body.actionToken),
+  });
+  const auth = tokenAuthorized ? { authorized: true, method: 'signed_action_token' as const } : authorizeCareerOsAction(request);
   if (!auth.authorized) {
     return NextResponse.json({ ok: false, error: 'Unauthorized Career OS action.' }, { status: 401 });
   }

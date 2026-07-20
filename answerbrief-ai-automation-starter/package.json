@@ -8,11 +8,16 @@
     "start": "next start",
     "lint": "node ../scripts/lint-career-os-source.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --test ../tests/acceptance/career-os-contract.test.mjs"
+    "test": "node --test ../tests/acceptance/career-os-contract.test.mjs",
+    "worker:pair": "node ./scripts/career-os-browser-companion.mjs pair",
+    "worker:start": "node ./scripts/career-os-browser-companion.mjs start",
+    "worker:run-once": "node ./scripts/career-os-browser-companion.mjs run-once",
+    "worker:health": "node ./scripts/career-os-browser-companion.mjs health"
   },
   "dependencies": {
     "@stripe/stripe-js": "^4.0.0",
     "next": "^14.2.0",
+    "playwright": "^1.54.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "resend": "^6.17.2",

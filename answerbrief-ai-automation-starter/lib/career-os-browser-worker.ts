@@ -1,5 +1,11 @@
 import crypto from 'node:crypto';
 import { buildCandidateProfile, employmentDateValidation, type CandidateEmploymentRecord } from './career-os-candidate-profile';
+import {
+  duplicateSubmissionMatch,
+  isTerminalSubmission,
+  terminalLockPatch,
+  type CareerOsLockApplication,
+} from './career-os-duplicate-lock';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -116,6 +122,16 @@ export type BrowserWorkerTask = {
   };
 };
 
+export type SubmitSafetyCheckResult = {
+  duplicate?: {
+    existingApplicationId: string;
+    lockKey: string;
+    reason: string;
+  };
+  ok: boolean;
+  status: 'safe' | 'duplicate_locked' | 'terminal_locked' | 'missing_application';
+};
+
 export function browserWorkerConfigured() {
   return Boolean(cleanEnv(process.env.CAREER_OS_BROWSER_WORKER_TOKEN));
 }
@@ -129,6 +145,7 @@ export function authorizeBrowserWorker(request: Request) {
 }
 
 export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimRequest): Promise<BrowserWorkerTask | null> {
+  if (careerOsQueuePaused()) return null;
   const applications = await selectAll(
     'career_os_applications',
     `select=*&owner_email=eq.${encodeURIComponent(input.ownerEmail)}&order=updated_at.asc.nullslast,created_at.asc.nullslast`,
@@ -136,6 +153,11 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
 
   for (const application of applications) {
     if (!isBrowserWorkerEligible(application, input.companionId)) continue;
+    const safety = await checkBrowserWorkerSubmitSafety({
+      applicationId: application.id,
+      ownerEmail: input.ownerEmail,
+    });
+    if (!safety.ok) continue;
     const task = await buildTaskPayload(application, input.companionId);
     if (!task) continue;
 
@@ -260,6 +282,18 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
   }
 
   if (report.status === 'submitted' || report.status === 'confirmed') {
+    const safety = await checkBrowserWorkerSubmitSafety({
+      applicationId: report.applicationId,
+      ownerEmail: report.ownerEmail,
+    });
+    if (!safety.ok) {
+      await appendWorkflowEvent(application, 'duplicate_submission_report_rejected', 'duplicate_locked', 'Browser worker attempted to report a submission after the duplicate lock was active.', now, runId, currentUrl || undefined, {
+        duplicate: safety.duplicate,
+        screenshot_path: screenshotPath || undefined,
+        ...details,
+      });
+      return;
+    }
     const confirmationNumber = cleanEnv(report.confirmationNumber) || `browser-worker-${application.id}-confirmation`;
     const submissionEvidence = report.evidenceText || (report.status === 'confirmed'
       ? 'Submission confirmation was captured by the Career OS browser companion.'
@@ -285,6 +319,37 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
   }
 }
 
+export async function checkBrowserWorkerSubmitSafety(input: { applicationId: string; ownerEmail: string }): Promise<SubmitSafetyCheckResult> {
+  const applications = await selectAll(
+    'career_os_applications',
+    `select=*&owner_email=eq.${encodeURIComponent(input.ownerEmail)}&order=updated_at.desc`,
+  ) as QueueApplication[];
+  const application = applications.find((row) => row.id === input.applicationId);
+  if (!application) return { ok: false, status: 'missing_application' };
+
+  if (isTerminalSubmission(application)) {
+    const now = new Date().toISOString();
+    const runId = deterministicUuid(`career-os-submit-safety:${application.id}:terminal:${now}`);
+    await patchApplication(application.id, terminalLockPatch(application, 'terminal_submission_reopen_prevented', now));
+    await appendWorkflowEvent(application, 'terminal_submission_reopen_prevented', 'duplicate_locked', 'Submitted/confirmed application was blocked from browser execution.', now, runId);
+    return { ok: false, status: 'terminal_locked' };
+  }
+
+  const duplicate = duplicateSubmissionMatch(application, applications as CareerOsLockApplication[]);
+  if (duplicate) {
+    const now = new Date().toISOString();
+    const runId = deterministicUuid(`career-os-submit-safety:${application.id}:duplicate:${duplicate.existingApplicationId}:${now}`);
+    await patchApplication(application.id, terminalLockPatch(application, duplicate.reason, now));
+    await appendWorkflowEvent(application, 'duplicate_submission_prevented', 'duplicate_locked', duplicate.reason, now, runId, externalApplicationHref(application) || undefined, {
+      duplicate_existing_application_id: duplicate.existingApplicationId,
+      duplicate_lock_key: duplicate.lockKey,
+    });
+    return { ok: false, duplicate, status: 'duplicate_locked' };
+  }
+
+  return { ok: true, status: 'safe' };
+}
+
 export async function browserWorkerHealth(ownerEmail: string) {
   const applications = await selectAll(
     'career_os_applications',
@@ -305,6 +370,7 @@ export async function browserWorkerHealth(ownerEmail: string) {
 }
 
 function isBrowserWorkerEligible(application: QueueApplication, companionId: string | undefined) {
+  if (isTerminalSubmission(application)) return false;
   const state = canonicalQueueState(application);
   if (!['queued', 'package_ready', 'qualified', 'retry_scheduled', 'running'].includes(state)) return false;
   if (application.confirmation_number || application.submission_evidence) return false;
@@ -479,24 +545,32 @@ async function appendWorkflowEvent(
   metadata?: JsonRecord,
 ) {
   const id = deterministicUuid(`career-os-worker-event:${application.id}:${eventType}:${status}:${runId}`);
-  await upsertRows('career_os_employer_workflow_events', {
-    application_id: application.id,
-    created_at: occurredAt,
-    employer: application.employer,
-    event_type: eventType,
-    evidence_text: evidenceText,
-    evidence_url: evidenceUrl || externalApplicationHref(application) || null,
-    id,
-    metadata: {
-      source: 'career_os_browser_worker',
-      ...metadata,
-    },
-    occurred_at: occurredAt,
-    opportunity_id: application.opportunity_id,
-    owner_email: application.owner_email,
-    platform: cleanEnv(asRecord(application.raw_record).platform) || 'Career OS',
-    status,
-  });
+  try {
+    await upsertRows('career_os_employer_workflow_events', {
+      application_id: application.id,
+      created_at: occurredAt,
+      employer: application.employer,
+      event_type: eventType,
+      evidence_text: evidenceText,
+      evidence_url: evidenceUrl || externalApplicationHref(application) || null,
+      id,
+      metadata: {
+        source: 'career_os_browser_worker',
+        ...metadata,
+      },
+      occurred_at: occurredAt,
+      opportunity_id: null,
+      owner_email: application.owner_email,
+      platform: cleanEnv(asRecord(application.raw_record).platform) || 'Career OS',
+      status,
+    });
+  } catch (error) {
+    console.error('Career OS browser workflow event logging failed', {
+      applicationId: application.id,
+      eventType,
+      message: error instanceof Error ? error.message : 'Unknown event logging error',
+    });
+  }
 }
 
 async function selectAll(table: string, query: string): Promise<JsonRecord[]> {
@@ -586,6 +660,10 @@ function slugify(value: string) {
 
 function cleanEnv(value: unknown) {
   return String(value || '').trim().replace(/^"|"$/g, '');
+}
+
+function careerOsQueuePaused() {
+  return cleanEnv(process.env.CAREER_OS_QUEUE_ENABLED) !== '1';
 }
 
 function deterministicUuid(input: string) {

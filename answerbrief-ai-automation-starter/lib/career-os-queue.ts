@@ -1,5 +1,11 @@
 import crypto from 'node:crypto';
 import { browserWorkerConfigured } from './career-os-browser-worker';
+import {
+  duplicateSubmissionMatch,
+  isTerminalSubmission,
+  terminalLockPatch,
+  type CareerOsLockApplication,
+} from './career-os-duplicate-lock';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -149,6 +155,11 @@ export function verifyCareerOsActionToken(input: ActionTokenInput & { token?: st
 export async function processCareerOsQueue(options: QueueProcessorOptions): Promise<QueueProcessorResult> {
   const now = new Date().toISOString();
   const runId = deterministicUuid(`career-os-queue:${options.ownerEmail}:${options.trigger}:${options.applicationId || 'all'}:${now}`);
+  if (careerOsQueuePaused()) {
+    const pausedResult = emptyQueueResult(runId);
+    await persistAutomationRun(options.ownerEmail, runId, options.trigger, pausedResult, now);
+    return pausedResult;
+  }
   const applications = await selectAll('career_os_applications', `select=*&owner_email=eq.${encodeURIComponent(options.ownerEmail)}&order=updated_at.desc`) as QueueApplication[];
   const targetApplications = options.applicationId
     ? applications.filter((application) => application.id === options.applicationId)
@@ -173,6 +184,17 @@ export async function processCareerOsQueue(options: QueueProcessorOptions): Prom
   for (const application of targetApplications) {
     try {
       const state = canonicalQueueState(application);
+      if (isTerminalSubmission(application)) {
+        result.confirmed += state === 'confirmed' ? 1 : 0;
+        result.submitted += state === 'submitted' ? 1 : 0;
+        continue;
+      }
+      const duplicate = duplicateSubmissionMatch(application, applications as CareerOsLockApplication[]);
+      if (duplicate) {
+        await lockDuplicateApplication(application, duplicate.reason, now, runId);
+        result.blocked += 1;
+        continue;
+      }
       if (state === 'confirmed') {
         result.confirmed += 1;
         continue;
@@ -237,6 +259,28 @@ export async function processCareerOsQueue(options: QueueProcessorOptions): Prom
   return result;
 }
 
+export function careerOsQueuePaused() {
+  return cleanEnv(process.env.CAREER_OS_QUEUE_ENABLED) !== '1';
+}
+
+function emptyQueueResult(runId: string): QueueProcessorResult {
+  return {
+    applicationsAudited: 0,
+    automaticallyQueued: 0,
+    blocked: 0,
+    confirmed: 0,
+    errors: ['career_os_queue_paused'],
+    failed: 0,
+    processed: 0,
+    queuedRemaining: 0,
+    runId,
+    runningRemaining: 0,
+    submitted: 0,
+    technical: 0,
+    waitingOnTomas: 0,
+  };
+}
+
 export async function recordCareerOsAction(input: ActionRequest) {
   const now = new Date().toISOString();
   const application = await selectApplication(input.ownerEmail, input.applicationId);
@@ -246,6 +290,26 @@ export async function recordCareerOsAction(input: ActionRequest) {
 
   const metadata = careerOsActionMetadata(application);
   const actionRunId = deterministicUuid(`career-os-action:${input.action}:${input.applicationId}:${now}`);
+
+  if (isTerminalSubmission(application)) {
+    await appendWorkflowEvent(application, 'terminal_submission_action_blocked', 'duplicate_locked', 'Submitted/confirmed applications cannot be reopened or returned to the queue.', now, actionRunId);
+    return {
+      ok: false,
+      status: 'blocked',
+      message: 'This application is terminally locked because it is already submitted or confirmed.',
+    };
+  }
+
+  const allApplications = await selectAll('career_os_applications', `select=*&owner_email=eq.${encodeURIComponent(input.ownerEmail)}&order=updated_at.desc`) as QueueApplication[];
+  const duplicate = duplicateSubmissionMatch(application, allApplications as CareerOsLockApplication[]);
+  if (duplicate) {
+    await lockDuplicateApplication(application, duplicate.reason, now, actionRunId);
+    return {
+      ok: false,
+      status: 'blocked',
+      message: `Duplicate submission prevented. Existing terminal application: ${duplicate.existingApplicationId}.`,
+    };
+  }
 
   if (input.action === 'inspect_application') {
     await appendWorkflowEvent(application, 'cta_inspected', metadata.state, `${metadata.label}: ${metadata.whatTomasMustDo}`, now, actionRunId);
@@ -545,27 +609,42 @@ async function updateApplicationSubmissionConfirmed(
   await appendWorkflowEvent(application, 'submission_confirmed', 'confirmed', confirmation.evidenceText, now, runId);
 }
 
+async function lockDuplicateApplication(application: QueueApplication, reason: string, now: string, runId: string) {
+  const patch = terminalLockPatch(application, reason, now);
+  await patchApplication(application.id, patch);
+  await appendWorkflowEvent(application, 'duplicate_submission_prevented', 'duplicate_locked', reason, now, runId);
+  Object.assign(application, patch);
+}
+
 async function appendWorkflowEvent(application: JsonRecord, eventType: string, status: string, evidenceText: string, occurredAt: string, runId: string) {
   const id = deterministicUuid(`career-os-event:${application.id}:${eventType}:${status}:${runId}`);
-  await upsertRows('career_os_employer_workflow_events', {
-    application_id: application.id,
-    created_at: occurredAt,
-    employer: application.employer,
-    event_type: eventType,
-    evidence_text: evidenceText,
-    evidence_url: externalApplicationHref(application) || null,
-    id,
-    metadata: {
-      application_state: status,
-      queue_processor_run_id: runId,
-      source: 'career_os_action_processor',
-    },
-    occurred_at: occurredAt,
-    opportunity_id: application.opportunity_id,
-    owner_email: application.owner_email,
-    platform: asRecord(application.raw_record).platform || 'Career OS',
-    status,
-  });
+  try {
+    await upsertRows('career_os_employer_workflow_events', {
+      application_id: application.id,
+      created_at: occurredAt,
+      employer: application.employer,
+      event_type: eventType,
+      evidence_text: evidenceText,
+      evidence_url: externalApplicationHref(application) || null,
+      id,
+      metadata: {
+        application_state: status,
+        queue_processor_run_id: runId,
+        source: 'career_os_action_processor',
+      },
+      occurred_at: occurredAt,
+      opportunity_id: null,
+      owner_email: application.owner_email,
+      platform: asRecord(application.raw_record).platform || 'Career OS',
+      status,
+    });
+  } catch (error) {
+    console.error('Career OS workflow event logging failed', {
+      applicationId: application.id,
+      eventType,
+      message: error instanceof Error ? error.message : 'Unknown event logging error',
+    });
+  }
 }
 
 async function persistAutomationRun(ownerEmail: string, runId: string, trigger: QueueProcessorOptions['trigger'], result: QueueProcessorResult, now: string) {

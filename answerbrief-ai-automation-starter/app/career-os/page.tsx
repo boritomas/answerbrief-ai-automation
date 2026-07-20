@@ -1,4 +1,5 @@
 import { getCareerOsStatus, summarizeCareerOsStatus, type CareerOsStatus } from '@/lib/career-os-status';
+import { createCareerOsActionToken } from '@/lib/career-os-queue';
 import { ApplicationActionControl, RunNowControl } from './action-controls';
 import { HashScroll } from './hash-scroll';
 
@@ -45,6 +46,12 @@ export default async function CareerOsPage() {
   const requiredStepHref = nextActionApplicationHref(status) || '/career-os#applications';
   const nextApplication = nextActionApplication(status);
   const nextApplicationCta = nextApplication ? applicationExecutionCta(status, nextApplication) : null;
+  const actionTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
+  const pageActionToken = createCareerOsActionToken({
+    action: 'career_os_page',
+    expiresAt: actionTokenExpiresAt,
+    ownerEmail: status.evidence.ownerEmail,
+  });
 
   return (
     <main className="career-os-shell">
@@ -114,6 +121,8 @@ export default async function CareerOsPage() {
               {status.nextAction.estimatedMinutes ? <p>Estimated time: {status.nextAction.estimatedMinutes} minute{status.nextAction.estimatedMinutes === 1 ? '' : 's'}.</p> : null}
               {nextApplication && nextApplicationCta ? (
                 <ApplicationActionControl
+                  actionToken={pageActionToken}
+                  actionTokenExpiresAt={actionTokenExpiresAt}
                   actionKind={nextApplicationCta.actionKind}
                   applicationId={String(nextApplication.id)}
                   disabledReason={nextApplicationCta.disabledReason}
@@ -155,7 +164,7 @@ export default async function CareerOsPage() {
         <p>Automation completion: {pipelineHealth.automationCompletionRate.toFixed(1)}%. Human intervention: {pipelineHealth.humanInterventionRate.toFixed(1)}%.</p>
         <p>Exact next action: {nextActionLabel}</p>
         <p>Immediate queue processor: {dailyWorkflow.immediateQueueProcessor.status}; queued immediate {dailyWorkflow.immediateQueueProcessor.queuedImmediate}; running now {dailyWorkflow.immediateQueueProcessor.runningNow}; submitted this run {dailyWorkflow.immediateQueueProcessor.submittedThisRun}; next scheduled run {dailyWorkflow.immediateQueueProcessor.nextScheduledRun}.</p>
-        <RunNowControl ownerEmail={status.evidence.ownerEmail} />
+        <RunNowControl actionToken={pageActionToken} actionTokenExpiresAt={actionTokenExpiresAt} ownerEmail={status.evidence.ownerEmail} />
         <h3>Complete Market Search Coverage</h3>
         <div className="career-os-metrics secondary" aria-label="Career OS market search coverage">
           <Metric detail={marketCoverage.discoveryMode.replace(/_/g, ' ')} label="Employers Searched" value={marketCoverage.employersSearched} />
@@ -310,6 +319,8 @@ export default async function CareerOsPage() {
                   <p>Canonical state: {applicationCanonicalExecutionState(status, application)}</p>
                 </div>
                 <ApplicationActionControl
+                  actionToken={pageActionToken}
+                  actionTokenExpiresAt={actionTokenExpiresAt}
                   actionKind={cta.actionKind}
                   applicationId={String(application.id)}
                   disabledReason={cta.disabledReason}

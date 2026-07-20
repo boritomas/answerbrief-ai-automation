@@ -19,6 +19,8 @@ type ActionResult = {
 };
 
 type ApplicationActionControlProps = {
+  actionToken: string;
+  actionTokenExpiresAt: string;
   actionKind: string;
   applicationId: string;
   disabledReason?: string;
@@ -27,32 +29,24 @@ type ApplicationActionControlProps = {
   whatTomasMustDo: string;
 };
 
-export function RunNowControl({ ownerEmail }: { ownerEmail: string }) {
-  const [password, setPassword] = useState('');
-  const [message, setMessage] = useState('Idle. Ready to process all eligible queued applications.');
+export function RunNowControl({
+  actionToken,
+  actionTokenExpiresAt,
+  ownerEmail,
+}: {
+  actionToken: string;
+  actionTokenExpiresAt: string;
+  ownerEmail: string;
+}) {
+  const [message, setMessage] = useState('Idle. Ready to queue all eligible applications for secure autonomous execution.');
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'blocked' | 'error'>('idle');
   const [isPending, startTransition] = useTransition();
-
-  function authorize() {
-    startTransition(async () => {
-      setState('loading');
-      const result = await postCareerAction({ action: 'authorize', adminPassword: password });
-      if (!result.ok) {
-        setState('error');
-        setMessage(result.error || 'Authorization failed.');
-        return;
-      }
-      setState('success');
-      setMessage('Authorized. Run Now can invoke the secure queue processor.');
-      setPassword('');
-    });
-  }
 
   function runNow() {
     startTransition(async () => {
       setState('loading');
-      setMessage('Running eligible applications now...');
-      const result = await postCareerAction({ action: 'run_now', ownerEmail });
+      setMessage('Queueing eligible applications for autonomous execution...');
+      const result = await postCareerAction({ action: 'run_now', actionToken, actionTokenExpiresAt, ownerEmail });
       if (!result.ok) {
         setState(result.status === 'blocked' ? 'blocked' : 'error');
         setMessage(result.error || result.message || 'Run Now failed.');
@@ -71,16 +65,7 @@ export function RunNowControl({ ownerEmail }: { ownerEmail: string }) {
       <div className="cta-row">
         <button className="button primary" disabled={isPending} onClick={runNow} type="button">Run Eligible Applications Now</button>
         <button className="button secondary" disabled={isPending} onClick={() => window.location.reload()} type="button">Refresh Status</button>
-      </div>
-      <div className="career-os-inline-auth">
-        <input
-          aria-label="Career OS admin password"
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Admin password"
-          type="password"
-          value={password}
-        />
-        <button className="button secondary" disabled={isPending || !password} onClick={authorize} type="button">Authorize Actions</button>
+        <button aria-disabled="true" className="button secondary" disabled type="button">Authorize Actions</button>
       </div>
       <small>{state}: {message}</small>
     </div>
@@ -88,6 +73,8 @@ export function RunNowControl({ ownerEmail }: { ownerEmail: string }) {
 }
 
 export function ApplicationActionControl({
+  actionToken,
+  actionTokenExpiresAt,
   actionKind,
   applicationId,
   disabledReason,
@@ -104,7 +91,7 @@ export function ApplicationActionControl({
   function inspect() {
     startTransition(async () => {
       setState('loading');
-      const result = await postCareerAction({ action: 'inspect_application', applicationId });
+      const result = await postCareerAction({ action: 'inspect_application', actionToken, actionTokenExpiresAt, applicationId });
       if (!result.ok) {
         setState(result.status === 'blocked' ? 'blocked' : 'error');
         setMessage(result.error || result.message || 'Action failed.');
@@ -119,7 +106,7 @@ export function ApplicationActionControl({
   function saveAnswer() {
     startTransition(async () => {
       setState('loading');
-      const result = await postCareerAction({ action: 'save_answer', answer, applicationId });
+      const result = await postCareerAction({ action: 'save_answer', actionToken, actionTokenExpiresAt, answer, applicationId });
       if (!result.ok) {
         setState(result.status === 'blocked' ? 'blocked' : 'error');
         setMessage(result.error || result.message || 'Answer was not saved.');
@@ -134,7 +121,7 @@ export function ApplicationActionControl({
   function resume() {
     startTransition(async () => {
       setState('loading');
-      const result = await postCareerAction({ action: 'resume_application', applicationId });
+      const result = await postCareerAction({ action: 'resume_application', actionToken, actionTokenExpiresAt, applicationId });
       if (!result.ok) {
         setState(result.status === 'blocked' ? 'blocked' : 'error');
         setMessage(result.error || result.message || 'Resume blocked.');

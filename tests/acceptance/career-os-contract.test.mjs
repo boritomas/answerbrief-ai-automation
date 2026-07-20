@@ -374,3 +374,168 @@ test('Career OS CTAs invoke a secured autonomous queue processor and record audi
   assert.match(statusSource, /careerOsActionMetadata/);
   assert.equal(statusSource.includes("serverAction: '/api/career-os/actions'"), true);
 });
+
+test('Career OS duplicate-submission locks prevent requeueing and backward transitions', () => {
+  const queue = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
+  const duplicateLock = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-duplicate-lock.ts'), 'utf8');
+
+  assert.match(queue, /careerOsQueuePaused/);
+  assert.match(queue, /CAREER_OS_QUEUE_ENABLED/);
+  assert.match(queue, /isTerminalSubmission\(application\)/);
+  assert.match(queue, /terminal_submission_action_blocked/);
+  assert.match(queue, /Submitted\/confirmed applications cannot be reopened or returned to the queue/);
+  assert.match(queue, /duplicateSubmissionMatch\(application/);
+  assert.match(queue, /lockDuplicateApplication/);
+  assert.match(queue, /duplicate_submission_prevented/);
+  assert.match(duplicateLock, /externally_submitted/);
+  assert.match(duplicateLock, /externally_confirmed/);
+  assert.match(duplicateLock, /duplicate_locked/);
+  assert.match(duplicateLock, /employer_requisition/);
+  assert.match(duplicateLock, /employer_title_url/);
+  assert.match(duplicateLock, /employer_title_requisition/);
+});
+
+test('Career OS browser worker rejects locked applications before claim and before final submit', () => {
+  const worker = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-browser-worker.ts'), 'utf8');
+  const submitCheck = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'worker', 'submit-check', 'route.ts'), 'utf8');
+  const companion = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'scripts', 'career-os-browser-companion.mjs'), 'utf8');
+  const adapters = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'scripts', 'lib', 'career-os-ats-adapters.mjs'), 'utf8');
+
+  assert.match(worker, /if \(careerOsQueuePaused\(\)\) return null/);
+  assert.match(worker, /checkBrowserWorkerSubmitSafety/);
+  assert.match(worker, /terminal_submission_reopen_prevented/);
+  assert.match(worker, /duplicate_submission_report_rejected/);
+  assert.match(worker, /duplicate_submission_prevented/);
+  assert.match(submitCheck, /authorizeBrowserWorker/);
+  assert.match(submitCheck, /status: result\.ok \? 200 : 409/);
+  assert.match(companion, /assertSafeToSubmit/);
+  assert.match(companion, /duplicate_submission_prevented/);
+  assert.match(adapters, /beforeClick/);
+  assert.match(adapters, /runtime\.assertSafeToSubmit\(\)/);
+  assert.match(adapters, /Submitting the employer application/);
+});
+
+test('Career OS duplicate key matching covers tracking parameters, ATS ids, requisitions, and new requisitions', () => {
+  const submittedMongo = {
+    confirmationNumber: 'mongodb-confirmed',
+    employer: 'MongoDB',
+    lifecycleStage: 'confirmed',
+    position: 'Staff Product Manager',
+    raw: {
+      application_url: 'https://www.mongodb.com/careers/jobs/7974801?utm_source=linkedin&gh_jid=7974801',
+      ats_job_id: '7974801',
+      external_requisition_id: '7974801',
+    },
+  };
+  const submittedServiceNow = {
+    confirmationNumber: 'servicenow-confirmed',
+    employer: 'ServiceNow',
+    lifecycleStage: 'submitted',
+    position: 'Director, Outbound Product Management',
+    raw: {
+      application_url: 'https://jobs.smartrecruiters.com/ServiceNow/744000138413067-director-outbound-product-management?trid=123',
+      ats_job_id: '744000138413067',
+    },
+  };
+  const sameMongoTracking = {
+    employer: 'MongoDB',
+    lifecycleStage: 'queued',
+    position: 'Staff Product Manager',
+    raw: { application_url: 'https://www.mongodb.com/careers/jobs/7974801?utm_campaign=x&gh_jid=7974801' },
+  };
+  const sameServiceNowAts = {
+    employer: 'ServiceNow',
+    lifecycleStage: 'package_ready',
+    position: 'Director, Outbound Product Management',
+    raw: { ats_job_id: '744000138413067' },
+  };
+  const sameEmployerRequisition = {
+    employer: 'MongoDB',
+    lifecycleStage: 'qualified',
+    position: 'Different Display Title',
+    raw: { external_requisition_id: '7974801' },
+  };
+  const newMongoRequisition = {
+    employer: 'MongoDB',
+    lifecycleStage: 'qualified',
+    position: 'Staff Product Manager',
+    raw: {
+      application_url: 'https://www.mongodb.com/careers/jobs/9000000?gh_jid=9000000',
+      ats_job_id: '9000000',
+    },
+  };
+
+  const submitted = [submittedMongo, submittedServiceNow];
+  assert.equal(findDuplicate(sameMongoTracking, submitted).reason, 'duplicate_submission_prevented');
+  assert.equal(findDuplicate(sameServiceNowAts, submitted).reason, 'duplicate_submission_prevented');
+  assert.equal(findDuplicate(sameEmployerRequisition, submitted).reason, 'duplicate_submission_prevented');
+  assert.equal(findDuplicate(newMongoRequisition, submitted), null);
+});
+
+test('Career OS database duplicate lock migration defines production uniqueness backstops', () => {
+  const sql = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'docs', 'sql', 'career-os-submission-lock.sql'), 'utf8');
+
+  assert.match(sql, /career_os_applications_unique_employer_requisition/);
+  assert.match(sql, /career_os_applications_unique_employer_title_url/);
+  assert.match(sql, /owner_email/);
+  assert.match(sql, /raw_record->>'external_requisition_id'/);
+  assert.match(sql, /raw_record->>'ats_job_id'/);
+  assert.match(sql, /raw_record->>'canonical_url'/);
+});
+
+function findDuplicate(candidate, existingApplications) {
+  const candidateKeys = duplicateKeys(candidate);
+  for (const existing of existingApplications) {
+    if (!isTerminal(existing)) continue;
+    const existingKeys = new Set(duplicateKeys(existing));
+    const lockKey = candidateKeys.find((key) => existingKeys.has(key));
+    if (lockKey) return { lockKey, reason: 'duplicate_submission_prevented' };
+  }
+  return null;
+}
+
+function duplicateKeys(application) {
+  const raw = application.raw || {};
+  const employer = normalizeEmployer(application.employer || raw.employer || raw.company);
+  const requisition = normalizeId(raw.external_requisition_id || raw.requisition_id || raw.ats_job_id || raw.job_id || raw.token);
+  const title = normalizeTitle(application.position || raw.position || raw.title || raw.role);
+  const url = normalizeUrl(raw.canonical_url || raw.application_url || raw.job_url || raw.posting_url);
+  const keys = [];
+  if (employer && requisition) keys.push(`employer_requisition:${employer}:${requisition}`);
+  if (employer && title && url) keys.push(`employer_title_url:${employer}:${title}:${url}`);
+  if (employer && title && requisition) keys.push(`employer_title_requisition:${employer}:${title}:${requisition}`);
+  return Array.from(new Set(keys));
+}
+
+function isTerminal(application) {
+  const raw = application.raw || {};
+  return Boolean(application.confirmationNumber || application.submissionEvidence)
+    || ['confirmed', 'submitted', 'externally_confirmed', 'externally_submitted', 'duplicate_locked'].includes(String(application.lifecycleStage || raw.execution_status || '').toLowerCase())
+    || raw.duplicate_locked === true;
+}
+
+function normalizeEmployer(value) {
+  return String(value || '').trim().toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function normalizeTitle(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function normalizeId(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function normalizeUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const url = new URL(text);
+  url.hash = '';
+  const keep = new URLSearchParams();
+  for (const key of ['for', 'token', 'gh_jid', 'jobSeqNo']) {
+    const param = url.searchParams.get(key);
+    if (param) keep.set(key, param);
+  }
+  url.search = keep.toString();
+  return url.toString().toLowerCase().replace(/\/$/, '');
+}
