@@ -344,6 +344,9 @@ test('Career OS CTAs invoke a secured autonomous queue processor and record audi
   assert.match(queue, /human_step_completed_resume_requested/);
   assert.match(queue, /duplicate_submission_prevented/);
   assert.match(queue, /Supported server-side ATS submit adapter is not available/);
+  assert.match(queue, /capturedConfirmationEvidence/);
+  assert.match(queue, /submission_confirmed/);
+  assert.match(queue, /will not mark the application submitted without a captured confirmation/);
   assert.match(statusSource, /careerOsActionMetadata/);
   assert.equal(statusSource.includes("serverAction: '/api/career-os/actions'"), true);
 });

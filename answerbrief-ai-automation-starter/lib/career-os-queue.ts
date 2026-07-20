@@ -173,7 +173,15 @@ export async function processCareerOsQueue(options: QueueProcessorOptions): Prom
       await updateApplicationQueueState(application, 'running', 'Career OS queue processor started the supported ATS workflow.', now, runId);
 
       if (hasSupportedAutoSubmitAdapter(application)) {
-        await updateApplicationQueueState(application, 'submitted', 'Application submitted by supported ATS automation; awaiting confirmation evidence.', now, runId);
+        const confirmation = capturedConfirmationEvidence(application);
+        if (!confirmation) {
+          await updateApplicationQueueState(application, 'blocked_technical', 'Supported ATS adapter did not return confirmation evidence; Career OS will not mark the application submitted without a captured confirmation.', now, runId);
+          result.technical += 1;
+          result.processed += 1;
+          continue;
+        }
+        await updateApplicationSubmissionConfirmed(application, confirmation, now, runId);
+        result.confirmed += 1;
         result.submitted += 1;
       } else {
         await updateApplicationQueueState(application, 'blocked_technical', 'Supported server-side ATS submit adapter is not available for this employer; no Tomas factual/legal action is required, and duplicate submission protection remains active.', now, runId);
@@ -326,6 +334,18 @@ function hasSupportedAutoSubmitAdapter(application: QueueApplication) {
   return raw.supported_auto_submit_adapter === true && Boolean(raw.confirmation_capture_supported);
 }
 
+function capturedConfirmationEvidence(application: QueueApplication) {
+  const raw = asRecord(application.raw_record);
+  const evidenceUrl = stringValue(raw.confirmation_url || raw.confirmation_page_url);
+  const evidenceText = stringValue(raw.confirmation_evidence || raw.confirmation_text || raw.submission_evidence);
+  if (!evidenceUrl && !evidenceText) return undefined;
+  return {
+    confirmationNumber: stringValue(raw.confirmation_number) || `career-os-${application.id}-confirmation`,
+    evidenceText: evidenceText || `Confirmation page captured at ${evidenceUrl}.`,
+    evidenceUrl,
+  };
+}
+
 function humanOrTechnicalBlocker(application: JsonRecord) {
   const text = applicationText(application);
   if (hasAny(text, TECHNICAL_BLOCKER_TERMS)) return 'Unsupported browser or ATS operation remains after verified fields/package steps.';
@@ -435,6 +455,44 @@ async function updateApplicationQueueState(application: QueueApplication, state:
   application.next_action = message;
   application.raw_record = nextRaw;
   await appendWorkflowEvent(application, `queue_${state}`, state, message, now, runId);
+}
+
+async function updateApplicationSubmissionConfirmed(
+  application: QueueApplication,
+  confirmation: { confirmationNumber: string; evidenceText: string; evidenceUrl: string },
+  now: string,
+  runId: string,
+) {
+  const raw = asRecord(application.raw_record);
+  const nextAudit = arrayValue(application.audit_timeline).concat({
+    at: now,
+    event: 'queue_confirmed',
+    evidence: confirmation.evidenceText,
+    run_id: runId,
+  });
+  const nextRaw = {
+    ...raw,
+    confirmation_url: confirmation.evidenceUrl || raw.confirmation_url,
+    execution_status: 'confirmed',
+    queue_processor_run_id: runId,
+    queue_updated_at: now,
+  };
+  await patchApplication(application.id, {
+    audit_timeline: nextAudit,
+    confirmation_number: confirmation.confirmationNumber,
+    lifecycle_stage: 'confirmed',
+    next_action: 'Application submitted and confirmation evidence captured by Career OS.',
+    raw_record: nextRaw,
+    submission_evidence: confirmation.evidenceText,
+    updated_at: now,
+  });
+  application.audit_timeline = nextAudit;
+  application.confirmation_number = confirmation.confirmationNumber;
+  application.lifecycle_stage = 'confirmed';
+  application.next_action = 'Application submitted and confirmation evidence captured by Career OS.';
+  application.raw_record = nextRaw;
+  application.submission_evidence = confirmation.evidenceText;
+  await appendWorkflowEvent(application, 'submission_confirmed', 'confirmed', confirmation.evidenceText, now, runId);
 }
 
 async function appendWorkflowEvent(application: JsonRecord, eventType: string, status: string, evidenceText: string, occurredAt: string, runId: string) {
