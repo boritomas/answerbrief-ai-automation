@@ -4,6 +4,11 @@ import {
   type DailyOperatingCycleStatus,
 } from './career-os-daily-cycle';
 import { careerOsActionMetadata } from './career-os-queue';
+import {
+  careerOsSelectRows,
+  cleanSupabaseEnv,
+  getCareerOsSupabaseConfiguration,
+} from './career-os-supabase';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -1744,32 +1749,22 @@ function buildLastKnownGoodApplications(now: string): JsonRecord[] {
 }
 
 function getSupabaseConfiguration() {
-  const supabaseUrl = normalizeEnvValue(process.env.SUPABASE_URL);
-  const serviceRoleKey = normalizeEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const configuration = getCareerOsSupabaseConfiguration();
+  const supabaseUrl = normalizeEnvValue(configuration.supabaseUrl);
+  const serviceRoleKey = normalizeEnvValue(configuration.serviceRoleKey);
+  const databaseUrl = normalizeEnvValue(configuration.databaseUrl);
 
   return {
-    configured: Boolean(supabaseUrl && serviceRoleKey && !serviceRoleKey.startsWith('[')),
+    configured: Boolean((databaseUrl || supabaseUrl) && (!serviceRoleKey || !serviceRoleKey.startsWith('['))),
+    databaseUrl,
     supabaseUrl,
     serviceRoleKey,
   };
 }
 
 async function supabaseSelect(configuration: ReturnType<typeof getSupabaseConfiguration>, table: string, query: string): Promise<JsonRecord[]> {
-  const response = await fetch(`${configuration.supabaseUrl}/rest/v1/${table}?${query}`, {
-    cache: 'no-store',
-    headers: {
-      apikey: configuration.serviceRoleKey,
-      Authorization: `Bearer ${configuration.serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    signal: AbortSignal.timeout(12000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Supabase ${table} query failed with status ${response.status}.`);
-  }
-
-  return await response.json() as JsonRecord[];
+  void configuration;
+  return await careerOsSelectRows(table, query);
 }
 
 async function safeSupabaseSelect(
@@ -1796,22 +1791,11 @@ async function supabaseSelectAll(
   const rows: JsonRecord[] = [];
 
   for (let offset = 0; offset < maxRows; offset += pageSize) {
-    const response = await fetch(`${configuration.supabaseUrl}/rest/v1/${table}?${query}`, {
-      cache: 'no-store',
-      headers: {
-        apikey: configuration.serviceRoleKey,
-        Authorization: `Bearer ${configuration.serviceRoleKey}`,
-        'Content-Type': 'application/json',
-        Range: `${offset}-${offset + pageSize - 1}`,
-      },
-      signal: AbortSignal.timeout(12000),
+    void configuration;
+    const page = await careerOsSelectRows(table, query, {
+      rangeEnd: offset + pageSize - 1,
+      rangeStart: offset,
     });
-
-    if (!response.ok) {
-      throw new Error(`Supabase ${table} paginated query failed with status ${response.status}.`);
-    }
-
-    const page = await response.json() as JsonRecord[];
     rows.push(...page);
     if (page.length < pageSize) break;
   }
@@ -1838,9 +1822,9 @@ function encodeFilter(value: string) {
 }
 
 function normalizeEnvValue(value?: string) {
-  const trimmed = (value || '').trim();
+  const trimmed = cleanSupabaseEnv(value);
   if (!trimmed || trimmed === '""' || trimmed === "''") return '';
-  return trimmed.replace(/^"|"$/g, '');
+  return trimmed;
 }
 
 function numberValue(value: unknown) {

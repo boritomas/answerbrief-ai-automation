@@ -6,6 +6,12 @@ import {
   terminalLockPatch,
   type CareerOsLockApplication,
 } from './career-os-duplicate-lock';
+import {
+  careerOsPatchRowById,
+  careerOsSelectRows,
+  careerOsUpsertRows,
+  cleanSupabaseEnv,
+} from './career-os-supabase';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -529,15 +535,7 @@ async function selectApplication(ownerEmail: string, applicationId: string): Pro
 }
 
 async function patchApplication(id: string, patch: JsonRecord) {
-  const configuration = supabaseConfiguration();
-  const response = await fetch(`${configuration.url}/rest/v1/career_os_applications?id=eq.${encodeURIComponent(id)}`, {
-    body: JSON.stringify(patch),
-    headers: supabaseHeaders(configuration.key),
-    method: 'PATCH',
-  });
-  if (!response.ok) {
-    throw new Error(`Career OS application update failed with ${response.status}: ${(await response.text()).slice(0, 240)}`);
-  }
+  await careerOsPatchRowById('career_os_applications', id, patch);
 }
 
 async function appendWorkflowEvent(
@@ -580,52 +578,16 @@ async function appendWorkflowEvent(
 }
 
 async function selectAll(table: string, query: string): Promise<JsonRecord[]> {
-  const configuration = supabaseConfiguration();
-  const response = await fetch(`${configuration.url}/rest/v1/${table}?${query}`, {
-    cache: 'no-store',
-    headers: supabaseHeaders(configuration.key),
-  });
-  if (!response.ok) {
-    throw new Error(`Career OS ${table} query failed with ${response.status}: ${(await response.text()).slice(0, 240)}`);
-  }
-  return await response.json() as JsonRecord[];
+  return await careerOsSelectRows(table, query);
 }
 
 async function upsertRows(table: string, rows: JsonRecord | JsonRecord[]) {
-  const configuration = supabaseConfiguration();
-  const response = await fetch(`${configuration.url}/rest/v1/${table}?on_conflict=id`, {
-    body: JSON.stringify(rows),
-    headers: {
-      ...supabaseHeaders(configuration.key),
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
-    method: 'POST',
-  });
-  if (!response.ok) {
-    throw new Error(`Career OS ${table} upsert failed with ${response.status}: ${(await response.text()).slice(0, 240)}`);
-  }
+  await careerOsUpsertRows(table, rows);
 }
 
 function mapWorkerStatusToExecutionStatus(status: WorkerStatus) {
   if (status === 'heartbeat') return 'running';
   return status;
-}
-
-function supabaseConfiguration() {
-  const url = cleanEnv(process.env.SUPABASE_URL);
-  const key = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
-  if (!url || !key || key.startsWith('[')) {
-    throw new Error('Career OS Supabase service configuration is unavailable.');
-  }
-  return { key, url };
-}
-
-function supabaseHeaders(key: string) {
-  return {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    'Content-Type': 'application/json',
-  };
 }
 
 function externalApplicationHref(application: JsonRecord) {
@@ -665,7 +627,7 @@ function slugify(value: string) {
 }
 
 function cleanEnv(value: unknown) {
-  return String(value || '').trim().replace(/^"|"$/g, '');
+  return cleanSupabaseEnv(value);
 }
 
 function careerOsQueuePaused() {
