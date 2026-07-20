@@ -8,7 +8,6 @@ export async function GET() {
   const health = await browserWorkerHealth(ownerEmail);
   return NextResponse.json({
     ok: true,
-    configured: browserWorkerConfigured(),
     ...health,
   });
 }
