@@ -155,7 +155,7 @@ export default async function CareerOsPage() {
         <p>Counts are separated by unique opportunities, applications, and package assets.</p>
         <div className="career-os-metrics" aria-label="Career OS application funnel">
           {applicationFunnel.map((item) => (
-            <Metric detail={item.detail} key={item.label} label={item.label} value={item.value} />
+            <Metric detail={item.detail} href={item.href} key={item.label} label={item.label} value={item.value} />
           ))}
         </div>
       </section>
@@ -174,14 +174,14 @@ export default async function CareerOsPage() {
         <RunNowControl actionToken={pageActionToken} actionTokenExpiresAt={actionTokenExpiresAt} ownerEmail={status.evidence.ownerEmail} />
         <h3>Complete Market Search Coverage</h3>
         <div className="career-os-metrics secondary" aria-label="Career OS market search coverage">
-          <Metric detail={marketCoverage.discoveryMode.replace(/_/g, ' ')} label="Employers Searched" value={marketCoverage.employersSearched} />
-          <Metric detail={`${marketCoverage.supportedOfficialSources} supported sources`} label="Career Sites Checked" value={marketCoverage.officialCareerSitesChecked} />
-          <Metric detail="official source records" label="Raw Jobs Reviewed" value={marketCoverage.rawJobsReviewed} />
-          <Metric detail="deduped this cycle" label="Newly Unique Jobs" value={dailyFunnel.qualificationToday.newlyUniqueOpportunities} />
-          <Metric detail="profile and policy match" label="Qualified Matches" value={marketCoverage.qualifiedMatches} />
-          <Metric detail="confirmation evidence" label="Applications Submitted" value={marketCoverage.applicationsSubmitted} />
-          <Metric detail="legal/factual/account/security/comp" label="Waiting on Tomas" value={marketCoverage.applicationsWaitingOnTomas} />
-          <Metric detail="source or browser adapter" label="Technical Blockers" value={marketCoverage.technicalBlockers} />
+          <Metric detail={marketCoverage.discoveryMode.replace(/_/g, ' ')} href="/career-os#employers" label="Employers Searched" value={marketCoverage.employersSearched} />
+          <Metric detail={`${marketCoverage.supportedOfficialSources} supported sources`} href="/career-os#employers" label="Career Sites Checked" value={marketCoverage.officialCareerSitesChecked} />
+          <Metric detail="official source records" href="/career-os#opportunity-list" label="Raw Jobs Reviewed" value={marketCoverage.rawJobsReviewed} />
+          <Metric detail="deduped this cycle" href="/career-os#opportunity-list" label="Newly Unique Jobs" value={dailyFunnel.qualificationToday.newlyUniqueOpportunities} />
+          <Metric detail="profile and policy match" href="/career-os#application-list" label="Qualified Matches" value={marketCoverage.qualifiedMatches} />
+          <Metric detail="confirmation evidence" href="/career-os#submitted-applications" label="Applications Submitted" value={marketCoverage.applicationsSubmitted} />
+          <Metric detail="legal/factual/account/security/comp" href="/career-os#waiting-applications" label="Waiting on Tomas" value={marketCoverage.applicationsWaitingOnTomas} />
+          <Metric detail="source or browser adapter" href="/career-os#technical-applications" label="Technical Blockers" value={marketCoverage.technicalBlockers} />
         </div>
         <div className="career-os-list compact">
           <DetailRow detail={`${marketCoverage.unsupportedSourceCandidates} employer candidates need additional ATS adapters before they can be automatically checked.`} label="Unsupported official-source candidates" value={String(marketCoverage.unsupportedSourceCandidates)} />
@@ -221,14 +221,14 @@ export default async function CareerOsPage() {
         ) : null}
         <h3>Global Lifecycle Counts</h3>
         <div className="career-os-metrics secondary" aria-label="Career OS global lifecycle counts">
-          <Metric detail="all discovery history" label="Total raw records ever discovered" value={globalLifecycle.totalRawRecordsEverDiscovered} />
-          <Metric detail="canonical outcome assigned" label="Raw records processed" value={globalLifecycle.rawRecordsProcessed} />
-          <Metric detail="pending checkpoint work" label="Records awaiting processing" value={globalLifecycle.recordsAwaitingProcessing} />
-          <Metric detail="deduped opportunities" label="Unique opportunities" value={globalLifecycle.uniqueOpportunities} />
-          <Metric detail="historical duplicates" label="Duplicates removed" value={globalLifecycle.duplicatesRemoved} />
-          <Metric detail="current backlog" label="Backlog qualified opportunities" value={globalLifecycle.backlogQualifiedOpportunities} />
-          <Metric detail="retry scheduled" label="Failed with retry" value={globalLifecycle.failedWithRetry} />
-          <Metric detail="retry exhausted" label="Permanently failed" value={globalLifecycle.permanentlyFailed} />
+          <Metric detail="all discovery history" href="/career-os#opportunity-list" label="Total raw records ever discovered" value={globalLifecycle.totalRawRecordsEverDiscovered} />
+          <Metric detail="canonical outcome assigned" href="/career-os#opportunity-list" label="Raw records processed" value={globalLifecycle.rawRecordsProcessed} />
+          <Metric detail="pending checkpoint work" href="/career-os#waiting-applications" label="Records awaiting processing" value={globalLifecycle.recordsAwaitingProcessing} />
+          <Metric detail="deduped opportunities" href="/career-os#opportunity-list" label="Unique opportunities" value={globalLifecycle.uniqueOpportunities} />
+          <Metric detail="historical duplicates" href="/career-os#application-list" label="Duplicates removed" value={globalLifecycle.duplicatesRemoved} />
+          <Metric detail="current backlog" href="/career-os#application-list" label="Backlog qualified opportunities" value={globalLifecycle.backlogQualifiedOpportunities} />
+          <Metric detail="retry scheduled" href="/career-os#application-list" label="Failed with retry" value={globalLifecycle.failedWithRetry} />
+          <Metric detail="retry exhausted" href="/career-os#application-list" label="Permanently failed" value={globalLifecycle.permanentlyFailed} />
         </div>
         <div className="career-os-list compact">
           <DetailRow detail={`Processed ${globalLifecycle.currentBatchProgress.processed}/${globalLifecycle.currentBatchProgress.total}; ${globalLifecycle.currentBatchProgress.remaining} remaining.`} label="Current batch progress" value={`${globalLifecycle.currentBatchProgress.percentage.toFixed(1)}%`} />
@@ -278,32 +278,32 @@ export default async function CareerOsPage() {
         <p>{status.totalUniqueOpportunities} unique production opportunit{status.totalUniqueOpportunities === 1 ? 'y is' : 'ies are'} represented; {status.activeQualifiedOpportunities} are active qualified jobs; raw activity is separated from qualified opportunities, packages, applications, and submissions.</p>
         <h3>Raw Activity Today</h3>
         <div className="career-os-metrics secondary" aria-label="Career OS opportunity status">
-          <Metric detail="records, not applications" label="Raw records discovered or refreshed" value={dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed} />
-          <Metric detail="created today" label="Newly discovered records" value={dailyFunnel.rawActivityToday.newlyDiscoveredRecords} />
-          <Metric detail="existing records touched" label="Existing records refreshed" value={dailyFunnel.rawActivityToday.existingRecordsRefreshed} />
-          <Metric detail="dedupe removed" label="Duplicates removed" value={dailyFunnel.rawActivityToday.duplicatesRemoved} />
+          <Metric detail="records, not applications" href="/career-os#opportunity-list" label="Raw records discovered or refreshed" value={dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed} />
+          <Metric detail="created today" href="/career-os#opportunity-list" label="Newly discovered records" value={dailyFunnel.rawActivityToday.newlyDiscoveredRecords} />
+          <Metric detail="existing records touched" href="/career-os#opportunity-list" label="Existing records refreshed" value={dailyFunnel.rawActivityToday.existingRecordsRefreshed} />
+          <Metric detail="dedupe removed" href="/career-os#application-list" label="Duplicates removed" value={dailyFunnel.rawActivityToday.duplicatesRemoved} />
         </div>
         <h3>Qualification Today</h3>
         <div className="career-os-metrics secondary" aria-label="Career OS qualification status">
-          <Metric detail="deduped today" label="Newly unique opportunities" value={dailyFunnel.qualificationToday.newlyUniqueOpportunities} />
-          <Metric detail="official posting active" label="Active and verified" value={dailyFunnel.qualificationToday.activeAndVerified} />
-          <Metric detail="policy and fit pass" label="Qualified" value={dailyFunnel.qualificationToday.qualified} />
-          <Metric detail="base max below target" label="Below compensation target" value={dailyFunnel.qualificationToday.belowCompensationTarget} />
-          <Metric detail="Texas/remote policy" label="Location-ineligible" value={dailyFunnel.qualificationToday.locationIneligible} />
-          <Metric detail="fit below threshold" label="Poor fit" value={dailyFunnel.qualificationToday.poorFit} />
-          <Metric detail="closed or unavailable" label="Inactive" value={dailyFunnel.qualificationToday.inactive} />
+          <Metric detail="deduped today" href="/career-os#opportunity-list" label="Newly unique opportunities" value={dailyFunnel.qualificationToday.newlyUniqueOpportunities} />
+          <Metric detail="official posting active" href="/career-os#opportunity-list" label="Active and verified" value={dailyFunnel.qualificationToday.activeAndVerified} />
+          <Metric detail="policy and fit pass" href="/career-os#application-list" label="Qualified" value={dailyFunnel.qualificationToday.qualified} />
+          <Metric detail="base max below target" href="/career-os#compensation" label="Below compensation target" value={dailyFunnel.qualificationToday.belowCompensationTarget} />
+          <Metric detail="Texas/remote policy" href="/career-os#opportunity-list" label="Location-ineligible" value={dailyFunnel.qualificationToday.locationIneligible} />
+          <Metric detail="fit below threshold" href="/career-os#opportunity-list" label="Poor fit" value={dailyFunnel.qualificationToday.poorFit} />
+          <Metric detail="closed or unavailable" href="/career-os#opportunity-list" label="Inactive" value={dailyFunnel.qualificationToday.inactive} />
         </div>
         <h3>Application Execution Today</h3>
         <div className="career-os-metrics secondary" aria-label="Career OS application execution today">
-          <Metric detail="package assets" label="Packages created or reused" value={dailyFunnel.applicationExecutionToday.packagesCreatedOrReused} />
-          <Metric detail="safe queue" label="Queued for immediate execution" value={dailyFunnel.applicationExecutionToday.queuedForAutomation} />
-          <Metric detail="active workers" label="Running now" value={dailyFunnel.applicationExecutionToday.runningNow} />
-          <Metric detail="confirmation evidence" label="Submitted today" value={dailyFunnel.applicationExecutionToday.submittedToday} />
-          <Metric detail="human-only gates" label="Waiting on Tomas" value={dailyFunnel.applicationExecutionToday.waitingOnTomas} />
-          <Metric detail="browser/adapter blockers" label="Technically blocked" value={dailyFunnel.applicationExecutionToday.technicallyBlocked} />
-          <Metric detail="retry capped" label="Failed with error" value={dailyFunnel.applicationExecutionToday.failedWithError} />
+          <Metric detail="package assets" href="/career-os#documents" label="Packages created or reused" value={dailyFunnel.applicationExecutionToday.packagesCreatedOrReused} />
+          <Metric detail="safe queue" href="/career-os#application-list" label="Queued for immediate execution" value={dailyFunnel.applicationExecutionToday.queuedForAutomation} />
+          <Metric detail="active workers" href="/career-os#application-list" label="Running now" value={dailyFunnel.applicationExecutionToday.runningNow} />
+          <Metric detail="confirmation evidence" href="/career-os#submitted-applications" label="Submitted today" value={dailyFunnel.applicationExecutionToday.submittedToday} />
+          <Metric detail="human-only gates" href="/career-os#waiting-applications" label="Waiting on Tomas" value={dailyFunnel.applicationExecutionToday.waitingOnTomas} />
+          <Metric detail="browser/adapter blockers" href="/career-os#technical-applications" label="Technically blocked" value={dailyFunnel.applicationExecutionToday.technicallyBlocked} />
+          <Metric detail="retry capped" href="/career-os#application-list" label="Failed with error" value={dailyFunnel.applicationExecutionToday.failedWithError} />
         </div>
-        <div className="career-os-list">
+        <div className="career-os-list" id="opportunity-list">
           {opportunities.slice(0, 5).map((opportunity) => (
             <article className="career-os-row" key={String(opportunity.id)}>
               <div>
@@ -321,15 +321,27 @@ export default async function CareerOsPage() {
         <p>{status.submittedApplications} submission{status.submittedApplications === 1 ? '' : 's'} confirmed, {status.remainingQualifiedApplications} qualified application{status.remainingQualifiedApplications === 1 ? '' : 's'} remaining, and {status.totalPackages} package asset{status.totalPackages === 1 ? '' : 's'} generated.</p>
         <p>Release completion: {status.releaseCompletionPercentage.toFixed(1)}%. Actionable progress: {status.actionableProgressPercentage.toFixed(1)}%.</p>
         <div className="career-os-metrics secondary" aria-label="Career OS application status">
-          <Metric detail="today" label="Submitted Today" value={pipelineHealth.applicationsSubmittedToday} />
-          <Metric detail="all confirmed" label="Total Submitted" value={status.submittedApplications} />
-          <Metric detail="safe pre-queue readiness" label="Ready for Automation" value={status.readyForAutomation} />
-          <Metric detail="safe queue" label="Applications Queued" value={status.applicationExecution.queueStates.queued} />
-          <Metric detail="active worker" label="Applications Running" value={status.applicationExecution.queueStates.running} />
-          <Metric detail="human-only gates" label="Waiting on Tomas" value={status.waitingOnTomas} />
-          <Metric detail="browser/adapter" label="Technically Blocked" value={status.applicationExecution.queueStates.blocked_technical} />
+          <Metric detail="today" href="/career-os#submitted-applications" label="Submitted Today" value={pipelineHealth.applicationsSubmittedToday} />
+          <Metric detail="all confirmed" href="/career-os#submitted-applications" label="Total Submitted" value={status.submittedApplications} />
+          <Metric detail="safe pre-queue readiness" href="/career-os#application-list" label="Ready for Automation" value={status.readyForAutomation} />
+          <Metric detail="safe queue" href="/career-os#application-list" label="Applications Queued" value={status.applicationExecution.queueStates.queued} />
+          <Metric detail="active worker" href="/career-os#application-list" label="Applications Running" value={status.applicationExecution.queueStates.running} />
+          <Metric detail="human-only gates" href="/career-os#waiting-applications" label="Waiting on Tomas" value={status.waitingOnTomas} />
+          <Metric detail="browser/adapter" href="/career-os#technical-applications" label="Technically Blocked" value={status.applicationExecution.queueStates.blocked_technical} />
         </div>
-        <div className="career-os-list">
+        <div className="career-os-subnav" aria-label="Application filters">
+          <a className="button secondary" href="#waiting-applications">Waiting on Tomas</a>
+          <a className="button secondary" href="#technical-applications">Technical Blockers</a>
+          <a className="button secondary" href="#submitted-applications">Submitted</a>
+          <a className="button secondary" href="#documents">Documents</a>
+        </div>
+        <div className="career-os-list compact">
+          <DetailRow detail="Human-only gates that require one founder action before automation can continue." id="waiting-applications" label="Waiting on Tomas queue" value={String(status.waitingOnTomas)} />
+          <DetailRow detail="Browser, upload, CAPTCHA, MFA, or ATS adapter blockers. These are not auto-submitted." id="technical-applications" label="Technical blocker queue" value={String(status.applicationExecution.queueStates.blocked_technical)} />
+          <DetailRow detail="Applications with confirmation evidence. These are duplicate-locked and will not be reopened." id="submitted-applications" label="Submitted and locked" value={String(status.submittedApplications)} />
+          <DetailRow detail="Validated resumes and package assets used by applications." label="Document package coverage" value={`${status.packagesCoveringQualifiedJobs}/${status.activeQualifiedOpportunities}`} />
+        </div>
+        <div className="career-os-list" id="application-list">
           {applications.map((application) => {
             const cta = applicationExecutionCta(status, application);
             const state = applicationCanonicalExecutionState(status, application);
@@ -458,6 +470,7 @@ function Metric({ detail, href, label, value }: { detail?: string; href?: string
       <strong>{value}</strong>
       <span>{label}</span>
       {detail ? <small>{detail}</small> : null}
+      <em>{href ? 'Open' : 'Status'}</em>
     </>
   );
 
@@ -476,9 +489,9 @@ function Metric({ detail, href, label, value }: { detail?: string; href?: string
   );
 }
 
-function DetailRow({ detail, label, value }: { detail?: string; label: string; value: string }) {
+function DetailRow({ detail, id, label, value }: { detail?: string; id?: string; label: string; value: string }) {
   return (
-    <article className="career-os-row">
+    <article className="career-os-row" id={id}>
       <div>
         <h3>{label}</h3>
         {detail ? <p>{detail}</p> : null}
@@ -520,15 +533,15 @@ function flattenActionQueue(groups: {
 
 function buildApplicationFunnel(status: CareerStatus) {
   return [
-    { detail: 'deduped roles', label: 'Unique Opportunities', value: status.totalUniqueOpportunities },
-    { detail: 'active qualified jobs', label: 'Qualified', value: status.activeQualifiedOpportunities },
-    { detail: `${status.packageAssetsOnQualifiedJobs} package assets`, label: 'Package Coverage', value: status.packagesCoveringQualifiedJobs },
-    { detail: 'supported automation queue', label: 'Queued', value: status.applicationExecution.queueStates.queued },
-    { detail: 'active ATS execution', label: 'Running', value: status.applicationExecution.queueStates.running },
-    { detail: 'human-only gates', label: 'Waiting', value: status.waitingOnTomas },
-    { detail: 'technical or active work', label: 'In Progress', value: status.inProgress },
-    { detail: 'confirmation evidence', label: 'Confirmed', value: status.applicationExecution.queueStates.confirmed },
-    { detail: 'closed or incompatible', label: 'Inactive/Ineligible', value: status.inactive + status.ineligible },
+    { detail: 'deduped roles', href: '/career-os#opportunity-list', label: 'Unique Opportunities', value: status.totalUniqueOpportunities },
+    { detail: 'active qualified jobs', href: '/career-os#application-list', label: 'Qualified', value: status.activeQualifiedOpportunities },
+    { detail: `${status.packageAssetsOnQualifiedJobs} package assets`, href: '/career-os#documents', label: 'Package Coverage', value: status.packagesCoveringQualifiedJobs },
+    { detail: 'supported automation queue', href: '/career-os#application-list', label: 'Queued', value: status.applicationExecution.queueStates.queued },
+    { detail: 'active ATS execution', href: '/career-os#application-list', label: 'Running', value: status.applicationExecution.queueStates.running },
+    { detail: 'human-only gates', href: '/career-os#waiting-applications', label: 'Waiting', value: status.waitingOnTomas },
+    { detail: 'technical or active work', href: '/career-os#technical-applications', label: 'In Progress', value: status.inProgress },
+    { detail: 'confirmation evidence', href: '/career-os#submitted-applications', label: 'Confirmed', value: status.applicationExecution.queueStates.confirmed },
+    { detail: 'closed or incompatible', href: '/career-os#application-list', label: 'Inactive/Ineligible', value: status.inactive + status.ineligible },
   ];
 }
 
@@ -628,6 +641,14 @@ function applicationCanonicalExecutionState(status: CareerStatus, application: J
 
 function applicationExecutionCta(status: CareerStatus, application: JsonRecord) {
   const execution = matchingApplicationExecution(status, application);
+  if (execution?.cta?.actionKind === 'upload_resume' && !/^https?:\/\//i.test(execution.cta.href || '')) {
+    return {
+      ...execution.cta,
+      href: '/career-os#documents',
+      label: 'Open Resume Package',
+      whatTomasMustDo: 'Open the prepared resume/package section, use the exact validated resume for the employer checkpoint, then click Done - Resume Automation.',
+    };
+  }
   return execution?.cta || {
     actionKind: 'continue_application',
     applicationsUnlocked: 1,

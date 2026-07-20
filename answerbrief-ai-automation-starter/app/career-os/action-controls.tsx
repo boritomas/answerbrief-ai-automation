@@ -147,6 +147,10 @@ export function ApplicationActionControl({
         } else {
           window.open(result.openUrl, '_blank', 'noopener,noreferrer');
         }
+      } else if (href && !/^https?:\/\//.test(href)) {
+        checkpointWindow?.close();
+        window.location.href = href;
+        setMessage(result.message || 'Opened the related Career OS section. Complete the required step shown there, then resume automation.');
       } else {
         checkpointWindow?.close();
       }
@@ -201,6 +205,8 @@ export function ApplicationActionControl({
     ? 'Save and Resume Automation'
     : checkpointOpened
       ? 'Done - Resume Automation'
+      : actionKind === 'upload_resume'
+        ? 'Open Resume Package'
       : label;
   const primaryDisabled = isPending || (needsAnswer && !answer.trim());
 
