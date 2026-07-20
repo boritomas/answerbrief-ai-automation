@@ -486,7 +486,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     employmentModel,
     atsEmploymentMapper,
     productionEvidenceReady: supabaseConnected,
-    blocker: evidence.diagnostics[0],
+    blocker: supabaseConnected ? undefined : evidence.diagnostics[0],
     evidence,
     verificationRows,
   };

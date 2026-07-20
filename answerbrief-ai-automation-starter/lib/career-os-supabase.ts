@@ -38,7 +38,12 @@ export function careerOsSupabaseConfigured() {
 export async function careerOsSelectRows(table: string, query: string, options: SelectOptions = {}): Promise<JsonRecord[]> {
   const configuration = getCareerOsSupabaseConfiguration();
   if (configuration.databaseUrl) {
-    return await pgSelectRows(configuration.databaseUrl, table, query, options);
+    try {
+      return await pgSelectRows(configuration.databaseUrl, table, query, options);
+    } catch (error) {
+      resetPool();
+      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) throw error;
+    }
   }
   return await restSelectRows(configuration, table, query, options);
 }
@@ -46,8 +51,13 @@ export async function careerOsSelectRows(table: string, query: string, options: 
 export async function careerOsPatchRowById(table: string, id: string, patch: JsonRecord) {
   const configuration = getCareerOsSupabaseConfiguration();
   if (configuration.databaseUrl) {
-    await pgPatchRowById(configuration.databaseUrl, table, id, patch);
-    return;
+    try {
+      await pgPatchRowById(configuration.databaseUrl, table, id, patch);
+      return;
+    } catch (error) {
+      resetPool();
+      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) throw error;
+    }
   }
   await restPatchRowById(configuration, table, id, patch);
 }
@@ -55,8 +65,13 @@ export async function careerOsPatchRowById(table: string, id: string, patch: Jso
 export async function careerOsUpsertRows(table: string, rows: JsonRecord | JsonRecord[]) {
   const configuration = getCareerOsSupabaseConfiguration();
   if (configuration.databaseUrl) {
-    await pgUpsertRows(configuration.databaseUrl, table, rows);
-    return;
+    try {
+      await pgUpsertRows(configuration.databaseUrl, table, rows);
+      return;
+    } catch (error) {
+      resetPool();
+      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) throw error;
+    }
   }
   await restUpsertRows(configuration, table, rows);
 }
@@ -124,6 +139,24 @@ function requireRestConfiguration(configuration: SupabaseConfiguration) {
   if (!configuration.supabaseUrl || !configuration.serviceRoleKey || configuration.serviceRoleKey.startsWith('[')) {
     throw new Error('Career OS Supabase service configuration is unavailable.');
   }
+}
+
+function canFallbackToRest(configuration: SupabaseConfiguration) {
+  return Boolean(configuration.supabaseUrl && configuration.serviceRoleKey && !configuration.serviceRoleKey.startsWith('['));
+}
+
+function shouldFallbackToRest(error: unknown) {
+  const message = String(error instanceof Error ? error.message : error || '').toLowerCase();
+  return [
+    'password authentication failed',
+    'authentication query failed',
+    'connection timeout',
+    'connection terminated',
+    'eauthquery',
+    'timeout',
+    'terminating connection',
+    'connection to database not available',
+  ].some((needle) => message.includes(needle));
 }
 
 async function pgSelectRows(databaseUrl: string, table: string, query: string, options: SelectOptions) {
@@ -256,4 +289,10 @@ function getPool(databaseUrl: string) {
     });
   }
   return pool;
+}
+
+function resetPool() {
+  const currentPool = pool;
+  pool = null;
+  void currentPool?.end().catch(() => {});
 }
