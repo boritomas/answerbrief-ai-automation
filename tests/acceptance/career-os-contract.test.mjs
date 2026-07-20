@@ -520,11 +520,14 @@ test('Career OS daily discovery is independent from submission queue processing'
   assert.match(dailyRun, /career_os_queue_paused/);
   assert.match(dailyRun, /persistDailyCycleReport/);
   assert.match(actionsRoute, /body\.action === 'refresh_discovery'/);
-  assert.match(actionsRoute, /runDailyGreenhouseDiscovery\(ownerEmail, before\.evidence\)/);
+  assert.match(actionsRoute, /FOREGROUND_DISCOVERY_MAX_BOARDS/);
+  assert.match(actionsRoute, /runDailyGreenhouseDiscovery\(ownerEmail, before\.evidence, \{ maxBoards: FOREGROUND_DISCOVERY_MAX_BOARDS \}\)/);
   assert.match(dailyCycle, /firstPositiveNumber/);
   assert.match(dailyCycle, /fallbackPlan\.coverageSummary\.supportedOfficialSources/);
   assert.match(dailyCycle, /GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS/);
   assert.match(dailyCycle, /AbortSignal\.timeout\(GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS\)/);
+  assert.match(dailyCycle, /FOREGROUND_DISCOVERY_MAX_BOARDS = 6/);
+  assert.match(dailyCycle, /foreground_batch_boards_processed/);
 });
 
 test('Career OS dashboard metrics and daily action queue are actionable controls', () => {

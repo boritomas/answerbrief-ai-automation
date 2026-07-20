@@ -234,6 +234,7 @@ export const GLOBAL_DISCOVERY_BATCH_SIZE = 100;
 export const GLOBAL_DISCOVERY_MAX_CONCURRENCY = 4;
 export const GLOBAL_DISCOVERY_RETRY_LIMIT = 2;
 export const GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS = 5000;
+export const FOREGROUND_DISCOVERY_MAX_BOARDS = 6;
 
 export const DAILY_DISCOVERY_BOARDS = buildCareerOsDiscoveryPlan().greenhouseBoards;
 
@@ -379,7 +380,7 @@ export function buildDailyOperatingCycleStatus(
   };
 }
 
-export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?: Partial<DailyCycleEvidence>) {
+export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?: Partial<DailyCycleEvidence>, options: { maxBoards?: number } = {}) {
   const executedAt = new Date().toISOString();
   const runDay = executedAt.slice(0, 10);
   const discoveryPlan = buildCareerOsDiscoveryPlan({
@@ -391,7 +392,9 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
     previousSearchConfig: asRecord(evidence?.latestSourceRun?.search_config),
     workflowEvents: evidence?.workflowEvents || [],
   });
-  const boards = discoveryPlan.greenhouseBoards;
+  const boards = options.maxBoards && options.maxBoards > 0
+    ? discoveryPlan.greenhouseBoards.slice(0, options.maxBoards)
+    : discoveryPlan.greenhouseBoards;
   const minFitScore = 85;
   const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:broader-product-leadership:${discoveryPlan.fingerprint}:${runDay}`);
   const errors: string[] = [];
@@ -436,7 +439,12 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
     number_reviewed: reviewed,
     number_accepted: qualifiedPostings.length,
     number_skipped: Math.max(reviewed - qualifiedPostings.length, 0),
-    search_config: buildDailySearchConfig(discoveryPlan, sourceStatuses, reviewed, qualifiedPostings.length, minFitScore, runDay),
+    search_config: {
+      ...buildDailySearchConfig(discoveryPlan, sourceStatuses, reviewed, qualifiedPostings.length, minFitScore, runDay),
+      foreground_batch: Boolean(options.maxBoards),
+      foreground_batch_boards_processed: boards.length,
+      foreground_batch_total_supported_boards: discoveryPlan.greenhouseBoards.length,
+    },
     evidence: qualifiedPostings.slice(0, 15).map((posting) => ({
       company: posting.company,
       title: posting.title,

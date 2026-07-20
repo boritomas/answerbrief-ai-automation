@@ -9,6 +9,7 @@ import {
 } from '@/lib/career-os-queue';
 import { getCareerOsStatus } from '@/lib/career-os-status';
 import {
+  FOREGROUND_DISCOVERY_MAX_BOARDS,
   buildDailyOperatingCycleStatus,
   persistDailyCycleReport,
   runDailyGreenhouseDiscovery,
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
 
   if (body.action === 'refresh_discovery') {
     const before = await getCareerOsStatus();
-    const discovery = await runDailyGreenhouseDiscovery(ownerEmail, before.evidence);
+    const discovery = await runDailyGreenhouseDiscovery(ownerEmail, before.evidence, { maxBoards: FOREGROUND_DISCOVERY_MAX_BOARDS });
     const afterDiscovery = await getCareerOsStatus();
     const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, {
       activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
