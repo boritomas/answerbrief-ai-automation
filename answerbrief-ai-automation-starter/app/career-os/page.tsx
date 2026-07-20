@@ -246,7 +246,7 @@ export default async function CareerOsPage() {
               </div>
               {(() => {
                 const application = actionQueueApplication(applications, item);
-                if (!application) return <span>{item.estimatedMinutes} min</span>;
+                if (!application) return <a className="button secondary" href="/career-os#applications">Review Applications</a>;
                 const cta = applicationExecutionCta(status, application);
                 return (
                   <ApplicationActionControl
@@ -325,6 +325,7 @@ export default async function CareerOsPage() {
         <div className="career-os-list">
           {applications.map((application) => {
             const cta = applicationExecutionCta(status, application);
+            const state = applicationCanonicalExecutionState(status, application);
             return (
               <article className="career-os-row" id={applicationAnchorId(application)} key={String(application.id)}>
                 <div>
@@ -332,18 +333,20 @@ export default async function CareerOsPage() {
                   <p>{String(application.employer)} · {String(application.lifecycle_stage || 'status unavailable')}</p>
                   {application.next_action ? <p>{String(application.next_action)}</p> : null}
                   <p>{applicationExecutionLabel(status, application)}</p>
-                  <p>Canonical state: {applicationCanonicalExecutionState(status, application)}</p>
+                  <p>Canonical state: {state}</p>
                 </div>
-                <ApplicationActionControl
-                  actionToken={pageActionToken}
-                  actionTokenExpiresAt={actionTokenExpiresAt}
-                  actionKind={cta.actionKind}
-                  applicationId={String(application.id)}
-                  disabledReason={cta.disabledReason}
-                  href={cta.href}
-                  label={cta.label}
-                  whatTomasMustDo={cta.whatTomasMustDo}
-                />
+                {applicationHasActiveAction(state) ? (
+                  <ApplicationActionControl
+                    actionToken={pageActionToken}
+                    actionTokenExpiresAt={actionTokenExpiresAt}
+                    actionKind={cta.actionKind}
+                    applicationId={String(application.id)}
+                    disabledReason={cta.disabledReason}
+                    href={cta.href}
+                    label={cta.label}
+                    whatTomasMustDo={cta.whatTomasMustDo}
+                  />
+                ) : <span>{applicationTerminalLabel(state)}</span>}
               </article>
             );
           })}
@@ -634,12 +637,20 @@ function applicationExecutionCta(status: CareerStatus, application: JsonRecord) 
 function actionQueueApplication(applications: JsonRecord[], item: ReturnType<typeof flattenActionQueue>[number]) {
   const employer = item.employer.toLowerCase();
   const role = item.role.toLowerCase();
-  return applications.find((application) => (
+  const activeApplications = applications.filter((application) => (
+    !application.confirmation_number
+      && !application.submission_evidence
+      && applicationHasActiveAction(applicationCanonicalStateFromRaw(application))
+  ));
+
+  return activeApplications.find((application) => (
     String(application.employer || '').toLowerCase() === employer
       && String(application.position || '').toLowerCase() === role
-      && !application.confirmation_number
-      && !application.submission_evidence
-  ));
+  ))
+    || activeApplications.find((application) => (
+      employer !== 'employer'
+        && String(application.employer || '').toLowerCase() === employer
+    ));
 }
 
 function matchingApplicationExecution(status: CareerStatus, application: JsonRecord) {
@@ -672,6 +683,29 @@ function applicationAnchorId(application: JsonRecord) {
   const employer = String(application.employer || 'application');
   const id = String(application.id || application.position || employer);
   return `application-${slug(`${employer}-${id}`)}`;
+}
+
+function applicationHasActiveAction(state: string) {
+  return !['confirmed', 'submitted', 'duplicate', 'inactive', 'ineligible', 'failed'].includes(state);
+}
+
+function applicationTerminalLabel(state: string) {
+  if (state === 'confirmed' || state === 'submitted') return 'Submitted';
+  if (state === 'duplicate') return 'Duplicate locked';
+  if (state === 'ineligible') return 'Ineligible';
+  if (state === 'inactive') return 'Inactive';
+  if (state === 'failed') return 'Failed';
+  return 'No action';
+}
+
+function applicationCanonicalStateFromRaw(application: JsonRecord) {
+  const text = `${application.lifecycle_stage || ''} ${application.next_action || ''} ${JSON.stringify(application.raw_record || {})}`.toLowerCase();
+  if (application.confirmation_number || application.submission_evidence) return 'confirmed';
+  if (text.includes('duplicate')) return 'duplicate';
+  if (text.includes('ineligible')) return 'ineligible';
+  if (/(inactive|closed|expired|unavailable)/.test(text)) return 'inactive';
+  if (text.includes('failed')) return 'failed';
+  return 'actionable';
 }
 
 function moneyRangeText(range: { complete: boolean; minUsd?: number; maxUsd?: number }) {

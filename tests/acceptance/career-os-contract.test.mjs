@@ -522,6 +522,9 @@ test('Career OS dashboard metrics and daily action queue are actionable controls
   assert.match(page, /actionQueueApplication/);
   assert.equal(page.includes('queueItems.slice(0, 8).map'), true);
   assert.match(page, /ApplicationActionControl/);
+  assert.match(page, /applicationHasActiveAction/);
+  assert.equal(page.includes('href="/career-os#applications">Review Applications</a>'), true);
+  assert.match(page, /applicationTerminalLabel/);
 });
 
 function findDuplicate(candidate, existingApplications) {
