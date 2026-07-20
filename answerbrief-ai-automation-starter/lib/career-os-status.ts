@@ -326,43 +326,23 @@ export async function getCareerOsStatus(): Promise<CareerOsStatus> {
   }
 
   try {
-    const [
-      profiles,
-      sourceRuns,
-      jobPostings,
-      seededOpportunities,
-      applications,
-      tasks,
-      artifacts,
-      workflowEvents,
-      employers,
-      platformProfiles,
-      applicationProcesses,
-      questionCatalog,
-      questionMappings,
-      employerAccounts,
-      sessionTemplates,
-      dailyReports,
-      automationRuns,
-    ] = await Promise.all([
-      supabaseSelect(configuration, 'career_os_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&limit=1`),
-      supabaseSelect(configuration, 'career_os_source_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=executed_at.desc&limit=20`),
-      supabaseSelectAll(configuration, 'career_os_job_postings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=fit_score.desc.nullslast,last_checked_at.desc`),
-      supabaseSelectAll(configuration, 'career_os_opportunities', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`),
-      supabaseSelectAll(configuration, 'career_os_applications', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`),
-      supabaseSelect(configuration, 'career_os_tasks', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
-      supabaseSelectAll(configuration, 'career_os_artifacts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=created_at.desc`),
-      supabaseSelectAll(configuration, 'career_os_employer_workflow_events', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=occurred_at.desc`),
-      supabaseSelect(configuration, 'career_os_employers', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_employer_platform_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_employer_application_processes', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_employer_question_catalog', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`),
-      supabaseSelect(configuration, 'career_os_question_mappings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`),
-      supabaseSelect(configuration, 'career_os_employer_accounts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_application_session_templates', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_daily_operating_reports', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=generated_at.desc&limit=1`),
-      supabaseSelect(configuration, 'career_os_automation_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=started_at.desc&limit=5`),
-    ]);
+    const profiles = await supabaseSelect(configuration, 'career_os_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&limit=1`);
+    const sourceRuns = await safeSupabaseSelect(configuration, 'career_os_source_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=executed_at.desc&limit=20`, diagnostics);
+    const jobPostings = await supabaseSelectAll(configuration, 'career_os_job_postings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=fit_score.desc.nullslast,last_checked_at.desc`);
+    const seededOpportunities = await supabaseSelectAll(configuration, 'career_os_opportunities', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`);
+    const applications = await supabaseSelectAll(configuration, 'career_os_applications', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`);
+    const tasks = await safeSupabaseSelect(configuration, 'career_os_tasks', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
+    const artifacts = await safeSupabaseSelectAll(configuration, 'career_os_artifacts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=created_at.desc`, diagnostics);
+    const workflowEvents = await safeSupabaseSelectAll(configuration, 'career_os_employer_workflow_events', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=occurred_at.desc`, diagnostics);
+    const employers = await safeSupabaseSelect(configuration, 'career_os_employers', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
+    const platformProfiles = await safeSupabaseSelect(configuration, 'career_os_employer_platform_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
+    const applicationProcesses = await safeSupabaseSelect(configuration, 'career_os_employer_application_processes', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
+    const questionCatalog = await safeSupabaseSelect(configuration, 'career_os_employer_question_catalog', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`, diagnostics);
+    const questionMappings = await safeSupabaseSelect(configuration, 'career_os_question_mappings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`, diagnostics);
+    const employerAccounts = await safeSupabaseSelect(configuration, 'career_os_employer_accounts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
+    const sessionTemplates = await safeSupabaseSelect(configuration, 'career_os_application_session_templates', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
+    const dailyReports = await safeSupabaseSelect(configuration, 'career_os_daily_operating_reports', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=generated_at.desc&limit=1`, diagnostics);
+    const automationRuns = await safeSupabaseSelect(configuration, 'career_os_automation_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=started_at.desc&limit=5`, diagnostics);
 
     const evidence: CareerOsEvidence = {
       ownerEmail,
@@ -1782,6 +1762,7 @@ async function supabaseSelect(configuration: ReturnType<typeof getSupabaseConfig
       Authorization: `Bearer ${configuration.serviceRoleKey}`,
       'Content-Type': 'application/json',
     },
+    signal: AbortSignal.timeout(12000),
   });
 
   if (!response.ok) {
@@ -1789,6 +1770,20 @@ async function supabaseSelect(configuration: ReturnType<typeof getSupabaseConfig
   }
 
   return await response.json() as JsonRecord[];
+}
+
+async function safeSupabaseSelect(
+  configuration: ReturnType<typeof getSupabaseConfiguration>,
+  table: string,
+  query: string,
+  diagnostics: string[],
+): Promise<JsonRecord[]> {
+  try {
+    return await supabaseSelect(configuration, table, query);
+  } catch (error) {
+    diagnostics.push(error instanceof Error ? error.message : `Supabase ${table} query failed.`);
+    return [];
+  }
 }
 
 async function supabaseSelectAll(
@@ -1809,6 +1804,7 @@ async function supabaseSelectAll(
         'Content-Type': 'application/json',
         Range: `${offset}-${offset + pageSize - 1}`,
       },
+      signal: AbortSignal.timeout(12000),
     });
 
     if (!response.ok) {
@@ -1821,6 +1817,20 @@ async function supabaseSelectAll(
   }
 
   return rows;
+}
+
+async function safeSupabaseSelectAll(
+  configuration: ReturnType<typeof getSupabaseConfiguration>,
+  table: string,
+  query: string,
+  diagnostics: string[],
+): Promise<JsonRecord[]> {
+  try {
+    return await supabaseSelectAll(configuration, table, query);
+  } catch (error) {
+    diagnostics.push(error instanceof Error ? error.message : `Supabase ${table} paginated query failed.`);
+    return [];
+  }
 }
 
 function encodeFilter(value: string) {
