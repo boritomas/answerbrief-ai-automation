@@ -1,5 +1,6 @@
 import {
   buildDailyOperatingCycleStatus,
+  DAILY_CRON_PATH,
   type DailyOperatingCycleStatus,
 } from './career-os-daily-cycle';
 
@@ -37,6 +38,8 @@ export type CareerOsStatus = {
     preferredMinimumBaseSalaryUsd?: number;
     openToNegotiation?: boolean;
   };
+  compensationPolicy: CompensationPolicyStatus;
+  applicationExecution: ApplicationExecutionStatus;
   releaseCompletionPercentage: number;
   actionableProgressPercentage: number;
   dailyWorkflow: DailyOperatingCycleStatus;
@@ -147,6 +150,59 @@ type VerificationRow = {
   passed: boolean;
 };
 
+export type CompensationPolicyStatus = {
+  allDiscoveredPostedCompensationRange: {
+    minUsd?: number;
+    maxUsd?: number;
+    complete: boolean;
+  };
+  approvedTotalCompensationExceptions: number;
+  belowTargetJobs: Array<{
+    employer: string;
+    postedMaxUsd?: number;
+    reason: string;
+    role: string;
+  }>;
+  belowTargetRemoved: number;
+  compensationUnknown: number;
+  postedBaseAtOrAboveTarget: number;
+  preferredMinimumBaseSalaryUsd?: number;
+  qualifiedPostedBaseRange: {
+    minUsd?: number;
+    maxUsd?: number;
+    complete: boolean;
+  };
+};
+
+export type ApplicationExecutionItem = {
+  employer: string;
+  reason: string;
+  role: string;
+  status:
+    | 'Submitted'
+    | 'Running now'
+    | 'Queued for immediate execution'
+    | 'Scheduled for next run'
+    | 'Waiting on Tomas'
+    | 'Technically blocked'
+    | 'Compensation review required'
+    | 'Inactive'
+    | 'Ineligible'
+    | 'Failed with error';
+};
+
+export type ApplicationExecutionStatus = {
+  exactStatuses: ApplicationExecutionItem[];
+  failedWithError: number;
+  lastExecutionTime?: string;
+  nextScheduledRun: string;
+  queuedImmediate: number;
+  runningNow: number;
+  submittedToday: number;
+  technicallyBlocked: number;
+  waitingOnTomas: number;
+};
+
 export async function getCareerOsStatus(): Promise<CareerOsStatus> {
   const ownerEmail = process.env.CAREER_OS_OWNER_EMAIL || 'tomas@nieves.com';
   const diagnostics: string[] = [];
@@ -237,6 +293,11 @@ export function summarizeCareerOsStatus(status: CareerOsStatus) {
   const salary = status.salaryRange?.complete && status.salaryRange.minUsd && status.salaryRange.maxUsd
     ? `$${Math.round(status.salaryRange.minUsd / 1000)}K-$${Math.round(status.salaryRange.maxUsd / 1000)}K`
     : 'Salary information is incomplete.';
+  const qualifiedSalary = status.compensationPolicy.qualifiedPostedBaseRange.complete
+    && status.compensationPolicy.qualifiedPostedBaseRange.minUsd
+    && status.compensationPolicy.qualifiedPostedBaseRange.maxUsd
+    ? `$${Math.round(status.compensationPolicy.qualifiedPostedBaseRange.minUsd / 1000)}K-$${Math.round(status.compensationPolicy.qualifiedPostedBaseRange.maxUsd / 1000)}K`
+    : 'No qualified posted-base range is complete.';
   const preferredBase = status.compensationPreference?.preferredMinimumBaseSalaryUsd
     ? `$${Math.round(status.compensationPreference.preferredMinimumBaseSalaryUsd / 1000)}K`
     : 'not set';
@@ -253,13 +314,13 @@ export function summarizeCareerOsStatus(status: CareerOsStatus) {
     submittedLine: `${status.submittedApplications} submitted application${status.submittedApplications === 1 ? '' : 's'} with confirmation evidence.`,
     needsLine: `${status.waitingOnTomas} application${status.waitingOnTomas === 1 ? '' : 's'} waiting on Tomas.`,
     postedCompensationRange: salary,
+    qualifiedPostedCompensationRange: qualifiedSalary,
     compensationPreferenceLine: `Tomas preferred minimum base salary: ${preferredBase}; optional desired-compensation fields stay blank.`,
     dailyWorkflowLine: `${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new job record${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? '' : 's'} today; ${status.dailyWorkflow.pipelineHealth.readyForAutomation} ready for automation; ${status.dailyWorkflow.pipelineHealth.interviews} interview${status.dailyWorkflow.pipelineHealth.interviews === 1 ? '' : 's'}.`,
   };
 }
 
 function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean): CareerOsStatus {
-  const canonicalRelease = buildCanonicalReleaseMetrics(evidence);
   const activeJobPostings = evidence.jobPostings.filter((job) => job.posting_validation_status === 'active');
   const activeSeeded = evidence.seededOpportunities.filter((job) => !isInactiveStatus(String(job.status || '')));
   const applications = evidence.applications;
@@ -271,11 +332,14 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     return String(event.event_type || '').includes('human_only_gate')
       && !['approved', 'resolved', 'cleared', 'completed', 'dismissed', 'submitted'].includes(status);
   });
+  const compensationPreference = buildCompensationPreference(evidence.profile);
+  const canonicalRelease = buildCanonicalReleaseMetrics(evidence, compensationPreference.preferredMinimumBaseSalaryUsd);
   const humanOnlyGates = canonicalRelease.waitingOnTomas || openHumanOnlyGates.length + openTasks.length;
   const submittedApplications = canonicalRelease.submittedApplications || applications.filter((application) => application.confirmation_number || application.submission_evidence).length;
   const preparedPackages = canonicalRelease.totalPackages;
   const salaryRange = buildSalaryRange(activeJobPostings);
-  const compensationPreference = buildCompensationPreference(evidence.profile);
+  const compensationPolicy = buildCompensationPolicyStatus(evidence, compensationPreference.preferredMinimumBaseSalaryUsd);
+  const applicationExecution = buildApplicationExecutionStatus(evidence);
   const dailyWorkflow = buildDailyOperatingCycleStatus(evidence, canonicalRelease);
   const employmentModel = buildEmploymentModel(evidence);
   const atsEmploymentMapper = buildAtsEmploymentMapperStatus(evidence, employmentModel);
@@ -306,6 +370,8 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     humanOnlyGates,
     salaryRange,
     compensationPreference,
+    compensationPolicy,
+    applicationExecution,
     releaseCompletionPercentage: canonicalRelease.releaseCompletionPercentage,
     actionableProgressPercentage: canonicalRelease.actionableProgressPercentage,
     dailyWorkflow,
@@ -651,6 +717,72 @@ function buildSalaryRange(jobs: JsonRecord[]) {
   };
 }
 
+function buildCompensationPolicyStatus(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): CompensationPolicyStatus {
+  const activeJobs = evidence.jobPostings.filter((job) => !isInactiveStatus(String(job.status || '')) && !isInactiveStatus(String(job.posting_validation_status || '')));
+  const submittedApplications = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence));
+  const allRanges = activeJobs
+    .map((job) => ({
+      min: numberValue(job.compensation_min_usd),
+      max: numberValue(job.compensation_max_usd),
+    }))
+    .filter((range) => range.min > 0 && range.max > 0);
+  const qualifyingBaseRanges = activeJobs
+    .filter((job) => compensationPolicyClass(job, preferredMinimumBaseSalaryUsd) === 'posted_base_meets_policy')
+    .map((job) => ({
+      min: numberValue(job.compensation_min_usd),
+      max: numberValue(job.compensation_max_usd),
+    }))
+    .filter((range) => range.min > 0 && range.max > 0);
+  const belowTargetJobs = activeJobs
+    .filter((job) => compensationPolicyClass(job, preferredMinimumBaseSalaryUsd) === 'below_target')
+    .map((job) => ({
+      employer: stringValue(job.company || job.employer) || 'Employer',
+      postedMaxUsd: numberValue(job.compensation_max_usd) || undefined,
+      reason: `Posted base maximum is below Tomas's preferred minimum base salary of ${preferredMinimumBaseSalaryUsd ? formatUsd(preferredMinimumBaseSalaryUsd) : 'the configured target'}.`,
+      role: stringValue(job.title || job.position) || 'Role',
+    }));
+  const compensationUnknown = activeJobs.filter((job) => compensationPolicyClass(job, preferredMinimumBaseSalaryUsd) === 'unknown').length;
+  const approvedTotalCompensationExceptions = activeJobs.filter((job) => {
+    if (compensationPolicyClass(job, preferredMinimumBaseSalaryUsd) !== 'total_compensation_exception') return false;
+    return submittedApplications.some((application) => applicationMatchesCompensationRecord(application, job))
+      || hasAnyStatus(`${job.status || ''} ${job.raw_record || ''}`, ['total_compensation_exception_approved', 'submitted']);
+  }).length;
+
+  return {
+    allDiscoveredPostedCompensationRange: moneyRange(allRanges),
+    approvedTotalCompensationExceptions,
+    belowTargetJobs,
+    belowTargetRemoved: belowTargetJobs.length,
+    compensationUnknown,
+    postedBaseAtOrAboveTarget: qualifyingBaseRanges.length,
+    preferredMinimumBaseSalaryUsd,
+    qualifiedPostedBaseRange: moneyRange(qualifyingBaseRanges),
+  };
+}
+
+function buildApplicationExecutionStatus(evidence: CareerOsEvidence, generatedAt = new Date()): ApplicationExecutionStatus {
+  const centralToday = centralDateKey(generatedAt);
+  const nextScheduledRun = nextDailyRunText(generatedAt);
+  const exactStatuses = evidence.applications.map((application) => classifyApplicationExecution(application, nextScheduledRun));
+  const submittedToday = evidence.applications.filter((application) => {
+    if (!application.confirmation_number && !application.submission_evidence) return false;
+    return centralDateKey(application.updated_at) === centralToday;
+  }).length;
+  const latestRun = evidence.automationRuns[0];
+
+  return {
+    exactStatuses,
+    failedWithError: exactStatuses.filter((item) => item.status === 'Failed with error').length,
+    lastExecutionTime: stringValue(latestRun?.finished_at || latestRun?.started_at) || undefined,
+    nextScheduledRun,
+    queuedImmediate: exactStatuses.filter((item) => item.status === 'Queued for immediate execution').length,
+    runningNow: exactStatuses.filter((item) => item.status === 'Running now').length,
+    submittedToday,
+    technicallyBlocked: exactStatuses.filter((item) => item.status === 'Technically blocked').length,
+    waitingOnTomas: exactStatuses.filter((item) => item.status === 'Waiting on Tomas' || item.status === 'Compensation review required').length,
+  };
+}
+
 type NormalizedOpportunity = ReturnType<typeof normalizeOpportunityIdentity>;
 
 type CanonicalOpportunity = {
@@ -663,7 +795,7 @@ type CanonicalOpportunity = {
   submitted: boolean;
 };
 
-function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence) {
+function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number) {
   const keyed = [
     ...evidence.jobPostings.map((job) => normalizeOpportunityIdentity(job, 'posting')),
     ...evidence.seededOpportunities.map((job) => normalizeOpportunityIdentity(job, 'opportunity')),
@@ -693,14 +825,14 @@ function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence) {
       return sourceOpportunityIds.has(artifactOpportunityId)
         || applications.some((application) => String(application.id) === artifactApplicationId);
     }).length;
-    const className = classifyOpportunity(preferred);
+    const className = classifyOpportunity(preferred, preferredMinimumBaseSalaryUsd);
 
     canonical.push({
       applications,
       className,
       key,
       packageAssets,
-      releaseState: classifyReleaseState(preferred.status, className, submitted),
+      releaseState: classifyReleaseState(preferred, className, submitted, preferredMinimumBaseSalaryUsd),
       sourceOpportunityIds,
       submitted,
     });
@@ -750,7 +882,9 @@ function normalizeOpportunityIdentity(record: JsonRecord, sourceType: 'posting' 
   const employerKey = compactKey(employer);
   const titleKey = normalizeTitle(position);
   const normalizedUrl = normalizeUrl(url);
+  const atsId = atsIdFromUrl(url);
   const key = [
+    atsId ? `${employerKey}:ats:${atsId}` : '',
     requisitionId ? `${employerKey}:req:${requisitionId.toLowerCase()}` : '',
     normalizedUrl ? `url:${normalizedUrl}` : '',
     employerKey && titleKey ? `${employerKey}:title:${titleKey}:desc:${descriptionFingerprint}` : '',
@@ -760,6 +894,9 @@ function normalizeOpportunityIdentity(record: JsonRecord, sourceType: 'posting' 
   return {
     employer,
     key,
+    compensationMaxUsd: numberValue(record.compensation_max_usd),
+    compensationMinUsd: numberValue(record.compensation_min_usd),
+    compensationText: String(record.compensation_text || ''),
     opportunityId: sourceId,
     position,
     requisitionId,
@@ -781,20 +918,131 @@ function applicationMatchesCanonical(application: JsonRecord, canonical: Normali
     && normalizeTitle(application.position) === canonical.titleKey;
 }
 
-function classifyOpportunity(item: NormalizedOpportunity): CanonicalOpportunity['className'] {
+function classifyOpportunity(item: NormalizedOpportunity, preferredMinimumBaseSalaryUsd?: number): CanonicalOpportunity['className'] {
   if (isInactiveStatus(item.status) || isInactiveStatus(item.postingValidationStatus)) return 'inactive';
   if (item.status.startsWith('ineligible')) return 'ineligible';
+  if (preferredMinimumBaseSalaryUsd && item.compensationMaxUsd > 0 && item.compensationMaxUsd < preferredMinimumBaseSalaryUsd && !hasTotalCompensationEvidence(item.compensationText)) return 'ineligible';
   const activePosting = !item.postingValidationStatus || item.postingValidationStatus === 'active';
   return activePosting && item.score >= 70 ? 'active_qualified' : 'not_qualified';
 }
 
-function classifyReleaseState(status: string, className: CanonicalOpportunity['className'], submitted: boolean): CanonicalOpportunity['releaseState'] {
+function classifyReleaseState(item: NormalizedOpportunity, className: CanonicalOpportunity['className'], submitted: boolean, preferredMinimumBaseSalaryUsd?: number): CanonicalOpportunity['releaseState'] {
   if (submitted) return 'submitted';
   if (className === 'ineligible') return 'ineligible';
   if (className === 'inactive') return 'inactive';
+  const status = item.status;
+  const compensationClass = compensationPolicyClass(item, preferredMinimumBaseSalaryUsd);
+  if (compensationClass === 'unknown' || compensationClass === 'total_compensation_exception') return 'waiting_on_tomas';
   if (hasAnyStatus(status, ['compensation', 'legal', 'privacy', 'human', 'account'])) return 'waiting_on_tomas';
   if (hasAnyStatus(status, ['technical'])) return 'in_progress';
   return 'ready_for_automation';
+}
+
+function compensationPolicyClass(record: Record<string, unknown>, preferredMinimumBaseSalaryUsd?: number) {
+  const compensationMaxUsd = numberValue(record.compensationMaxUsd ?? record.compensation_max_usd);
+  const compensationText = String(record.compensationText ?? record.compensation_text ?? '');
+
+  if (!preferredMinimumBaseSalaryUsd) return 'unknown';
+  if (!compensationMaxUsd) return 'unknown';
+  if (hasTotalCompensationEvidence(compensationText)) return 'total_compensation_exception';
+  if (compensationMaxUsd < preferredMinimumBaseSalaryUsd) return 'below_target';
+  return 'posted_base_meets_policy';
+}
+
+function hasTotalCompensationEvidence(value: unknown) {
+  const text = String(value || '').toLowerCase();
+  return /on target earnings|\bote\b|total compensation|bonus|equity|commission/.test(text);
+}
+
+function applicationMatchesCompensationRecord(application: JsonRecord, record: JsonRecord) {
+  const applicationOpportunityId = String(application.opportunity_id || '');
+  const recordId = String(record.id || '');
+  if (applicationOpportunityId && recordId && applicationOpportunityId === recordId) return true;
+
+  const rawRecord = asRecord(application.raw_record);
+  const canonicalJobPostingId = String(rawRecord.canonical_job_posting_id || '');
+  if (canonicalJobPostingId && canonicalJobPostingId === recordId) return true;
+
+  return compactKey(application.employer) === compactKey(record.company || record.employer)
+    && normalizeTitle(application.position) === normalizeTitle(record.title || record.position);
+}
+
+function moneyRange(ranges: Array<{ min: number; max: number }>) {
+  if (!ranges.length) return { complete: false };
+  return {
+    complete: true,
+    minUsd: Math.min(...ranges.map((range) => range.min)),
+    maxUsd: Math.max(...ranges.map((range) => range.max)),
+  };
+}
+
+function classifyApplicationExecution(application: JsonRecord, nextScheduledRun: string): ApplicationExecutionItem {
+  const employer = stringValue(application.employer) || 'Employer';
+  const role = stringValue(application.position) || 'Role';
+  const text = `${application.lifecycle_stage || ''} ${application.next_action || ''} ${application.raw_record || ''}`.toLowerCase();
+  const reason = stringValue(application.next_action)
+    || stringValue(application.submission_evidence)
+    || stringValue(asRecord(application.raw_record).reason_not_submitted)
+    || 'No detailed checkpoint is recorded.';
+
+  if (application.confirmation_number || application.submission_evidence || hasAnyStatus(text, ['submitted'])) {
+    return { employer, reason: reason || 'Confirmation evidence captured.', role, status: 'Submitted' };
+  }
+  if (hasAnyStatus(text, ['failed', 'error'])) return { employer, reason, role, status: 'Failed with error' };
+  if (hasAnyStatus(text, ['inactive', 'closed', 'expired', 'unavailable'])) return { employer, reason, role, status: 'Inactive' };
+  if (hasAnyStatus(text, ['ineligible'])) return { employer, reason, role, status: 'Ineligible' };
+  if (hasAnyStatus(text, ['running'])) return { employer, reason, role, status: 'Running now' };
+  if (hasAnyStatus(text, ['technical', 'upload_gate', 'browser'])) return { employer, reason, role, status: 'Technically blocked' };
+  if (hasAnyStatus(text, ['compensation_unknown', 'compensation review'])) return { employer, reason, role, status: 'Compensation review required' };
+  if (hasAnyStatus(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) {
+    return { employer, reason, role, status: 'Waiting on Tomas' };
+  }
+  if (hasAnyStatus(text, ['ready_for_automation', 'package_ready', 'qualified_pending_application', 'application_started', 'resumable'])) {
+    return { employer, reason, role, status: 'Queued for immediate execution' };
+  }
+
+  return { employer, reason: `Scheduled for next run at ${nextScheduledRun}.`, role, status: 'Scheduled for next run' };
+}
+
+function nextDailyRunText(now: Date) {
+  const centralParts = centralDateParts(now);
+  let candidate = new Date(Date.UTC(centralParts.year, centralParts.month - 1, centralParts.day, 12, 0, 0));
+  if (now.getTime() >= candidate.getTime()) {
+    candidate = new Date(candidate.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  return `${new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'America/Chicago',
+  }).format(candidate)} America/Chicago (${DAILY_CRON_PATH})`;
+}
+
+function centralDateKey(value: unknown) {
+  const parts = centralDateParts(value instanceof Date ? value : new Date(String(value || Date.now())));
+  if (!parts.year) return '';
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+function centralDateParts(date: Date) {
+  if (Number.isNaN(date.getTime())) return { day: 0, month: 0, year: 0 };
+  const parts = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+  }).formatToParts(date);
+  const lookup: Record<string, string> = {};
+  for (const part of parts) lookup[part.type] = part.value;
+  return {
+    day: Number(lookup.day),
+    month: Number(lookup.month),
+    year: Number(lookup.year),
+  };
+}
+
+function formatUsd(value: number) {
+  return `$${Math.round(value).toLocaleString('en-US')}`;
 }
 
 function buildCompensationPreference(profile?: JsonRecord) {
@@ -838,6 +1086,30 @@ function normalizeUrl(value: unknown) {
   } catch {
     return text.toLowerCase().replace(/\?.*$/, '').replace(/\/$/, '');
   }
+}
+
+function atsIdFromUrl(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  try {
+    const url = new URL(text);
+    const greenhouseId = url.searchParams.get('gh_jid') || url.searchParams.get('token');
+    if (greenhouseId && /^\d{5,}$/.test(greenhouseId)) return greenhouseId;
+
+    const path = url.pathname;
+    const pathMatch = path.match(/\/jobs\/(\d{5,})\b/i)
+      || path.match(/\/job\/(\d{5,})\b/i)
+      || path.match(/\/roles\/(\d{5,})\b/i)
+      || path.match(/\/([0-9]{8,})-/);
+    if (pathMatch) return pathMatch[1];
+  } catch {
+    const fallback = text.match(/[?&](?:gh_jid|token)=(\d{5,})/i)
+      || text.match(/\/(?:jobs|job|roles)\/(\d{5,})\b/i);
+    if (fallback) return fallback[1];
+  }
+
+  return '';
 }
 
 function simpleHash(value: unknown) {

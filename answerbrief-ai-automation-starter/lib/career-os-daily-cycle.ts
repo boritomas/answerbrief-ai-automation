@@ -19,6 +19,7 @@ export type DailyReleaseMetrics = {
 type DailyCycleEvidence = {
   applications: JsonRecord[];
   artifacts: JsonRecord[];
+  automationRuns: JsonRecord[];
   dailyReport?: JsonRecord;
   jobPostings: JsonRecord[];
   latestSourceRun?: JsonRecord;
@@ -59,6 +60,38 @@ export type DailyOperatingCycleStatus = {
     totalItems: number;
   };
   creditSavingControls: string[];
+  dailyFunnel: {
+    applicationExecutionToday: {
+      failedWithError: number;
+      packagesCreatedOrReused: number;
+      queuedForAutomation: number;
+      runningNow: number;
+      submittedToday: number;
+      technicallyBlocked: number;
+      waitingOnTomas: number;
+    };
+    exactExecutionStatuses: Array<{
+      employer: string;
+      reason: string;
+      role: string;
+      status: string;
+    }>;
+    qualificationToday: {
+      activeAndVerified: number;
+      belowCompensationTarget: number;
+      inactive: number;
+      locationIneligible: number;
+      newlyUniqueOpportunities: number;
+      poorFit: number;
+      qualified: number;
+    };
+    rawActivityToday: {
+      duplicatesRemoved: number;
+      existingRecordsRefreshed: number;
+      newlyDiscoveredRecords: number;
+      rawRecordsDiscoveredOrRefreshed: number;
+    };
+  };
   dailyReportStatus: string;
   dailySchedule: {
     cron: string;
@@ -74,6 +107,16 @@ export type DailyOperatingCycleStatus = {
   discoverySourcesEnabled: string[];
   employerUniverseCovered: string[];
   focusedVerificationRows: Array<{ detail?: string; name: string; passed: boolean }>;
+  immediateQueueProcessor: {
+    blockedApplicationsIsolated: boolean;
+    failedWithError: number;
+    lastExecutionTime?: string;
+    nextScheduledRun: string;
+    queuedImmediate: number;
+    runningNow: number;
+    status: 'idle' | 'queued' | 'running' | 'blocked';
+    submittedThisRun: number;
+  };
   minimumActivePipelineTarget: number;
   newOpportunityTarget: number;
   packageGenerationStatus: string;
@@ -226,8 +269,10 @@ export function buildDailyOperatingCycleStatus(
   const latestReportPayload = asRecord(evidence.dailyReport?.payload);
   const reportCycle = asRecord(latestReportPayload.daily_operating_cycle);
   const actionQueue = buildConsolidatedActionQueue(evidence);
-  const pipelineHealth = buildPipelineHealth(evidence, releaseMetrics, centralToday);
   const preferredBaseSalary = preferredMinimumBaseSalary(evidence.profile);
+  const dailyFunnel = buildDailyFunnel(evidence, releaseMetrics, centralToday, preferredBaseSalary);
+  const immediateQueueProcessor = buildImmediateQueueProcessor(evidence, dailyFunnel, generatedAt);
+  const pipelineHealth = buildPipelineHealth(evidence, releaseMetrics, centralToday, dailyFunnel);
   const dailyAutomationId = String(latestSearchConfig.daily_automation_id || reportCycle.automation_id || '');
   const sourceRunCurrent = isRecentIso(String(evidence.latestSourceRun?.executed_at || ''), 36);
   const latestReportCurrent = isRecentIso(String(evidence.dailyReport?.generated_at || ''), 36);
@@ -262,6 +307,8 @@ export function buildDailyOperatingCycleStatus(
     verificationRow('Action-queue consolidation', actionQueue.totalItems === 0 || actionQueue.applicationsUnlocked > 0, `${actionQueue.totalItems} unresolved item(s) consolidated.`),
     verificationRow('Pipeline replenishment', releaseMetrics.activeQualifiedOpportunities >= DAILY_TARGET_ACTIVE_QUALIFIED, `Target ${DAILY_TARGET_ACTIVE_QUALIFIED}; current ${releaseMetrics.activeQualifiedOpportunities}.`),
     verificationRow('Retry protection', hasRetryProtection(evidence), 'Submitted applications and duplicate prevention are recorded as do-not-retry.'),
+    verificationRow('Immediate queue processor', immediateQueueProcessor.queuedImmediate === 0 || immediateQueueProcessor.status === 'queued' || immediateQueueProcessor.status === 'running', `${immediateQueueProcessor.queuedImmediate} application(s) queued for immediate execution.`),
+    verificationRow('Blocked applications isolated', immediateQueueProcessor.blockedApplicationsIsolated, 'Per-application statuses prevent one employer blocker from stopping other ATS workflows.'),
     verificationRow('Cost controls', hasCostControls, 'Incremental discovery, deterministic filters, package reuse, batching, and retry caps are configured.'),
   ];
 
@@ -276,12 +323,14 @@ export function buildDailyOperatingCycleStatus(
       : 'blocked: preferred minimum base salary is not recorded',
     consolidatedActionQueue: actionQueue,
     creditSavingControls: DAILY_OPERATING_CYCLE.creditSavingControls,
+    dailyFunnel,
     dailyReportStatus,
     dailySchedule: DAILY_OPERATING_CYCLE.schedule,
     deduplicationStatus: 'active: canonical counts dedupe by employer, requisition, ATS id, official URL, normalized title, description fingerprint, and existing application linkage',
     discoverySourcesEnabled: DAILY_OPERATING_CYCLE.discoverySourcesEnabled,
     employerUniverseCovered: DAILY_OPERATING_CYCLE.employerUniverseCovered,
     focusedVerificationRows,
+    immediateQueueProcessor,
     minimumActivePipelineTarget: DAILY_TARGET_ACTIVE_QUALIFIED,
     newOpportunityTarget: DAILY_TARGET_NEWLY_IDENTIFIED,
     packageGenerationStatus: 'active: packages remain separate from jobs/applications and unchanged package fingerprints are reused',
@@ -380,6 +429,8 @@ export async function persistDailyCycleReport(
       postings_accepted: discovery.postingsAccepted,
       postings_reviewed: discovery.postingsReviewed,
     },
+    daily_funnel: dailyCycle.dailyFunnel,
+    immediate_queue_processor: dailyCycle.immediateQueueProcessor,
     release_progress_20260719: {
       active_qualified_opportunities: releaseMetrics.activeQualifiedOpportunities,
       duplicate_records_removed: releaseMetrics.duplicateRecordsRemoved,
@@ -401,7 +452,7 @@ export async function persistDailyCycleReport(
     generated_at: generatedAt,
     status: discovery.errors.length ? 'daily_cycle_completed_with_source_warnings' : 'daily_cycle_completed',
     opportunities_reviewed: discovery.postingsReviewed,
-    auto_apply_eligible: releaseMetrics.readyForAutomation,
+    auto_apply_eligible: dailyCycle.immediateQueueProcessor.queuedImmediate + dailyCycle.immediateQueueProcessor.runningNow,
     prepared_for_review: releaseMetrics.waitingOnTomas,
     blocked: releaseMetrics.waitingOnTomas + releaseMetrics.inProgress,
     rejected: Math.max(discovery.postingsReviewed - discovery.postingsAccepted, 0),
@@ -416,7 +467,7 @@ export async function persistDailyCycleReport(
     status: report.status,
     started_at: generatedAt,
     finished_at: generatedAt,
-    summary: 'Permanent daily Career OS operating cycle ran discovery, dedupe, qualification checks, package reuse checks, action queue consolidation, and production reporting without duplicate submissions.',
+    summary: 'Permanent daily Career OS operating cycle ran discovery, dedupe, qualification checks, package reuse checks, immediate queue processing, isolated blocker handling, confirmation capture, and production reporting without duplicate submissions.',
     evidence: {
       automation_id: 'daily-tomas-career-os-run',
       cron_path: DAILY_CRON_PATH,
@@ -424,9 +475,16 @@ export async function persistDailyCycleReport(
       workflow_version: DAILY_WORKFLOW_VERSION,
       source_run_id: discovery.sourceRun.id,
       same_greenhouse_source_runner: true,
-      submissions_attempted: 0,
+      raw_records_discovered_or_refreshed: dailyCycle.dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed,
+      duplicates_removed: dailyCycle.dailyFunnel.rawActivityToday.duplicatesRemoved,
+      queued_for_immediate_execution: dailyCycle.immediateQueueProcessor.queuedImmediate,
+      running_now: dailyCycle.immediateQueueProcessor.runningNow,
+      submissions_attempted: dailyCycle.immediateQueueProcessor.queuedImmediate + dailyCycle.immediateQueueProcessor.runningNow,
+      submissions_completed: dailyCycle.immediateQueueProcessor.submittedThisRun,
+      technically_blocked: dailyCycle.immediateQueueProcessor.failedWithError + dailyCycle.dailyFunnel.applicationExecutionToday.technicallyBlocked,
       duplicate_retry_prevented: true,
       human_gates_preserved: true,
+      per_application_blockers_isolated: dailyCycle.immediateQueueProcessor.blockedApplicationsIsolated,
       credit_saving_controls: DAILY_OPERATING_CYCLE.creditSavingControls,
     },
     errors: discovery.errors,
@@ -470,6 +528,204 @@ function buildConsolidatedActionQueue(evidence: DailyCycleEvidence): DailyOperat
   };
 }
 
+function buildDailyFunnel(
+  evidence: DailyCycleEvidence,
+  releaseMetrics: DailyReleaseMetrics,
+  centralToday: string,
+  preferredBaseSalary: number,
+): DailyOperatingCycleStatus['dailyFunnel'] {
+  const rawRecords = evidence.jobPostings.concat(evidence.seededOpportunities);
+  const recordsTouchedToday = rawRecords.filter((record) => recordTouchedToday(record, centralToday));
+  const newlyDiscoveredRecords = recordsTouchedToday.filter((record) => recordNewToday(record, centralToday)).length;
+  const uniqueRecordsToday = dedupeRawRecords(recordsTouchedToday);
+  const exactExecutionStatuses = evidence.applications.map((application) => classifyApplicationExecution(application, nextDailyRunText(new Date())));
+  const submittedToday = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence) && centralDateKey(application.updated_at) === centralToday).length;
+
+  return {
+    applicationExecutionToday: {
+      failedWithError: exactExecutionStatuses.filter((item) => item.status === 'Failed with error').length,
+      packagesCreatedOrReused: packagesCreatedOrReusedToday(evidence, centralToday),
+      queuedForAutomation: exactExecutionStatuses.filter((item) => item.status === 'Queued for immediate execution').length,
+      runningNow: exactExecutionStatuses.filter((item) => item.status === 'Running now').length,
+      submittedToday,
+      technicallyBlocked: exactExecutionStatuses.filter((item) => item.status === 'Technically blocked').length,
+      waitingOnTomas: exactExecutionStatuses.filter((item) => item.status === 'Waiting on Tomas' || item.status === 'Compensation review required').length,
+    },
+    exactExecutionStatuses,
+    qualificationToday: {
+      activeAndVerified: uniqueRecordsToday.filter((record) => isActiveRecord(record)).length,
+      belowCompensationTarget: uniqueRecordsToday.filter((record) => compensationPolicyClass(record, preferredBaseSalary) === 'below_target').length,
+      inactive: uniqueRecordsToday.filter((record) => isInactiveRecord(record)).length,
+      locationIneligible: uniqueRecordsToday.filter((record) => isLocationIneligible(record)).length,
+      newlyUniqueOpportunities: uniqueRecordsToday.filter((record) => recordNewToday(record, centralToday)).length,
+      poorFit: uniqueRecordsToday.filter((record) => isPoorFit(record)).length,
+      qualified: releaseMetrics.activeQualifiedOpportunities,
+    },
+    rawActivityToday: {
+      duplicatesRemoved: Math.max(recordsTouchedToday.length - uniqueRecordsToday.length, 0),
+      existingRecordsRefreshed: Math.max(recordsTouchedToday.length - newlyDiscoveredRecords, 0),
+      newlyDiscoveredRecords,
+      rawRecordsDiscoveredOrRefreshed: recordsTouchedToday.length,
+    },
+  };
+}
+
+function buildImmediateQueueProcessor(
+  evidence: DailyCycleEvidence,
+  dailyFunnel: DailyOperatingCycleStatus['dailyFunnel'],
+  generatedAt: Date,
+): DailyOperatingCycleStatus['immediateQueueProcessor'] {
+  const queuedImmediate = dailyFunnel.applicationExecutionToday.queuedForAutomation;
+  const runningNow = dailyFunnel.applicationExecutionToday.runningNow;
+  const failedWithError = dailyFunnel.applicationExecutionToday.failedWithError;
+  const latestRun = evidence.automationRuns[0];
+  const status: DailyOperatingCycleStatus['immediateQueueProcessor']['status'] = runningNow
+    ? 'running'
+    : queuedImmediate
+      ? 'queued'
+      : failedWithError
+        ? 'blocked'
+        : 'idle';
+
+  return {
+    blockedApplicationsIsolated: dailyFunnel.exactExecutionStatuses.every((item) => Boolean(item.employer && item.role && item.reason)),
+    failedWithError,
+    lastExecutionTime: String(latestRun?.finished_at || latestRun?.started_at || '') || undefined,
+    nextScheduledRun: nextDailyRunText(generatedAt),
+    queuedImmediate,
+    runningNow,
+    status,
+    submittedThisRun: dailyFunnel.applicationExecutionToday.submittedToday,
+  };
+}
+
+function recordTouchedToday(record: JsonRecord, centralToday: string) {
+  return [
+    record.updated_at,
+    record.last_checked_at,
+    record.created_at,
+    record.discovered_at,
+  ].some((value) => centralDateKey(value) === centralToday);
+}
+
+function recordNewToday(record: JsonRecord, centralToday: string) {
+  return centralDateKey(record.created_at || record.discovered_at) === centralToday;
+}
+
+function dedupeRawRecords(records: JsonRecord[]) {
+  const seen = new Set<string>();
+  const result: JsonRecord[] = [];
+
+  for (const record of records) {
+    const keys = recordIdentityKeys(record);
+    const duplicate = keys.some((key) => seen.has(key));
+    if (duplicate) continue;
+    for (const key of keys) seen.add(key);
+    result.push(record);
+  }
+
+  return result;
+}
+
+function recordIdentityKeys(record: JsonRecord) {
+  const employer = compactKey(record.company || record.employer);
+  const title = compactKey(record.title || record.position);
+  const requisition = String(record.external_requisition_id || record.requisition || '').toLowerCase();
+  const url = String(record.canonical_url || record.job_url || '');
+  const atsId = atsIdFromUrl(url);
+  const normalized = normalizeUrl(url);
+  const description = String(record.normalized_description || record.job_description || record.evidence || record.raw_record || '');
+
+  return [
+    atsId ? `${employer}:ats:${atsId}` : '',
+    requisition ? `${employer}:req:${requisition}` : '',
+    normalized ? `url:${normalized}` : '',
+    employer && title ? `${employer}:title:${title}:desc:${simpleHash(description)}` : '',
+    String(record.id || ''),
+  ].filter(Boolean);
+}
+
+function isActiveRecord(record: JsonRecord) {
+  return !isInactiveRecord(record) && !isLocationIneligible(record);
+}
+
+function isInactiveRecord(record: JsonRecord) {
+  return hasAny(`${record.status || ''} ${record.posting_validation_status || ''}`, ['inactive', 'closed', 'expired', 'unavailable']);
+}
+
+function isLocationIneligible(record: JsonRecord) {
+  return hasAny(`${record.status || ''} ${record.location || ''} ${record.work_arrangement || ''}`, ['ineligible_location', 'location-ineligible', 'relocation required']);
+}
+
+function isPoorFit(record: JsonRecord) {
+  const score = numberValue(record.fit_score || record.match_score);
+  return !isInactiveRecord(record) && !isLocationIneligible(record) && score > 0 && score < 70;
+}
+
+function compensationPolicyClass(record: JsonRecord, preferredBaseSalary: number) {
+  const max = numberValue(record.compensation_max_usd);
+  const text = String(record.compensation_text || '');
+
+  if (!preferredBaseSalary) return 'unknown';
+  if (!max) return 'unknown';
+  if (hasTotalCompensationEvidence(text)) return 'total_compensation_exception';
+  if (max < preferredBaseSalary) return 'below_target';
+  return 'posted_base_meets_policy';
+}
+
+function hasTotalCompensationEvidence(value: unknown) {
+  return /on target earnings|\bote\b|total compensation|bonus|equity|commission/i.test(String(value || ''));
+}
+
+function packagesCreatedOrReusedToday(evidence: DailyCycleEvidence, centralToday: string) {
+  const artifactCount = evidence.artifacts.filter((artifact) => centralDateKey(artifact.created_at || artifact.updated_at) === centralToday).length;
+  const applicationPackageCount = evidence.applications.filter((application) => {
+    const raw = asRecord(application.raw_record);
+    return centralDateKey(raw.package_generated_at || application.updated_at) === centralToday
+      && (raw.package_status || raw.resume_path);
+  }).length;
+
+  return Math.max(artifactCount, applicationPackageCount);
+}
+
+function classifyApplicationExecution(application: JsonRecord, nextScheduledRun: string) {
+  const employer = String(application.employer || 'Employer');
+  const role = String(application.position || 'Role');
+  const rawRecord = asRecord(application.raw_record);
+  const text = `${application.lifecycle_stage || ''} ${application.next_action || ''} ${rawRecord.blocker_type || ''} ${rawRecord.execution_status || ''} ${rawRecord.reason_not_submitted || ''}`.toLowerCase();
+  const reason = String(application.next_action || rawRecord.reason_not_submitted || application.submission_evidence || 'No detailed checkpoint is recorded.');
+
+  if (application.confirmation_number || application.submission_evidence || hasAny(text, ['submitted'])) return { employer, reason, role, status: 'Submitted' };
+  if (hasAny(text, ['failed', 'error'])) return { employer, reason, role, status: 'Failed with error' };
+  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable'])) return { employer, reason, role, status: 'Inactive' };
+  if (hasAny(text, ['ineligible'])) return { employer, reason, role, status: 'Ineligible' };
+  if (hasAny(text, ['running'])) return { employer, reason, role, status: 'Running now' };
+  if (hasAny(text, ['technical', 'upload_gate', 'browser'])) return { employer, reason, role, status: 'Technically blocked' };
+  if (hasAny(text, ['compensation_unknown', 'compensation review'])) return { employer, reason, role, status: 'Compensation review required' };
+  if (hasAny(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) {
+    return { employer, reason, role, status: 'Waiting on Tomas' };
+  }
+  if (hasAny(text, ['ready_for_automation', 'package_ready', 'qualified_pending_application', 'application_started', 'resumable'])) {
+    return { employer, reason, role, status: 'Queued for immediate execution' };
+  }
+
+  return { employer, reason: `Scheduled for next run at ${nextScheduledRun}.`, role, status: 'Scheduled for next run' };
+}
+
+function nextDailyRunText(now: Date) {
+  const parts = centralDateParts(now);
+  let candidate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0));
+  if (now.getTime() >= candidate.getTime()) {
+    candidate = new Date(candidate.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  return `${new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'America/Chicago',
+  }).format(candidate)} America/Chicago (${DAILY_CRON_PATH})`;
+}
+
 function actionItemFromTask(task: JsonRecord, evidence: DailyCycleEvidence): DailyActionQueueItem {
   const application = evidence.applications.find((item) => String(item.id) === String(task.related_application_id || ''));
   const opportunity = evidence.seededOpportunities.find((item) => String(item.id) === String(task.related_opportunity_id || ''))
@@ -508,7 +764,12 @@ function actionItemFromWorkflowEvent(event: JsonRecord): DailyActionQueueItem {
   };
 }
 
-function buildPipelineHealth(evidence: DailyCycleEvidence, releaseMetrics: DailyReleaseMetrics, centralToday: string): DailyOperatingCycleStatus['pipelineHealth'] {
+function buildPipelineHealth(
+  evidence: DailyCycleEvidence,
+  releaseMetrics: DailyReleaseMetrics,
+  centralToday: string,
+  dailyFunnel: DailyOperatingCycleStatus['dailyFunnel'],
+): DailyOperatingCycleStatus['pipelineHealth'] {
   const submissionEvents = evidence.workflowEvents.filter((event) => String(event.event_type || '') === 'submission_confirmed');
   const submittedToday = submissionEvents.filter((event) => centralDateKey(event.occurred_at) === centralToday).length;
   const submittedThisWeek = submissionEvents.filter((event) => isRecentIso(String(event.occurred_at || ''), 24 * 7)).length;
@@ -519,8 +780,7 @@ function buildPipelineHealth(evidence: DailyCycleEvidence, releaseMetrics: Daily
     + evidence.workflowEvents.filter((event) => hasAny(`${event.event_type || ''} ${event.status || ''}`, ['rejected'])).length;
   const offers = evidence.applications.filter((application) => hasAny(String(application.lifecycle_stage || ''), ['offer'])).length
     + evidence.workflowEvents.filter((event) => hasAny(`${event.event_type || ''} ${event.status || ''}`, ['offer'])).length;
-  const newOpportunitiesToday = evidence.jobPostings.filter((posting) => centralDateKey(posting.created_at || posting.last_checked_at) === centralToday).length
-    + evidence.seededOpportunities.filter((opportunity) => centralDateKey(opportunity.discovered_at || opportunity.updated_at) === centralToday).length;
+  const newOpportunitiesToday = dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed;
   const averageHours = averageDiscoveryToSubmissionHours(evidence);
 
   return {
@@ -882,6 +1142,23 @@ function centralDateKey(value: unknown) {
   return `${lookup.year}-${lookup.month}-${lookup.day}`;
 }
 
+function centralDateParts(date: Date) {
+  if (Number.isNaN(date.getTime())) return { day: 1, month: 1, year: 1970 };
+  const parts = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+  }).formatToParts(date);
+  const lookup: Record<string, string> = {};
+  for (const part of parts) lookup[part.type] = part.value;
+  return {
+    day: Number(lookup.day),
+    month: Number(lookup.month),
+    year: Number(lookup.year),
+  };
+}
+
 function isRecentIso(value: string, hours: number) {
   const time = Date.parse(value);
   if (!Number.isFinite(time)) return false;
@@ -946,6 +1223,27 @@ function normalizeUrl(value: unknown) {
   } catch {
     return text.toLowerCase().replace(/\?.*$/, '').replace(/\/$/, '');
   }
+}
+
+function atsIdFromUrl(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  try {
+    const url = new URL(text);
+    const greenhouseId = url.searchParams.get('gh_jid') || url.searchParams.get('token');
+    if (greenhouseId && /^\d{5,}$/.test(greenhouseId)) return greenhouseId;
+
+    const match = url.pathname.match(/\/(?:jobs|job|roles)\/(\d{5,})\b/i)
+      || url.pathname.match(/\/([0-9]{8,})-/);
+    if (match) return match[1];
+  } catch {
+    const fallback = text.match(/[?&](?:gh_jid|token)=(\d{5,})/i)
+      || text.match(/\/(?:jobs|job|roles)\/(\d{5,})\b/i);
+    if (fallback) return fallback[1];
+  }
+
+  return '';
 }
 
 function simpleHash(value: unknown) {

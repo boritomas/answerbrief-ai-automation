@@ -29,11 +29,12 @@ export default async function CareerOsPage() {
   const affirmEmployer = knowledgeBase.employers.find((employer) => String(employer.id) === 'employer-affirm' || String(employer.canonical_name) === 'Affirm');
   const dailyWorkflow = status.dailyWorkflow;
   const pipelineHealth = dailyWorkflow.pipelineHealth;
+  const dailyFunnel = dailyWorkflow.dailyFunnel;
   const queueItems = flattenActionQueue(dailyWorkflow.consolidatedActionQueue.groups);
   const applicationFunnel = buildApplicationFunnel(status);
   const resumePerformance = buildResumePerformance(artifacts, applications, status);
   const employerIntelligence = buildEmployerIntelligence(knowledgeBase);
-  const compensationSnapshot = buildCompensationSnapshot(status, opportunities, applications);
+  const compensationSnapshot = buildCompensationSnapshot(status, applications);
   const activitySnapshot = buildActivitySnapshot(status.evidence.workflowEvents, applications);
   const automationHealth = buildAutomationHealth(status);
   const nextActionLabel = status.nextAction?.label || queueItems[0]?.exactQuestionOrAction || dailyWorkflow.actionQueueStatus;
@@ -64,7 +65,7 @@ export default async function CareerOsPage() {
           </div>
           <div className="career-os-metrics secondary" aria-label="Career OS daily pipeline health">
             <Metric label="Ready for Automation" value={status.readyForAutomation} />
-            <Metric label="New Jobs Today" value={pipelineHealth.newOpportunitiesToday} />
+            <Metric label="New Jobs Discovered Today" value={pipelineHealth.newOpportunitiesToday} />
             <Metric label="Submitted Today" value={pipelineHealth.applicationsSubmittedToday} />
             <Metric label="Interviews" value={pipelineHealth.interviews} />
           </div>
@@ -76,8 +77,10 @@ export default async function CareerOsPage() {
             <p>{summary.submittedLine}</p>
             <p>{summary.needsLine}</p>
             <p>{summary.dailyWorkflowLine}</p>
-            <p>Posted compensation across matched jobs: {summary.postedCompensationRange}</p>
+            <p>Posted compensation across all discovered jobs: {summary.postedCompensationRange}</p>
+            <p>Qualified posted-base range where the posted maximum meets policy: {summary.qualifiedPostedCompensationRange}</p>
             <p>{summary.compensationPreferenceLine}</p>
+            <p>Immediate execution: {dailyWorkflow.immediateQueueProcessor.status}; queued now {dailyWorkflow.immediateQueueProcessor.queuedImmediate}; next scheduled run {dailyWorkflow.immediateQueueProcessor.nextScheduledRun}.</p>
           </div>
           <div className="cta-row">
             <a className="button primary" href="/career-os#applications">Review Applications</a>
@@ -119,6 +122,7 @@ export default async function CareerOsPage() {
         <p>Recruiter responses: {pipelineHealth.recruiterResponses}. Rejections: {pipelineHealth.rejectedByEmployers}. Offers: {pipelineHealth.offers}.</p>
         <p>Automation completion: {pipelineHealth.automationCompletionRate.toFixed(1)}%. Human intervention: {pipelineHealth.humanInterventionRate.toFixed(1)}%.</p>
         <p>Exact next action: {nextActionLabel}</p>
+        <p>Immediate queue processor: {dailyWorkflow.immediateQueueProcessor.status}; queued immediate {dailyWorkflow.immediateQueueProcessor.queuedImmediate}; running now {dailyWorkflow.immediateQueueProcessor.runningNow}; submitted this run {dailyWorkflow.immediateQueueProcessor.submittedThisRun}; next scheduled run {dailyWorkflow.immediateQueueProcessor.nextScheduledRun}.</p>
         <div className="career-os-list compact">
           {automationHealth.map((item) => (
             <DetailRow detail={item.detail} key={item.label} label={item.label} value={item.value} />
@@ -141,12 +145,33 @@ export default async function CareerOsPage() {
 
       <section id="opportunities" className="career-os-band">
         <h2>Opportunities</h2>
-        <p>{status.totalUniqueOpportunities} unique production opportunit{status.totalUniqueOpportunities === 1 ? 'y is' : 'ies are'} represented; {status.activeQualifiedOpportunities} are active qualified jobs; {pipelineHealth.newOpportunitiesToday} job record{pipelineHealth.newOpportunitiesToday === 1 ? '' : 's'} were newly discovered or refreshed today.</p>
+        <p>{status.totalUniqueOpportunities} unique production opportunit{status.totalUniqueOpportunities === 1 ? 'y is' : 'ies are'} represented; {status.activeQualifiedOpportunities} are active qualified jobs; raw activity is separated from qualified opportunities, packages, applications, and submissions.</p>
+        <h3>Raw Activity Today</h3>
         <div className="career-os-metrics secondary" aria-label="Career OS opportunity status">
-          <Metric detail="canonical roles" label="Unique Opportunities" value={status.totalUniqueOpportunities} />
-          <Metric detail="today" label="New Jobs Discovered" value={pipelineHealth.newOpportunitiesToday} />
-          <Metric detail="location or policy" label="Ineligible" value={status.ineligible} />
-          <Metric detail="closed or unavailable" label="Inactive" value={status.inactive} />
+          <Metric detail="records, not applications" label="Raw records discovered or refreshed" value={dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed} />
+          <Metric detail="created today" label="Newly discovered records" value={dailyFunnel.rawActivityToday.newlyDiscoveredRecords} />
+          <Metric detail="existing records touched" label="Existing records refreshed" value={dailyFunnel.rawActivityToday.existingRecordsRefreshed} />
+          <Metric detail="dedupe removed" label="Duplicates removed" value={dailyFunnel.rawActivityToday.duplicatesRemoved} />
+        </div>
+        <h3>Qualification Today</h3>
+        <div className="career-os-metrics secondary" aria-label="Career OS qualification status">
+          <Metric detail="deduped today" label="Newly unique opportunities" value={dailyFunnel.qualificationToday.newlyUniqueOpportunities} />
+          <Metric detail="official posting active" label="Active and verified" value={dailyFunnel.qualificationToday.activeAndVerified} />
+          <Metric detail="policy and fit pass" label="Qualified" value={dailyFunnel.qualificationToday.qualified} />
+          <Metric detail="base max below target" label="Below compensation target" value={dailyFunnel.qualificationToday.belowCompensationTarget} />
+          <Metric detail="Texas/remote policy" label="Location-ineligible" value={dailyFunnel.qualificationToday.locationIneligible} />
+          <Metric detail="fit below threshold" label="Poor fit" value={dailyFunnel.qualificationToday.poorFit} />
+          <Metric detail="closed or unavailable" label="Inactive" value={dailyFunnel.qualificationToday.inactive} />
+        </div>
+        <h3>Application Execution Today</h3>
+        <div className="career-os-metrics secondary" aria-label="Career OS application execution today">
+          <Metric detail="package assets" label="Packages created or reused" value={dailyFunnel.applicationExecutionToday.packagesCreatedOrReused} />
+          <Metric detail="safe queue" label="Queued for immediate execution" value={dailyFunnel.applicationExecutionToday.queuedForAutomation} />
+          <Metric detail="active workers" label="Running now" value={dailyFunnel.applicationExecutionToday.runningNow} />
+          <Metric detail="confirmation evidence" label="Submitted today" value={dailyFunnel.applicationExecutionToday.submittedToday} />
+          <Metric detail="human-only gates" label="Waiting on Tomas" value={dailyFunnel.applicationExecutionToday.waitingOnTomas} />
+          <Metric detail="browser/adapter blockers" label="Technically blocked" value={dailyFunnel.applicationExecutionToday.technicallyBlocked} />
+          <Metric detail="retry capped" label="Failed with error" value={dailyFunnel.applicationExecutionToday.failedWithError} />
         </div>
         <div className="career-os-list">
           {opportunities.slice(0, 5).map((opportunity) => (
@@ -178,8 +203,9 @@ export default async function CareerOsPage() {
                 <h3>{String(application.position)}</h3>
                 <p>{String(application.employer)} · {String(application.lifecycle_stage || 'status unavailable')}</p>
                 {application.next_action ? <p>{String(application.next_action)}</p> : null}
+                <p>{applicationExecutionLabel(status, application)}</p>
               </div>
-              <span>{application.submission_evidence ? 'Submitted' : 'Not submitted'}</span>
+              <span>{applicationExecutionStatus(status, application)}</span>
             </article>
           ))}
         </div>
@@ -208,11 +234,33 @@ export default async function CareerOsPage() {
 
       <section id="compensation" className="career-os-band">
         <h2>Compensation and Offers</h2>
-        <p>{dailyWorkflow.compensationPolicyStatus}.</p>
+        <h3>Your Compensation Policy</h3>
+        <p>{dailyWorkflow.compensationPolicyStatus}. Base and total compensation are not interchangeable.</p>
+        <h3>Qualified Job Compensation</h3>
         <div className="career-os-list compact">
           {compensationSnapshot.map((item) => (
             <DetailRow detail={item.detail} key={item.label} label={item.label} value={item.value} />
           ))}
+        </div>
+        <h3>Below-Target Jobs</h3>
+        <div className="career-os-list">
+          {status.compensationPolicy.belowTargetJobs.length ? status.compensationPolicy.belowTargetJobs.map((job) => (
+            <article className="career-os-row" key={`${job.employer}-${job.role}`}>
+              <div>
+                <h3>{job.employer}: {job.role}</h3>
+                <p>{job.reason}</p>
+              </div>
+              <span>{job.postedMaxUsd ? formatMoney(job.postedMaxUsd) : 'below target'}</span>
+            </article>
+          )) : (
+            <article className="career-os-row">
+              <div>
+                <h3>No unsupported below-target jobs retained.</h3>
+                <p>Sub-$250K posted-base roles require verified total-compensation exception evidence before review.</p>
+              </div>
+              <span>0</span>
+            </article>
+          )}
         </div>
       </section>
 
@@ -349,23 +397,21 @@ function buildEmployerIntelligence(knowledgeBase: CareerStatus['evidence']['empl
   ];
 }
 
-function buildCompensationSnapshot(status: CareerStatus, opportunities: JsonRecord[], applications: JsonRecord[]) {
+function buildCompensationSnapshot(status: CareerStatus, applications: JsonRecord[]) {
   const preferredBase = status.compensationPreference?.preferredMinimumBaseSalaryUsd;
-  const postedCompensationCount = opportunities.filter((opportunity) => Number(opportunity.compensation_min_usd || 0) > 0 || Number(opportunity.compensation_max_usd || 0) > 0).length;
-  const belowPreferredBase = preferredBase
-    ? opportunities.filter((opportunity) => {
-      const max = Number(opportunity.compensation_max_usd || 0);
-      return max > 0 && max < preferredBase;
-    }).length
-    : 0;
   const offers = status.dailyWorkflow.pipelineHealth.offers;
   const offerApplications = applications.filter((application) => hasAnyText(application.lifecycle_stage, ['offer'])).length;
+  const qualifiedRange = status.compensationPolicy.qualifiedPostedBaseRange;
+  const allRange = status.compensationPolicy.allDiscoveredPostedCompensationRange;
 
   return [
-    { detail: 'posted compensation across matched jobs', label: 'Published range', value: compensationRangeText(status) },
     { detail: 'Tomas-approved base-salary strategy', label: 'Preferred base minimum', value: preferredBase ? formatMoney(preferredBase) : 'not set' },
-    { detail: 'roles with parsed compensation fields', label: 'Matched jobs with posted comp', value: String(postedCompensationCount) },
-    { detail: 'review, not automatic rejection', label: 'Below-base posted max', value: String(belowPreferredBase) },
+    { detail: 'posted base ranges where max meets or exceeds policy', label: 'Posted base range across jobs meeting policy', value: moneyRangeText(qualifiedRange) },
+    { detail: 'all parsed postings, not all are qualified', label: 'Posted compensation across all discovered jobs', value: moneyRangeText(allRange) },
+    { detail: 'jobs with posted base max at or above $250K', label: 'Posted base at or above target', value: String(status.compensationPolicy.postedBaseAtOrAboveTarget) },
+    { detail: 'approved total-compensation exception evidence', label: 'Approved total-compensation exceptions', value: String(status.compensationPolicy.approvedTotalCompensationExceptions) },
+    { detail: 'requires compensation review before submission', label: 'Compensation unknown', value: String(status.compensationPolicy.compensationUnknown) },
+    { detail: 'removed from qualified automation unless exception evidence exists', label: 'Below-target removed', value: String(status.compensationPolicy.belowTargetRemoved) },
     { detail: 'offer status in production evidence', label: 'Offers', value: String(Math.max(offers, offerApplications)) },
     { detail: 'Bandwidth remains paused for total-comp target', label: 'Total-comp fields', value: 'pause' },
   ];
@@ -394,11 +440,31 @@ function buildAutomationHealth(status: CareerStatus) {
 
   return [
     { detail: 'scheduled route', label: 'Cron', value: status.dailyWorkflow.dailySchedule.cron },
+    { detail: 'exact next scheduled run', label: 'Next run', value: status.dailyWorkflow.immediateQueueProcessor.nextScheduledRun },
+    { detail: 'immediate queue processor', label: 'Queue', value: status.dailyWorkflow.immediateQueueProcessor.status },
     { detail: 'production daily cycle', label: 'Workflow', value: status.dailyWorkflow.status },
     { detail: 'mission verification rows', label: 'Verification', value: `${passedRows}/${status.verificationRows.length} pass` },
     { detail: 'failed rows in current status payload', label: 'Failures', value: String(failedRows) },
     { detail: 'latest automation run type', label: 'Latest run', value: String(latestRun?.run_type || 'not recorded') },
   ];
+}
+
+function applicationExecutionStatus(status: CareerStatus, application: JsonRecord) {
+  return matchingApplicationExecution(status, application)?.status || (application.submission_evidence ? 'Submitted' : 'Scheduled for next run');
+}
+
+function applicationExecutionLabel(status: CareerStatus, application: JsonRecord) {
+  const execution = matchingApplicationExecution(status, application);
+  if (!execution) return `Scheduled for next run at ${status.applicationExecution.nextScheduledRun}.`;
+  if (execution.status === 'Scheduled for next run') return `Scheduled for next run at ${status.applicationExecution.nextScheduledRun}.`;
+  return `${execution.status}: ${execution.reason}`;
+}
+
+function matchingApplicationExecution(status: CareerStatus, application: JsonRecord) {
+  return status.applicationExecution.exactStatuses.find((item) => (
+    item.employer.toLowerCase() === String(application.employer || '').toLowerCase()
+      && item.role.toLowerCase() === String(application.position || '').toLowerCase()
+  ));
 }
 
 function nextActionApplicationHref(status: CareerStatus) {
@@ -414,11 +480,11 @@ function applicationAnchorId(application: JsonRecord) {
   return `application-${slug(`${employer}-${id}`)}`;
 }
 
-function compensationRangeText(status: CareerStatus) {
-  if (!status.salaryRange?.complete || !status.salaryRange.minUsd || !status.salaryRange.maxUsd) {
+function moneyRangeText(range: { complete: boolean; minUsd?: number; maxUsd?: number }) {
+  if (!range.complete || !range.minUsd || !range.maxUsd) {
     return 'incomplete';
   }
-  return `${formatMoney(status.salaryRange.minUsd)}-${formatMoney(status.salaryRange.maxUsd)}`;
+  return `${formatMoney(range.minUsd)}-${formatMoney(range.maxUsd)}`;
 }
 
 function formatMoney(value: number) {

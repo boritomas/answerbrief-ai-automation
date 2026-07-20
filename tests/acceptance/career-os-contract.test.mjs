@@ -192,6 +192,10 @@ test('permanent daily workflow is scheduled, secured, and verified', () => {
   assert.match(dailyCycleSource, /DAILY_TARGET_ACTIVE_QUALIFIED = 15/);
   assert.match(dailyCycleSource, /incremental_discovery_only/);
   assert.match(dailyCycleSource, /consolidatedActionQueue/);
+  assert.match(dailyCycleSource, /dailyFunnel/);
+  assert.match(dailyCycleSource, /immediateQueueProcessor/);
+  assert.match(dailyCycleSource, /queued_for_immediate_execution/);
+  assert.match(dailyCycleSource, /per_application_blockers_isolated/);
   assert.match(dailyCycleSource, /required_total_compensation/);
   assert.match(statusSource, /Permanent daily workflow configured/);
   assert.match(statusSource, /focusedVerificationRows/);
@@ -202,6 +206,16 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
 
   assert.match(page, /Executive Summary/);
   assert.match(page, /Application Funnel/);
+  assert.match(page, /Raw Activity Today/);
+  assert.match(page, /Raw records discovered or refreshed/);
+  assert.match(page, /Existing records refreshed/);
+  assert.match(page, /Duplicates removed/);
+  assert.match(page, /Qualification Today/);
+  assert.match(page, /Below compensation target/);
+  assert.match(page, /Application Execution Today/);
+  assert.match(page, /Queued for immediate execution/);
+  assert.match(page, /Running now/);
+  assert.match(page, /Failed with error/);
   assert.match(page, /New Jobs Discovered/);
   assert.match(page, /Submitted Today/);
   assert.match(page, /Ready for Automation/);
@@ -210,9 +224,34 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
   assert.match(page, /Resume Performance/);
   assert.match(page, /Employer Intelligence/);
   assert.match(page, /Compensation and Offers/);
+  assert.match(page, /Your Compensation Policy/);
+  assert.match(page, /Qualified Job Compensation/);
+  assert.match(page, /Posted compensation across all discovered jobs/);
+  assert.match(page, /Posted base range across jobs meeting policy/);
+  assert.match(page, /Below-Target Jobs/);
   assert.match(page, /Daily Automation Health/);
+  assert.match(page, /Immediate queue processor/);
   assert.match(page, /Exact next action/);
   assert.doesNotMatch(page, /hard-coded production metrics/i);
+});
+
+test('Career OS daily execution separates raw records, qualification, queueing, and compensation policy', () => {
+  const dailyCycleSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-daily-cycle.ts'), 'utf8');
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+
+  assert.match(dailyCycleSource, /rawRecordsDiscoveredOrRefreshed/);
+  assert.match(dailyCycleSource, /newlyDiscoveredRecords/);
+  assert.match(dailyCycleSource, /existingRecordsRefreshed/);
+  assert.match(dailyCycleSource, /duplicatesRemoved/);
+  assert.match(dailyCycleSource, /packagesCreatedOrReused/);
+  assert.match(dailyCycleSource, /queuedForAutomation/);
+  assert.match(dailyCycleSource, /blockedApplicationsIsolated/);
+  assert.match(statusSource, /atsIdFromUrl/);
+  assert.match(statusSource, /posted_base_meets_policy/);
+  assert.match(statusSource, /below_target/);
+  assert.match(statusSource, /total_compensation_exception/);
+  assert.match(statusSource, /Compensation review required/);
+  assert.match(statusSource, /base_and_total_compensation_not_interchangeable|hasTotalCompensationEvidence/);
 });
 
 test('minimal employment history model maps only ATS employment fields and validates Cisco safely', () => {
