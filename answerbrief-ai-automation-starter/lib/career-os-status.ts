@@ -932,9 +932,9 @@ function classifyReleaseState(item: NormalizedOpportunity, className: CanonicalO
   if (className === 'inactive') return 'inactive';
   const status = item.status;
   const compensationClass = compensationPolicyClass(item, preferredMinimumBaseSalaryUsd);
+  if (hasAnyStatus(status, ['technical'])) return 'in_progress';
   if (compensationClass === 'unknown' || compensationClass === 'total_compensation_exception') return 'waiting_on_tomas';
   if (hasAnyStatus(status, ['compensation', 'legal', 'privacy', 'human', 'account'])) return 'waiting_on_tomas';
-  if (hasAnyStatus(status, ['technical'])) return 'in_progress';
   return 'ready_for_automation';
 }
 
@@ -988,12 +988,12 @@ function classifyApplicationExecution(application: JsonRecord, nextScheduledRun:
   if (application.confirmation_number || application.submission_evidence || hasAnyStatus(text, ['submitted'])) {
     return { employer, reason: reason || 'Confirmation evidence captured.', role, status: 'Submitted' };
   }
-  if (hasAnyStatus(text, ['failed', 'error'])) return { employer, reason, role, status: 'Failed with error' };
-  if (hasAnyStatus(text, ['inactive', 'closed', 'expired', 'unavailable'])) return { employer, reason, role, status: 'Inactive' };
   if (hasAnyStatus(text, ['ineligible'])) return { employer, reason, role, status: 'Ineligible' };
+  if (hasAnyStatus(text, ['inactive', 'closed', 'expired', 'unavailable'])) return { employer, reason, role, status: 'Inactive' };
+  if (hasAnyStatus(text, ['failed', 'error'])) return { employer, reason, role, status: 'Failed with error' };
   if (hasAnyStatus(text, ['running'])) return { employer, reason, role, status: 'Running now' };
   if (hasAnyStatus(text, ['technical', 'upload_gate', 'browser'])) return { employer, reason, role, status: 'Technically blocked' };
-  if (hasAnyStatus(text, ['compensation_unknown', 'compensation review'])) return { employer, reason, role, status: 'Compensation review required' };
+  if (hasAnyStatus(text, ['compensation_unknown', 'compensation review', 'total_compensation', 'desired total compensation', 'compensation'])) return { employer, reason, role, status: 'Compensation review required' };
   if (hasAnyStatus(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) {
     return { employer, reason, role, status: 'Waiting on Tomas' };
   }

@@ -696,12 +696,12 @@ function classifyApplicationExecution(application: JsonRecord, nextScheduledRun:
   const reason = String(application.next_action || rawRecord.reason_not_submitted || application.submission_evidence || 'No detailed checkpoint is recorded.');
 
   if (application.confirmation_number || application.submission_evidence || hasAny(text, ['submitted'])) return { employer, reason, role, status: 'Submitted' };
-  if (hasAny(text, ['failed', 'error'])) return { employer, reason, role, status: 'Failed with error' };
-  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable'])) return { employer, reason, role, status: 'Inactive' };
   if (hasAny(text, ['ineligible'])) return { employer, reason, role, status: 'Ineligible' };
+  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable'])) return { employer, reason, role, status: 'Inactive' };
+  if (hasAny(text, ['failed', 'error'])) return { employer, reason, role, status: 'Failed with error' };
   if (hasAny(text, ['running'])) return { employer, reason, role, status: 'Running now' };
   if (hasAny(text, ['technical', 'upload_gate', 'browser'])) return { employer, reason, role, status: 'Technically blocked' };
-  if (hasAny(text, ['compensation_unknown', 'compensation review'])) return { employer, reason, role, status: 'Compensation review required' };
+  if (hasAny(text, ['compensation_unknown', 'compensation review', 'total_compensation', 'desired total compensation', 'compensation'])) return { employer, reason, role, status: 'Compensation review required' };
   if (hasAny(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) {
     return { employer, reason, role, status: 'Waiting on Tomas' };
   }
