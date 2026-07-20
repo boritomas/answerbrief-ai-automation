@@ -23,7 +23,7 @@ export type CareerOsDiscoveryPlan = {
   sourceRegistry: string[];
 };
 
-export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'global-telecom-connectivity-market-2026-07-20';
+export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-leadership-market-2026-07-20';
 
 export const CAREER_OS_SOURCE_REGISTRY = [
   'Greenhouse official board API',
@@ -48,6 +48,10 @@ export const CAREER_OS_EMPLOYER_UNIVERSE = [
   'towers, fiber infrastructure, data centers, neutral-host, and digital real estate',
   'cloud communications, contact center, and customer experience platforms',
   'enterprise SaaS, AI product, digital transformation, cybersecurity, and infrastructure software',
+  'management consulting, enterprise transformation, and advisory firms with technology modernization practices',
+  'customer operations, service transformation, and workflow automation platforms',
+  'digital experience, martech, ecommerce, and consumer-platform product organizations',
+  'enterprise data, analytics, automation, and AI adoption platforms',
   'fintech, payments, commerce, and large-scale consumer technology platforms',
   'global telecom, networking, cloud, and technology employers with U.S. eligible roles',
 ];
@@ -73,10 +77,20 @@ export const CAREER_OS_ROLE_PRIORITIES = [
   'Principal Product Manager',
   'Product Portfolio Leader',
   'Digital Transformation Leader',
+  'Transformation Consultant',
+  'Enterprise Transformation Consultant',
+  'Transformation Strategy Leader',
+  'Business Transformation Leader',
   'Customer Journey Leader',
+  'Customer Experience Transformation Leader',
   'Platform Product Leader',
+  'Enterprise Platform Leader',
+  'Workflow Platform Leader',
   'Product Operations Leader',
   'AI Product Leader',
+  'AI Adoption Leader',
+  'Human-Centered AI Leader',
+  'Automation Strategy Leader',
   'Digital Commerce Leader',
   'Telecom Product Leader',
   'Broadband Product Leader',
@@ -88,6 +102,8 @@ export const CAREER_OS_ROLE_PRIORITIES = [
   'Network Experience Product Leader',
   'Assisted Digital Product Leader',
   'Self-Service Product Leader',
+  'Experience Transformation Leader',
+  'Operational Excellence Product Leader',
 ];
 
 const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
@@ -203,10 +219,13 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
 ];
 
 export function buildCareerOsDiscoveryPlan(input: {
+  applications?: JsonRecord[];
   extraGreenhouseBoards?: string[];
   employerRecords?: JsonRecord[];
+  jobPostings?: JsonRecord[];
   platformProfiles?: JsonRecord[];
   previousSearchConfig?: JsonRecord;
+  workflowEvents?: JsonRecord[];
 } = {}): CareerOsDiscoveryPlan {
   const previousBoards = stringArray(input.previousSearchConfig?.boards);
   const profileBoards = stringArray(input.platformProfiles?.map((profile) => (
@@ -219,12 +238,18 @@ export function buildCareerOsDiscoveryPlan(input: {
     || asRecord(employer).board
     || asRecord(employer).board_slug
   )));
+  const applicationBoards = extractGreenhouseBoardsFromRecords(input.applications || []);
+  const postingBoards = extractGreenhouseBoardsFromRecords(input.jobPostings || []);
+  const workflowBoards = extractGreenhouseBoardsFromRecords(input.workflowEvents || []);
   const dynamicBoardCandidates = uniqueStrings([
     ...previousBoards,
     ...profileBoards,
     ...employerBoards,
+    ...applicationBoards,
+    ...postingBoards,
+    ...workflowBoards,
     ...(input.extraGreenhouseBoards || []),
-  ]).map((board) => source(companyNameFromBoard(board), 'greenhouse', 'dynamic employer discovery', 'official Greenhouse source', 65, board, true));
+  ]).map((board) => source(companyNameFromBoard(board), 'greenhouse', 'dynamic employer discovery', 'official Greenhouse source', 74, board, true));
   const sourceCandidates = dedupeSourceCandidates(BASELINE_SOURCE_CANDIDATES.concat(dynamicBoardCandidates))
     .sort((a, b) => b.priority - a.priority || a.employer.localeCompare(b.employer));
   const greenhouseBoards = uniqueStrings(sourceCandidates
@@ -270,6 +295,55 @@ function dedupeSourceCandidates(candidates: CareerOsSourceCandidate[]) {
     if (!existing || candidate.priority > existing.priority) seen.set(key, candidate);
   }
   return Array.from(seen.values());
+}
+
+function extractGreenhouseBoardsFromRecords(records: JsonRecord[]) {
+  const boards: string[] = [];
+  for (const record of records) {
+    const raw = asRecord(record.raw_record);
+    const values = [
+      record.board,
+      record.board_slug,
+      record.greenhouse_board,
+      record.canonical_url,
+      record.application_url,
+      record.evidence_url,
+      record.source_url,
+      raw.board,
+      raw.board_slug,
+      raw.greenhouse_board,
+      raw.canonical_url,
+      raw.application_url,
+      raw.job_url,
+      raw.source_url,
+      asRecord(record.metadata).board,
+      asRecord(record.metadata).greenhouse_board,
+      asRecord(record.metadata).evidence_url,
+    ];
+    for (const value of values) {
+      const board = greenhouseBoardFromValue(value);
+      if (board) boards.push(board);
+    }
+  }
+  return uniqueStrings(boards);
+}
+
+function greenhouseBoardFromValue(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^[a-z0-9][a-z0-9_-]{1,80}$/i.test(text) && !/^https?:/i.test(text)) {
+    return text.toLowerCase();
+  }
+  const patterns = [
+    /boards-api\.greenhouse\.io\/v1\/boards\/([a-z0-9_-]+)/i,
+    /job-boards(?:\.[a-z]+)?\.greenhouse\.io\/([a-z0-9_-]+)\/jobs/i,
+    /[?&]for=([a-z0-9_-]+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1].toLowerCase();
+  }
+  return '';
 }
 
 function stringArray(values: unknown) {
