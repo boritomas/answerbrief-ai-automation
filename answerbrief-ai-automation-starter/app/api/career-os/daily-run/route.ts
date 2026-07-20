@@ -6,7 +6,7 @@ import {
   persistDailyCycleReport,
   runDailyGreenhouseDiscovery,
 } from '@/lib/career-os-daily-cycle';
-import { processCareerOsQueue } from '@/lib/career-os-queue';
+import { careerOsQueuePaused, processCareerOsQueue, type QueueProcessorResult } from '@/lib/career-os-queue';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
   const before = await getCareerOsStatus();
   const discovery = await runDailyGreenhouseDiscovery(before.evidence.ownerEmail, before.evidence);
-  const queueProcessor = await processCareerOsQueue({ ownerEmail: before.evidence.ownerEmail, trigger: 'cron' });
+  const queueProcessor = await runSubmissionQueueAfterDiscovery(before.evidence.ownerEmail);
   const afterDiscovery = await getCareerOsStatus();
   const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, {
     activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
@@ -72,4 +72,24 @@ export async function GET(request: NextRequest) {
     },
     queueProcessor,
   });
+}
+
+async function runSubmissionQueueAfterDiscovery(ownerEmail: string): Promise<QueueProcessorResult | { errors: string[]; skipped: true; trigger: 'cron' }> {
+  if (careerOsQueuePaused()) {
+    return {
+      errors: ['career_os_queue_paused'],
+      skipped: true,
+      trigger: 'cron',
+    };
+  }
+
+  try {
+    return await processCareerOsQueue({ ownerEmail, trigger: 'cron' });
+  } catch (error) {
+    return {
+      errors: [error instanceof Error ? error.message : 'Career OS queue processor failed after discovery.'],
+      skipped: true,
+      trigger: 'cron',
+    };
+  }
 }

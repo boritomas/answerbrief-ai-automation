@@ -50,6 +50,7 @@ type QueueApplication = JsonRecord & {
 };
 
 type QueueProcessorOptions = {
+  allowPausedForApplication?: boolean;
   applicationId?: string;
   ownerEmail: string;
   trigger: 'cron' | 'run_now' | 'blocker_resolution' | 'daily_cycle';
@@ -155,7 +156,8 @@ export function verifyCareerOsActionToken(input: ActionTokenInput & { token?: st
 export async function processCareerOsQueue(options: QueueProcessorOptions): Promise<QueueProcessorResult> {
   const now = new Date().toISOString();
   const runId = deterministicUuid(`career-os-queue:${options.ownerEmail}:${options.trigger}:${options.applicationId || 'all'}:${now}`);
-  if (careerOsQueuePaused()) {
+  const explicitApplicationResume = Boolean(options.allowPausedForApplication && options.applicationId);
+  if (careerOsQueuePaused() && !explicitApplicationResume) {
     const pausedResult = emptyQueueResult(runId);
     await persistAutomationRun(options.ownerEmail, runId, options.trigger, pausedResult, now);
     return pausedResult;
@@ -331,7 +333,7 @@ export async function recordCareerOsAction(input: ActionRequest) {
     const updated = mergeApplicationAnswer(application, input.answer.trim(), now, actionRunId);
     await patchApplication(application.id, updated);
     await appendWorkflowEvent(application, 'tomas_answer_saved', 'queued', `Tomas answer saved for ${metadata.label}; application returned to the autonomous queue.`, now, actionRunId);
-    const queueResult = await processCareerOsQueue({ applicationId: application.id, ownerEmail: input.ownerEmail, trigger: 'blocker_resolution' });
+    const queueResult = await processCareerOsQueue({ allowPausedForApplication: true, applicationId: application.id, ownerEmail: input.ownerEmail, trigger: 'blocker_resolution' });
     return { ok: true, queueResult, status: 'success', message: 'Answer saved; Career OS resumed the application queue.' };
   }
 
@@ -343,7 +345,7 @@ export async function recordCareerOsAction(input: ActionRequest) {
     const updated = queueApplicationAfterHumanStep(application, now, actionRunId);
     await patchApplication(application.id, updated);
     await appendWorkflowEvent(application, 'human_step_completed_resume_requested', 'queued', `Tomas marked the required external step complete; Career OS returned the application to the queue.`, now, actionRunId);
-    const queueResult = await processCareerOsQueue({ applicationId: application.id, ownerEmail: input.ownerEmail, trigger: 'blocker_resolution' });
+    const queueResult = await processCareerOsQueue({ allowPausedForApplication: true, applicationId: application.id, ownerEmail: input.ownerEmail, trigger: 'blocker_resolution' });
     return { ok: true, queueResult, status: 'success', message: 'Checkpoint resumed; Career OS processed the application.' };
   }
 
@@ -514,6 +516,7 @@ function mergeApplicationAnswer(application: QueueApplication, answer: string, n
     next_action: 'Tomas resolved the required decision; Career OS queued the application for autonomous processing.',
     raw_record: {
       ...raw,
+      explicit_resume_requested_at: now,
       execution_status: 'queued',
       blocker_resolved_at: now,
       tomas_answer_saved: true,
@@ -535,6 +538,7 @@ function queueApplicationAfterHumanStep(application: QueueApplication, now: stri
     next_action: 'Tomas marked the external step complete; Career OS queued the saved checkpoint for autonomous processing.',
     raw_record: {
       ...raw,
+      explicit_resume_requested_at: now,
       execution_status: 'queued',
       human_step_completed_at: now,
     },

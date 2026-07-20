@@ -401,7 +401,8 @@ test('Career OS browser worker rejects locked applications before claim and befo
   const companion = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'scripts', 'career-os-browser-companion.mjs'), 'utf8');
   const adapters = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'scripts', 'lib', 'career-os-ats-adapters.mjs'), 'utf8');
 
-  assert.match(worker, /if \(careerOsQueuePaused\(\)\) return null/);
+  assert.match(worker, /const queuePaused = careerOsQueuePaused\(\)/);
+  assert.match(worker, /queuePaused && !isExplicitlyResumedApplication/);
   assert.match(worker, /checkBrowserWorkerSubmitSafety/);
   assert.match(worker, /terminal_submission_reopen_prevented/);
   assert.match(worker, /duplicate_submission_report_rejected/);
@@ -481,6 +482,34 @@ test('Career OS database duplicate lock migration defines production uniqueness 
   assert.match(sql, /raw_record->>'external_requisition_id'/);
   assert.match(sql, /raw_record->>'ats_job_id'/);
   assert.match(sql, /raw_record->>'canonical_url'/);
+});
+
+test('Career OS waiting-on-Tomas CTAs expose one action, resume explicitly, and refresh dashboard state', () => {
+  const controls = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'action-controls.tsx'), 'utf8');
+  const queue = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
+  const worker = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-browser-worker.ts'), 'utf8');
+
+  assert.equal(controls.includes('const [checkpointOpened, setCheckpointOpened]'), true);
+  assert.match(controls, /primaryAction/);
+  assert.match(controls, /primaryLabel/);
+  assert.match(controls, /Done - Resume Automation/);
+  assert.equal(controls.includes('router.refresh()'), true);
+  assert.equal(controls.includes('Open checkpoint</a>'), false);
+  assert.match(queue, /allowPausedForApplication/);
+  assert.match(queue, /explicitApplicationResume/);
+  assert.match(queue, /explicit_resume_requested_at/);
+  assert.match(worker, /isExplicitlyResumedApplication/);
+  assert.match(worker, /queuePaused && !isExplicitlyResumedApplication/);
+});
+
+test('Career OS daily discovery is independent from submission queue processing', () => {
+  const dailyRun = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'daily-run', 'route.ts'), 'utf8');
+
+  assert.match(dailyRun, /runDailyGreenhouseDiscovery/);
+  assert.match(dailyRun, /runSubmissionQueueAfterDiscovery/);
+  assert.match(dailyRun, /careerOsQueuePaused/);
+  assert.match(dailyRun, /career_os_queue_paused/);
+  assert.match(dailyRun, /persistDailyCycleReport/);
 });
 
 function findDuplicate(candidate, existingApplications) {

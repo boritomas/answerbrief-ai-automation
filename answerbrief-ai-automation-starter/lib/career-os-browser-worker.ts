@@ -145,13 +145,14 @@ export function authorizeBrowserWorker(request: Request) {
 }
 
 export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimRequest): Promise<BrowserWorkerTask | null> {
-  if (careerOsQueuePaused()) return null;
+  const queuePaused = careerOsQueuePaused();
   const applications = await selectAll(
     'career_os_applications',
     `select=*&owner_email=eq.${encodeURIComponent(input.ownerEmail)}&order=updated_at.asc.nullslast,created_at.asc.nullslast`,
   ) as QueueApplication[];
 
   for (const application of applications) {
+    if (queuePaused && !isExplicitlyResumedApplication(application)) continue;
     if (!isBrowserWorkerEligible(application, input.companionId)) continue;
     const safety = await checkBrowserWorkerSubmitSafety({
       applicationId: application.id,
@@ -380,6 +381,11 @@ function isBrowserWorkerEligible(application: QueueApplication, companionId: str
   const status = cleanEnv(browserWorker.status);
   if (status === 'running' && claimedBy && companionId && claimedBy !== companionId) return false;
   return Boolean(externalApplicationHref(application));
+}
+
+function isExplicitlyResumedApplication(application: QueueApplication) {
+  const raw = asRecord(application.raw_record);
+  return Boolean(raw.explicit_resume_requested_at || raw.human_step_completed_at || raw.blocker_resolved_at);
 }
 
 function canonicalQueueState(application: JsonRecord): QueueState {

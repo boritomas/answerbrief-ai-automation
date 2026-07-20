@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 type ActionResult = {
@@ -83,12 +84,14 @@ export function ApplicationActionControl({
   whatTomasMustDo,
 }: ApplicationActionControlProps) {
   const [answer, setAnswer] = useState('');
+  const [checkpointOpened, setCheckpointOpened] = useState(!href);
   const [message, setMessage] = useState(disabledReason || whatTomasMustDo || 'Ready.');
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'blocked' | 'error'>('idle');
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const needsAnswer = ['enter_compensation', 'review_legal', 'answer_question'].includes(actionKind);
 
-  function inspect() {
+  function openCheckpoint() {
     startTransition(async () => {
       setState('loading');
       const result = await postCareerAction({ action: 'inspect_application', actionToken, actionTokenExpiresAt, applicationId });
@@ -98,8 +101,10 @@ export function ApplicationActionControl({
         return;
       }
       setState('success');
-      setMessage(result.message || 'Checkpoint opened and audit event recorded.');
+      setCheckpointOpened(true);
+      setMessage(result.message || 'Checkpoint opened. Complete the required step, then resume automation.');
       if (result.openUrl && /^https?:\/\//.test(result.openUrl)) window.open(result.openUrl, '_blank', 'noopener,noreferrer');
+      router.refresh();
     });
   }
 
@@ -115,6 +120,7 @@ export function ApplicationActionControl({
       setState('success');
       setAnswer('');
       setMessage(result.message || 'Answer saved; automation resumed.');
+      router.refresh();
     });
   }
 
@@ -129,15 +135,31 @@ export function ApplicationActionControl({
       }
       setState('success');
       setMessage(result.message || 'Automation resumed.');
+      router.refresh();
     });
   }
 
+  function primaryAction() {
+    if (needsAnswer) {
+      saveAnswer();
+      return;
+    }
+    if (!checkpointOpened && href) {
+      openCheckpoint();
+      return;
+    }
+    resume();
+  }
+
+  const primaryLabel = needsAnswer
+    ? 'Save and Resume Automation'
+    : checkpointOpened
+      ? 'Done - Resume Automation'
+      : label;
+  const primaryDisabled = isPending || (needsAnswer && !answer.trim());
+
   return (
     <div className={`career-os-action-control ${state}`} aria-live="polite">
-      <div className="cta-row">
-        <button className="button secondary" disabled={isPending} onClick={inspect} type="button">{label}</button>
-        {href ? <a className="text-link" href={href}>Open checkpoint</a> : null}
-      </div>
       {needsAnswer ? (
         <div className="career-os-inline-auth">
           <input
@@ -147,11 +169,9 @@ export function ApplicationActionControl({
             type="text"
             value={answer}
           />
-          <button className="button secondary" disabled={isPending || !answer.trim()} onClick={saveAnswer} type="button">Save and Resume Automation</button>
         </div>
-      ) : (
-        <button className="button secondary" disabled={isPending} onClick={resume} type="button">Done - Resume Automation</button>
-      )}
+      ) : null}
+      <button className="button secondary" disabled={primaryDisabled} onClick={primaryAction} type="button">{primaryLabel}</button>
       <small>{state}: {message}</small>
     </div>
   );
