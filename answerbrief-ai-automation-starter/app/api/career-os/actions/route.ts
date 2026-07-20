@@ -66,50 +66,58 @@ export async function POST(request: NextRequest) {
   }
 
   if (body.action === 'refresh_discovery') {
-    const before = await getCareerOsStatus();
-    const discovery = await runDailyGreenhouseDiscovery(ownerEmail, before.evidence, { maxBoards: FOREGROUND_DISCOVERY_MAX_BOARDS });
-    const afterDiscovery = await getCareerOsStatus();
-    const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, {
-      activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
-      duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
-      inactive: afterDiscovery.inactive,
-      ineligible: afterDiscovery.ineligible,
-      inProgress: afterDiscovery.inProgress,
-      readyForAutomation: afterDiscovery.readyForAutomation,
-      releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
-      submittedApplications: afterDiscovery.submittedApplications,
-      totalPackages: afterDiscovery.totalPackages,
-      totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
-      waitingOnTomas: afterDiscovery.waitingOnTomas,
-    });
-    const persisted = await persistDailyCycleReport(ownerEmail, dailyCycle, {
-      activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
-      duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
-      inactive: afterDiscovery.inactive,
-      ineligible: afterDiscovery.ineligible,
-      inProgress: afterDiscovery.inProgress,
-      readyForAutomation: afterDiscovery.readyForAutomation,
-      releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
-      submittedApplications: afterDiscovery.submittedApplications,
-      totalPackages: afterDiscovery.totalPackages,
-      totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
-      waitingOnTomas: afterDiscovery.waitingOnTomas,
-    }, discovery);
+    try {
+      const before = await getCareerOsStatus();
+      const discovery = await runDailyGreenhouseDiscovery(ownerEmail, before.evidence, { maxBoards: FOREGROUND_DISCOVERY_MAX_BOARDS });
+      const afterDiscovery = await getCareerOsStatus();
+      const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, {
+        activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
+        duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
+        inactive: afterDiscovery.inactive,
+        ineligible: afterDiscovery.ineligible,
+        inProgress: afterDiscovery.inProgress,
+        readyForAutomation: afterDiscovery.readyForAutomation,
+        releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
+        submittedApplications: afterDiscovery.submittedApplications,
+        totalPackages: afterDiscovery.totalPackages,
+        totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
+        waitingOnTomas: afterDiscovery.waitingOnTomas,
+      });
+      const persisted = await persistDailyCycleReport(ownerEmail, dailyCycle, {
+        activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
+        duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
+        inactive: afterDiscovery.inactive,
+        ineligible: afterDiscovery.ineligible,
+        inProgress: afterDiscovery.inProgress,
+        readyForAutomation: afterDiscovery.readyForAutomation,
+        releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
+        submittedApplications: afterDiscovery.submittedApplications,
+        totalPackages: afterDiscovery.totalPackages,
+        totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
+        waitingOnTomas: afterDiscovery.waitingOnTomas,
+      }, discovery);
 
-    return NextResponse.json({
-      dailyDiscovery: {
-        errors: discovery.errors,
-        postingsAccepted: discovery.postingsAccepted,
-        postingsPersisted: discovery.postingsPersisted,
-        postingsReviewed: discovery.postingsReviewed,
-      },
-      ok: true,
-      persisted: {
-        automationRunId: persisted.automationRun.id,
-        dailyReportId: persisted.report.id,
-      },
-      status: discovery.errors.length ? 'error' : 'success',
-    });
+      return NextResponse.json({
+        dailyDiscovery: {
+          errors: discovery.errors,
+          postingsAccepted: discovery.postingsAccepted,
+          postingsPersisted: discovery.postingsPersisted,
+          postingsReviewed: discovery.postingsReviewed,
+        },
+        ok: true,
+        persisted: {
+          automationRunId: persisted.automationRun.id,
+          dailyReportId: persisted.report.id,
+        },
+        status: discovery.errors.length ? 'error' : 'success',
+      });
+    } catch (error) {
+      return NextResponse.json({
+        error: error instanceof Error ? error.message : 'Career OS discovery refresh failed.',
+        ok: false,
+        status: 'error',
+      }, { status: 502 });
+    }
   }
 
   if (body.action === 'inspect_application' || body.action === 'resume_application' || body.action === 'save_answer') {

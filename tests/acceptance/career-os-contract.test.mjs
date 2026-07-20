@@ -526,7 +526,7 @@ test('Career OS daily discovery is independent from submission queue processing'
   assert.match(dailyCycle, /fallbackPlan\.coverageSummary\.supportedOfficialSources/);
   assert.match(dailyCycle, /GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS/);
   assert.match(dailyCycle, /AbortSignal\.timeout\(GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS\)/);
-  assert.match(dailyCycle, /FOREGROUND_DISCOVERY_MAX_BOARDS = 6/);
+  assert.match(dailyCycle, /FOREGROUND_DISCOVERY_MAX_BOARDS = 3/);
   assert.match(dailyCycle, /foreground_batch_boards_processed/);
 });
 

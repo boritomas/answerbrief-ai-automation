@@ -234,7 +234,7 @@ export const GLOBAL_DISCOVERY_BATCH_SIZE = 100;
 export const GLOBAL_DISCOVERY_MAX_CONCURRENCY = 4;
 export const GLOBAL_DISCOVERY_RETRY_LIMIT = 2;
 export const GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS = 5000;
-export const FOREGROUND_DISCOVERY_MAX_BOARDS = 6;
+export const FOREGROUND_DISCOVERY_MAX_BOARDS = 3;
 
 export const DAILY_DISCOVERY_BOARDS = buildCareerOsDiscoveryPlan().greenhouseBoards;
 
@@ -1350,21 +1350,35 @@ async function persistRows(table: string, rows: JsonRecord | JsonRecord[]) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for the Career OS daily cycle.');
   }
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/${table}?on_conflict=id`, {
-    body: JSON.stringify(rows),
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
-    method: 'POST',
-  });
+  const payload = JSON.stringify(rows);
+  let lastError = '';
 
-  if (!response.ok) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const response = await fetch(`${supabaseUrl}/rest/v1/${table}?on_conflict=id`, {
+      body: payload,
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      method: 'POST',
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (response.ok) return;
+
     const message = await response.text();
-    throw new Error(`Supabase ${table} upsert failed with ${response.status}: ${message.slice(0, 240)}`);
+    lastError = `Supabase ${table} upsert failed with ${response.status}: ${message.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 240)}`;
+    if (![408, 429, 500, 502, 503, 504, 522, 524].includes(response.status)) break;
+    await sleep(400 * attempt);
   }
+
+  throw new Error(lastError || `Supabase ${table} upsert failed.`);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function scorePosting(job: JsonRecord, description: string) {
