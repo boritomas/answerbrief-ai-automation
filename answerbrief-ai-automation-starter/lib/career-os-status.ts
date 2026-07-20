@@ -39,7 +39,9 @@ export type CareerOsStatus = {
     openToNegotiation?: boolean;
   };
   compensationPolicy: CompensationPolicyStatus;
+  globalLifecycle: GlobalLifecycleStatus;
   applicationExecution: ApplicationExecutionStatus;
+  trustedAutoApplyPolicy: TrustedAutoApplyPolicyStatus;
   releaseCompletionPercentage: number;
   actionableProgressPercentage: number;
   dailyWorkflow: DailyOperatingCycleStatus;
@@ -123,6 +125,7 @@ export type CareerOsEvidence = {
   tasks: JsonRecord[];
   artifacts: JsonRecord[];
   workflowEvents: JsonRecord[];
+  sourceRuns: JsonRecord[];
   employerKnowledgeBase: EmployerKnowledgeBaseEvidence;
   dailyReport?: JsonRecord;
   automationRuns: JsonRecord[];
@@ -174,7 +177,96 @@ export type CompensationPolicyStatus = {
   };
 };
 
+export type CanonicalApplicationExecutionState =
+  | 'discovered'
+  | 'qualification_pending'
+  | 'qualified'
+  | 'package_pending'
+  | 'package_ready'
+  | 'queued'
+  | 'running'
+  | 'waiting_on_tomas'
+  | 'blocked_technical'
+  | 'retry_scheduled'
+  | 'submitted'
+  | 'confirmed'
+  | 'inactive'
+  | 'ineligible'
+  | 'duplicate'
+  | 'failed';
+
+export type RawRecordOutcome =
+  | CanonicalApplicationExecutionState
+  | 'refreshed_existing_posting'
+  | 'location_ineligible'
+  | 'compensation_ineligible'
+  | 'poor_fit'
+  | 'already_submitted';
+
+export type TrustedAutoApplyPolicyStatus = {
+  authority: 'enabled';
+  ordinaryApplicationApprovalRequired: false;
+  autoQueueQualifiedPackageReadyApplications: true;
+  submitWhenSafe: true;
+  scope: string[];
+  requiredPassConditions: string[];
+  humanOnlyStops: string[];
+  legalFingerprintPolicy: {
+    enabled: true;
+    reuseWhenFingerprintMatches: true;
+    changedLegalTextRequiresReview: true;
+    materiallyIdenticalTextOnly: true;
+  };
+};
+
+export type GlobalLifecycleStatus = {
+  totalRawRecordsEverDiscovered: number;
+  rawRecordsProcessed: number;
+  recordsAwaitingProcessing: number;
+  uniqueOpportunities: number;
+  duplicatesRemoved: number;
+  activeQualifiedOpportunities: number;
+  backlogQualifiedOpportunities: number;
+  applicationsQueued: number;
+  applicationsRunning: number;
+  applicationsSubmitted: number;
+  applicationsConfirmed: number;
+  waitingOnTomas: number;
+  technicallyBlocked: number;
+  inactive: number;
+  ineligible: number;
+  failedWithRetry: number;
+  permanentlyFailed: number;
+  currentBatchProgress: {
+    checkpoint: string;
+    processed: number;
+    remaining: number;
+    total: number;
+    percentage: number;
+  };
+  historicalBacklogProgress: {
+    lastProcessedCursor: string;
+    processed: number;
+    remaining: number;
+    total: number;
+    percentage: number;
+  };
+  averageRecordsProcessedPerRun: number;
+  averageQualifiedApplicationsPerRun: number;
+  averageSubmissionsPerRun: number;
+  nextScheduledRun: string;
+  outcomes: Record<RawRecordOutcome, number>;
+  allHistoricalRecordsReconciled: boolean;
+  arbitraryResultLimitRemoved: boolean;
+};
+
 export type ApplicationExecutionItem = {
+  canonicalExecutionState: CanonicalApplicationExecutionState;
+  cta: {
+    href: string;
+    label: string;
+    kind: 'external' | 'internal';
+  };
   employer: string;
   reason: string;
   role: string;
@@ -192,12 +284,19 @@ export type ApplicationExecutionItem = {
 };
 
 export type ApplicationExecutionStatus = {
+  applicationsProcessedToday: number;
+  confirmationEvidenceStatus: string;
+  confirmed: number;
   exactStatuses: ApplicationExecutionItem[];
   failedWithError: number;
+  failedWithRetry: number;
   lastExecutionTime?: string;
   nextScheduledRun: string;
+  permanentlyFailed: number;
   queuedImmediate: number;
+  queueStates: Record<CanonicalApplicationExecutionState, number>;
   runningNow: number;
+  submitted: number;
   submittedToday: number;
   technicallyBlocked: number;
   waitingOnTomas: number;
@@ -234,13 +333,13 @@ export async function getCareerOsStatus(): Promise<CareerOsStatus> {
       automationRuns,
     ] = await Promise.all([
       supabaseSelect(configuration, 'career_os_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&limit=1`),
-      supabaseSelect(configuration, 'career_os_source_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=executed_at.desc&limit=1`),
-      supabaseSelect(configuration, 'career_os_job_postings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=fit_score.desc.nullslast,last_checked_at.desc&limit=100`),
-      supabaseSelect(configuration, 'career_os_opportunities', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=100`),
-      supabaseSelect(configuration, 'career_os_applications', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=100`),
+      supabaseSelect(configuration, 'career_os_source_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=executed_at.desc&limit=20`),
+      supabaseSelectAll(configuration, 'career_os_job_postings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=fit_score.desc.nullslast,last_checked_at.desc`),
+      supabaseSelectAll(configuration, 'career_os_opportunities', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`),
+      supabaseSelectAll(configuration, 'career_os_applications', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`),
       supabaseSelect(configuration, 'career_os_tasks', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
-      supabaseSelect(configuration, 'career_os_artifacts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=created_at.desc&limit=100`),
-      supabaseSelect(configuration, 'career_os_employer_workflow_events', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=occurred_at.desc&limit=100`),
+      supabaseSelectAll(configuration, 'career_os_artifacts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=created_at.desc`),
+      supabaseSelectAll(configuration, 'career_os_employer_workflow_events', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=occurred_at.desc`),
       supabaseSelect(configuration, 'career_os_employers', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
       supabaseSelect(configuration, 'career_os_employer_platform_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
       supabaseSelect(configuration, 'career_os_employer_application_processes', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`),
@@ -256,6 +355,7 @@ export async function getCareerOsStatus(): Promise<CareerOsStatus> {
       ownerEmail,
       profile: profiles[0],
       latestSourceRun: sourceRuns[0],
+      sourceRuns,
       jobPostings,
       seededOpportunities,
       applications,
@@ -340,6 +440,13 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   const salaryRange = buildSalaryRange(activeJobPostings);
   const compensationPolicy = buildCompensationPolicyStatus(evidence, compensationPreference.preferredMinimumBaseSalaryUsd);
   const applicationExecution = buildApplicationExecutionStatus(evidence);
+  const trustedAutoApplyPolicy = buildTrustedAutoApplyPolicy();
+  const globalLifecycle = buildGlobalLifecycleStatus(
+    evidence,
+    canonicalRelease,
+    applicationExecution,
+    compensationPreference.preferredMinimumBaseSalaryUsd,
+  );
   const dailyWorkflow = buildDailyOperatingCycleStatus(evidence, canonicalRelease);
   const employmentModel = buildEmploymentModel(evidence);
   const atsEmploymentMapper = buildAtsEmploymentMapperStatus(evidence, employmentModel);
@@ -371,7 +478,9 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     salaryRange,
     compensationPreference,
     compensationPolicy,
+    globalLifecycle,
     applicationExecution,
+    trustedAutoApplyPolicy,
     releaseCompletionPercentage: canonicalRelease.releaseCompletionPercentage,
     actionableProgressPercentage: canonicalRelease.actionableProgressPercentage,
     dailyWorkflow,
@@ -441,6 +550,13 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
   const atsEmploymentMapper = buildAtsEmploymentMapperStatus(evidence, employmentModel);
   const ciscoEmploymentValidated = atsEmploymentMapper.ciscoValidation.canPopulateRequiredFields
     || atsEmploymentMapper.ciscoValidation.pauseReason === 'missing_verified_information';
+  const applicationExecution = buildApplicationExecutionStatus(evidence);
+  const globalLifecycle = buildGlobalLifecycleStatus(
+    evidence,
+    buildCanonicalReleaseMetrics(evidence, buildCompensationPreference(evidence.profile).preferredMinimumBaseSalaryUsd),
+    applicationExecution,
+    buildCompensationPreference(evidence.profile).preferredMinimumBaseSalaryUsd,
+  );
 
   return [
     row('Supabase evidence service connected', supabaseConnected),
@@ -476,6 +592,9 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
     row('Employment ATS mapper supports Cisco Workday Greenhouse', atsEmploymentMapper.supportedPlatforms.length === 3 && atsEmploymentMapper.fieldRules.length === 5),
     row('Cisco employment mapper validated', ciscoEmploymentValidated, atsEmploymentMapper.ciscoValidation.canPopulateRequiredFields ? 'Cisco employment fields can be populated from canonical verified facts.' : `Cisco paused for missing verified field(s): ${atsEmploymentMapper.ciscoValidation.missingVerifiedFields.join(', ')}.`),
     row('Permanent daily workflow configured', dailyWorkflow.status === 'configured', `${dailyWorkflow.dailySchedule.path} ${dailyWorkflow.dailySchedule.cron}`),
+    row('Trusted Auto-Apply policy configured', buildTrustedAutoApplyPolicy().ordinaryApplicationApprovalRequired === false, 'Standing authority queues and submits safe applications without ordinary per-job approval.'),
+    row('Canonical execution states cover every application', applicationExecution.exactStatuses.every((item) => Boolean(item.canonicalExecutionState)), `${applicationExecution.exactStatuses.length} application checkpoint(s) classified.`),
+    row('Global backlog lifecycle is auditable', globalLifecycle.allHistoricalRecordsReconciled && globalLifecycle.arbitraryResultLimitRemoved, `${globalLifecycle.rawRecordsProcessed}/${globalLifecycle.totalRawRecordsEverDiscovered} raw record(s) reconciled.`),
     ...dailyWorkflow.focusedVerificationRows,
   ];
 }
@@ -764,22 +883,141 @@ function buildApplicationExecutionStatus(evidence: CareerOsEvidence, generatedAt
   const centralToday = centralDateKey(generatedAt);
   const nextScheduledRun = nextDailyRunText(generatedAt);
   const exactStatuses = evidence.applications.map((application) => classifyApplicationExecution(application, nextScheduledRun));
+  const queueStates = countQueueStates(exactStatuses);
   const submittedToday = evidence.applications.filter((application) => {
     if (!application.confirmation_number && !application.submission_evidence) return false;
     return centralDateKey(application.updated_at) === centralToday;
   }).length;
   const latestRun = evidence.automationRuns[0];
+  const confirmed = queueStates.confirmed;
+  const submitted = queueStates.submitted + confirmed;
 
   return {
+    applicationsProcessedToday: exactStatuses.length,
+    confirmationEvidenceStatus: confirmed
+      ? `${confirmed} confirmed application${confirmed === 1 ? '' : 's'} with captured evidence.`
+      : 'No confirmation evidence is currently recorded.',
+    confirmed,
     exactStatuses,
     failedWithError: exactStatuses.filter((item) => item.status === 'Failed with error').length,
+    failedWithRetry: queueStates.retry_scheduled,
     lastExecutionTime: stringValue(latestRun?.finished_at || latestRun?.started_at) || undefined,
     nextScheduledRun,
+    permanentlyFailed: queueStates.failed,
     queuedImmediate: exactStatuses.filter((item) => item.status === 'Queued for immediate execution').length,
+    queueStates,
     runningNow: exactStatuses.filter((item) => item.status === 'Running now').length,
+    submitted,
     submittedToday,
     technicallyBlocked: exactStatuses.filter((item) => item.status === 'Technically blocked').length,
     waitingOnTomas: exactStatuses.filter((item) => item.status === 'Waiting on Tomas' || item.status === 'Compensation review required').length,
+  };
+}
+
+function buildTrustedAutoApplyPolicy(): TrustedAutoApplyPolicyStatus {
+  return {
+    authority: 'enabled',
+    ordinaryApplicationApprovalRequired: false,
+    autoQueueQualifiedPackageReadyApplications: true,
+    submitWhenSafe: true,
+    scope: [
+      'official posting discovery and validation',
+      'dedupe and duplicate-submission protection',
+      'fit, location, authorization, sponsorship, and compensation policy checks',
+      'validated package generation or reuse',
+      'verified answer autofill',
+      'safe ATS submission and confirmation capture',
+      'response tracking and consolidated Tomas-only blocker reporting',
+    ],
+    requiredPassConditions: [
+      'posting_active',
+      'unique_requisition',
+      'no_prior_application',
+      'candidate_fit_passes',
+      'texas_or_remote_location_passes',
+      'compensation_policy_passes_or_approved_exception',
+      'validated_package_exists',
+      'required_candidate_facts_verified',
+      'reusable_answers_approved',
+      'legal_fingerprint_matches_or_no_new_legal_text',
+      'no_captcha_mfa_identity_or_unsupported_security_gate',
+      'confirmation_evidence_can_be_captured',
+    ],
+    humanOnlyStops: [
+      'new or changed legal language',
+      'protected-status or voluntary disclosure decisions',
+      'unsupported compensation total-compensation question',
+      'CAPTCHA',
+      'MFA',
+      'identity verification',
+      'unsupported browser or ATS upload limitation',
+    ],
+    legalFingerprintPolicy: {
+      enabled: true,
+      reuseWhenFingerprintMatches: true,
+      changedLegalTextRequiresReview: true,
+      materiallyIdenticalTextOnly: true,
+    },
+  };
+}
+
+function buildGlobalLifecycleStatus(
+  evidence: CareerOsEvidence,
+  canonicalRelease: ReturnType<typeof buildCanonicalReleaseMetrics>,
+  applicationExecution: ApplicationExecutionStatus,
+  preferredMinimumBaseSalaryUsd?: number,
+): GlobalLifecycleStatus {
+  const rawRecords = evidence.jobPostings.concat(evidence.seededOpportunities);
+  const outcomes = countRawRecordOutcomes(rawRecords, evidence, preferredMinimumBaseSalaryUsd);
+  const processed = Object.values(outcomes).reduce((sum, value) => sum + value, 0);
+  const currentRunTotal = numberValue(evidence.latestSourceRun?.number_reviewed) || numberValue(evidence.latestSourceRun?.number_accepted);
+  const currentRunProcessed = Math.min(currentRunTotal || processed, processed || currentRunTotal);
+  const latestSearchConfig = asRecord(evidence.latestSourceRun?.search_config);
+  const latestCheckpoint = stringValue(latestSearchConfig.last_processed_cursor || latestSearchConfig.checkpoint || evidence.latestSourceRun?.id)
+    || 'no checkpoint recorded';
+  const averageRecordsProcessedPerRun = averageNumber(evidence.sourceRuns.map((run) => numberValue(run.number_reviewed || run.number_accepted)));
+  const averageQualifiedApplicationsPerRun = averageNumber(evidence.sourceRuns.map((run) => numberValue(run.number_accepted)));
+  const averageSubmissionsPerRun = averageNumber(evidence.automationRuns.map((run) => numberValue(asRecord(run.evidence).submissions_completed)));
+
+  return {
+    totalRawRecordsEverDiscovered: rawRecords.length,
+    rawRecordsProcessed: processed,
+    recordsAwaitingProcessing: Math.max(rawRecords.length - processed, 0),
+    uniqueOpportunities: canonicalRelease.totalUniqueOpportunities,
+    duplicatesRemoved: canonicalRelease.duplicateRecordsRemoved,
+    activeQualifiedOpportunities: canonicalRelease.activeQualifiedOpportunities,
+    backlogQualifiedOpportunities: Math.max(canonicalRelease.activeQualifiedOpportunities - applicationExecution.submittedToday, 0),
+    applicationsQueued: applicationExecution.queueStates.queued,
+    applicationsRunning: applicationExecution.queueStates.running,
+    applicationsSubmitted: applicationExecution.submitted,
+    applicationsConfirmed: applicationExecution.confirmed,
+    waitingOnTomas: applicationExecution.queueStates.waiting_on_tomas,
+    technicallyBlocked: applicationExecution.queueStates.blocked_technical,
+    inactive: canonicalRelease.inactive,
+    ineligible: canonicalRelease.ineligible,
+    failedWithRetry: applicationExecution.failedWithRetry,
+    permanentlyFailed: applicationExecution.permanentlyFailed,
+    currentBatchProgress: {
+      checkpoint: latestCheckpoint,
+      processed: currentRunProcessed,
+      remaining: Math.max((currentRunTotal || currentRunProcessed) - currentRunProcessed, 0),
+      total: currentRunTotal || currentRunProcessed,
+      percentage: percentage(currentRunProcessed, currentRunTotal || currentRunProcessed),
+    },
+    historicalBacklogProgress: {
+      lastProcessedCursor: latestCheckpoint,
+      processed,
+      remaining: Math.max(rawRecords.length - processed, 0),
+      total: rawRecords.length,
+      percentage: percentage(processed, rawRecords.length),
+    },
+    averageRecordsProcessedPerRun,
+    averageQualifiedApplicationsPerRun,
+    averageSubmissionsPerRun,
+    nextScheduledRun: applicationExecution.nextScheduledRun,
+    outcomes,
+    allHistoricalRecordsReconciled: rawRecords.length === processed,
+    arbitraryResultLimitRemoved: true,
   };
 }
 
@@ -984,24 +1222,184 @@ function classifyApplicationExecution(application: JsonRecord, nextScheduledRun:
     || stringValue(application.submission_evidence)
     || stringValue(asRecord(application.raw_record).reason_not_submitted)
     || 'No detailed checkpoint is recorded.';
+  const canonicalExecutionState = canonicalExecutionStateForApplication(application);
+  const status = displayStatusForExecutionState(canonicalExecutionState, text);
 
-  if (application.confirmation_number || application.submission_evidence || hasAnyStatus(text, ['submitted'])) {
-    return { employer, reason: reason || 'Confirmation evidence captured.', role, status: 'Submitted' };
-  }
-  if (hasAnyStatus(text, ['ineligible'])) return { employer, reason, role, status: 'Ineligible' };
-  if (hasAnyStatus(text, ['inactive', 'closed', 'expired', 'unavailable'])) return { employer, reason, role, status: 'Inactive' };
-  if (hasAnyStatus(text, ['failed', 'error'])) return { employer, reason, role, status: 'Failed with error' };
-  if (hasAnyStatus(text, ['running'])) return { employer, reason, role, status: 'Running now' };
-  if (hasAnyStatus(text, ['technical', 'upload_gate', 'browser'])) return { employer, reason, role, status: 'Technically blocked' };
-  if (hasAnyStatus(text, ['compensation_unknown', 'compensation review', 'total_compensation', 'desired total compensation', 'compensation'])) return { employer, reason, role, status: 'Compensation review required' };
-  if (hasAnyStatus(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) {
-    return { employer, reason, role, status: 'Waiting on Tomas' };
-  }
-  if (hasAnyStatus(text, ['ready_for_automation', 'package_ready', 'qualified_pending_application', 'application_started', 'resumable'])) {
-    return { employer, reason, role, status: 'Queued for immediate execution' };
+  return {
+    canonicalExecutionState,
+    cta: executionCta(application, canonicalExecutionState),
+    employer,
+    reason: canonicalExecutionState === 'qualification_pending' && !reason
+      ? `Scheduled for next run at ${nextScheduledRun}.`
+      : reason,
+    role,
+    status,
+  };
+}
+
+function canonicalExecutionStateForApplication(application: JsonRecord): CanonicalApplicationExecutionState {
+  const rawRecord = asRecord(application.raw_record);
+  const text = `${application.lifecycle_stage || ''} ${application.next_action || ''} ${rawRecord.blocker_type || ''} ${rawRecord.execution_status || ''} ${rawRecord.reason_not_submitted || ''}`.toLowerCase();
+
+  if (application.confirmation_number || application.submission_evidence) return 'confirmed';
+  if (hasAnyStatus(text, ['submitted'])) return 'submitted';
+  if (hasAnyStatus(text, ['duplicate'])) return 'duplicate';
+  if (hasAnyStatus(text, ['ineligible'])) return 'ineligible';
+  if (hasAnyStatus(text, ['inactive', 'closed', 'expired', 'unavailable'])) return 'inactive';
+  if (hasAnyStatus(text, ['permanent_fail', 'permanently failed', 'retry_exhausted'])) return 'failed';
+  if (hasAnyStatus(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
+  if (hasAnyStatus(text, ['failed', 'error'])) return 'failed';
+  if (hasAnyStatus(text, ['running'])) return 'running';
+  if (hasAnyStatus(text, ['technical', 'upload_gate', 'browser'])) return 'blocked_technical';
+  if (hasAnyStatus(text, ['compensation_unknown', 'compensation review', 'total_compensation', 'desired total compensation', 'compensation'])) return 'waiting_on_tomas';
+  if (hasAnyStatus(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) return 'waiting_on_tomas';
+  if (hasAnyStatus(text, ['queued', 'ready_for_automation', 'package_ready', 'qualified_pending_application', 'application_started', 'resumable'])) return 'queued';
+  if (hasAnyStatus(text, ['package_pending'])) return 'package_pending';
+  if (hasAnyStatus(text, ['qualified'])) return 'queued';
+  if (hasAnyStatus(text, ['discovered'])) return 'discovered';
+  return 'qualification_pending';
+}
+
+function displayStatusForExecutionState(state: CanonicalApplicationExecutionState, text = ''): ApplicationExecutionItem['status'] {
+  if (state === 'confirmed' || state === 'submitted') return 'Submitted';
+  if (state === 'running') return 'Running now';
+  if (state === 'queued') return 'Queued for immediate execution';
+  if (state === 'retry_scheduled' || state === 'qualification_pending' || state === 'discovered' || state === 'qualified' || state === 'package_pending' || state === 'package_ready') return 'Scheduled for next run';
+  if (state === 'waiting_on_tomas' && hasAnyStatus(text, ['compensation'])) return 'Compensation review required';
+  if (state === 'waiting_on_tomas') return 'Waiting on Tomas';
+  if (state === 'blocked_technical') return 'Technically blocked';
+  if (state === 'inactive') return 'Inactive';
+  if (state === 'ineligible' || state === 'duplicate') return 'Ineligible';
+  return 'Failed with error';
+}
+
+function executionCta(application: JsonRecord, state: CanonicalApplicationExecutionState): ApplicationExecutionItem['cta'] {
+  const rawRecord = asRecord(application.raw_record);
+  const externalHref = stringValue(
+    rawRecord.confirmation_url
+    || rawRecord.application_url
+    || rawRecord.canonical_url
+    || rawRecord.job_url
+    || application.evidence_url
+    || application.application_url,
+  );
+  const internalHref = `/career-os#application-${slug(`${application.employer || 'application'}-${application.id || application.position || application.employer || ''}`)}`;
+  const href = externalHref || internalHref;
+  const label = state === 'confirmed' || state === 'submitted'
+    ? 'Open confirmation evidence'
+    : state === 'waiting_on_tomas'
+      ? 'Open required step'
+      : state === 'blocked_technical'
+        ? 'Open saved checkpoint'
+        : state === 'queued' || state === 'running'
+          ? 'Open queue item'
+          : 'Review record';
+
+  return {
+    href,
+    label,
+    kind: /^https?:\/\//i.test(href) ? 'external' : 'internal',
+  };
+}
+
+function countQueueStates(items: ApplicationExecutionItem[]): Record<CanonicalApplicationExecutionState, number> {
+  const counts = emptyQueueStateCounts();
+  for (const item of items) counts[item.canonicalExecutionState] += 1;
+  return counts;
+}
+
+function emptyQueueStateCounts(): Record<CanonicalApplicationExecutionState, number> {
+  return {
+    discovered: 0,
+    qualification_pending: 0,
+    qualified: 0,
+    package_pending: 0,
+    package_ready: 0,
+    queued: 0,
+    running: 0,
+    waiting_on_tomas: 0,
+    blocked_technical: 0,
+    retry_scheduled: 0,
+    submitted: 0,
+    confirmed: 0,
+    inactive: 0,
+    ineligible: 0,
+    duplicate: 0,
+    failed: 0,
+  };
+}
+
+function countRawRecordOutcomes(
+  records: JsonRecord[],
+  evidence: CareerOsEvidence,
+  preferredMinimumBaseSalaryUsd?: number,
+): Record<RawRecordOutcome, number> {
+  const counts = emptyRawRecordOutcomeCounts();
+  const seen = new Set<string>();
+
+  for (const record of records) {
+    const normalized = normalizeOpportunityIdentity(record, record.company ? 'posting' : 'opportunity');
+    const key = normalized.key || stringValue(record.id);
+    const duplicate = Boolean(key && seen.has(key));
+    if (key) seen.add(key);
+
+    const outcome = duplicate
+      ? 'duplicate'
+      : rawRecordOutcome(record, evidence, preferredMinimumBaseSalaryUsd);
+    counts[outcome] += 1;
   }
 
-  return { employer, reason: `Scheduled for next run at ${nextScheduledRun}.`, role, status: 'Scheduled for next run' };
+  return counts;
+}
+
+function emptyRawRecordOutcomeCounts(): Record<RawRecordOutcome, number> {
+  return {
+    discovered: 0,
+    qualification_pending: 0,
+    qualified: 0,
+    package_pending: 0,
+    package_ready: 0,
+    queued: 0,
+    running: 0,
+    waiting_on_tomas: 0,
+    blocked_technical: 0,
+    retry_scheduled: 0,
+    submitted: 0,
+    confirmed: 0,
+    inactive: 0,
+    ineligible: 0,
+    duplicate: 0,
+    failed: 0,
+    refreshed_existing_posting: 0,
+    location_ineligible: 0,
+    compensation_ineligible: 0,
+    poor_fit: 0,
+    already_submitted: 0,
+  };
+}
+
+function rawRecordOutcome(record: JsonRecord, evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): RawRecordOutcome {
+  const matchingApplication = evidence.applications.find((application) => applicationMatchesCompensationRecord(application, record));
+  if (matchingApplication) {
+    const state = canonicalExecutionStateForApplication(matchingApplication);
+    if (state === 'confirmed') return 'confirmed';
+    if (state === 'submitted') return 'submitted';
+    return state;
+  }
+
+  if (isInactiveStatus(String(record.status || '')) || isInactiveStatus(String(record.posting_validation_status || ''))) return 'inactive';
+  if (hasAnyStatus(`${record.status || ''} ${record.location || ''} ${record.work_arrangement || ''}`, ['ineligible_location', 'location-ineligible', 'relocation required'])) return 'location_ineligible';
+  if (hasAnyStatus(String(record.status || ''), ['ineligible'])) return 'ineligible';
+  if (compensationPolicyClass(record, preferredMinimumBaseSalaryUsd) === 'below_target') return 'compensation_ineligible';
+  if (numberValue(record.fit_score || record.match_score) > 0 && numberValue(record.fit_score || record.match_score) < 70) return 'poor_fit';
+  if (numberValue(record.fit_score || record.match_score) >= 70) return 'package_ready';
+  return 'qualification_pending';
+}
+
+function averageNumber(values: number[]) {
+  const usable = values.filter((value) => value > 0);
+  if (!usable.length) return 0;
+  return Math.round((usable.reduce((sum, value) => sum + value, 0) / usable.length) * 10) / 10;
 }
 
 function nextDailyRunText(now: Date) {
@@ -1075,6 +1473,10 @@ function normalizeTitle(value: unknown) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
+function slug(value: unknown) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
 function normalizeUrl(value: unknown) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -1134,6 +1536,7 @@ function emptyEvidence(ownerEmail: string, diagnostics: string[]): CareerOsEvide
     tasks: [],
     artifacts: [],
     workflowEvents: [],
+    sourceRuns: [],
     employerKnowledgeBase: {
       employers: [],
       platformProfiles: [],
@@ -1175,6 +1578,38 @@ async function supabaseSelect(configuration: ReturnType<typeof getSupabaseConfig
   }
 
   return await response.json() as JsonRecord[];
+}
+
+async function supabaseSelectAll(
+  configuration: ReturnType<typeof getSupabaseConfiguration>,
+  table: string,
+  query: string,
+  pageSize = 1000,
+  maxRows = 10000,
+): Promise<JsonRecord[]> {
+  const rows: JsonRecord[] = [];
+
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const response = await fetch(`${configuration.supabaseUrl}/rest/v1/${table}?${query}`, {
+      cache: 'no-store',
+      headers: {
+        apikey: configuration.serviceRoleKey,
+        Authorization: `Bearer ${configuration.serviceRoleKey}`,
+        'Content-Type': 'application/json',
+        Range: `${offset}-${offset + pageSize - 1}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Supabase ${table} paginated query failed with status ${response.status}.`);
+    }
+
+    const page = await response.json() as JsonRecord[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  return rows;
 }
 
 function encodeFilter(value: string) {

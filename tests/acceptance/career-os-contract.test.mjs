@@ -232,6 +232,14 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
   assert.match(page, /Daily Automation Health/);
   assert.match(page, /Immediate queue processor/);
   assert.match(page, /Exact next action/);
+  assert.match(page, /Autonomous operating status/);
+  assert.match(page, /Trusted Auto-Apply/);
+  assert.match(page, /Global Lifecycle Counts/);
+  assert.match(page, /Total raw records ever discovered/);
+  assert.match(page, /Current batch progress/);
+  assert.match(page, /Historical backlog progress/);
+  assert.match(page, /Canonical state:/);
+  assert.match(page, /applicationExecutionCta/);
   assert.doesNotMatch(page, /hard-coded production metrics/i);
 });
 
@@ -252,6 +260,34 @@ test('Career OS daily execution separates raw records, qualification, queueing, 
   assert.match(statusSource, /total_compensation_exception/);
   assert.match(statusSource, /Compensation review required/);
   assert.match(statusSource, /base_and_total_compensation_not_interchangeable|hasTotalCompensationEvidence/);
+});
+
+test('global autonomous discovery supports complete result sets, checkpoints, and canonical queue states', () => {
+  const dailyCycleSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-daily-cycle.ts'), 'utf8');
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+  const cronRoute = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'daily-run', 'route.ts'), 'utf8');
+
+  assert.match(statusSource, /TrustedAutoApplyPolicyStatus/);
+  assert.match(statusSource, /ordinaryApplicationApprovalRequired: false/);
+  assert.match(statusSource, /legalFingerprintPolicy/);
+  assert.match(statusSource, /changedLegalTextRequiresReview/);
+  assert.match(statusSource, /CanonicalApplicationExecutionState/);
+  assert.match(statusSource, /globalLifecycle/);
+  assert.match(statusSource, /supabaseSelectAll/);
+  assert.match(statusSource, /Range: `\$\{offset\}-\$\{offset \+ pageSize - 1\}`/);
+  assert.match(statusSource, /totalRawRecordsEverDiscovered/);
+  assert.match(statusSource, /recordsAwaitingProcessing/);
+  assert.match(statusSource, /queueStates/);
+  assert.match(dailyCycleSource, /GLOBAL_DISCOVERY_BATCH_SIZE/);
+  assert.match(dailyCycleSource, /GLOBAL_DISCOVERY_MAX_CONCURRENCY/);
+  assert.match(dailyCycleSource, /GLOBAL_DISCOVERY_RETRY_LIMIT/);
+  assert.match(dailyCycleSource, /processDiscoveryBacklogBatches/);
+  assert.match(dailyCycleSource, /postings\.push\(posting\)/);
+  assert.match(dailyCycleSource, /postings_persisted/);
+  assert.match(dailyCycleSource, /global_lifecycle/);
+  assert.match(dailyCycleSource, /trusted_auto_apply_policy/);
+  assert.match(dailyCycleSource, /canonicalExecutionState/);
+  assert.match(cronRoute, /postingsPersisted/);
 });
 
 test('minimal employment history model maps only ATS employment fields and validates Cisco safely', () => {

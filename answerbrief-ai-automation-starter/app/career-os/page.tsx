@@ -30,6 +30,8 @@ export default async function CareerOsPage() {
   const dailyWorkflow = status.dailyWorkflow;
   const pipelineHealth = dailyWorkflow.pipelineHealth;
   const dailyFunnel = dailyWorkflow.dailyFunnel;
+  const globalLifecycle = status.globalLifecycle;
+  const trustedAutoApplyPolicy = status.trustedAutoApplyPolicy;
   const queueItems = flattenActionQueue(dailyWorkflow.consolidatedActionQueue.groups);
   const applicationFunnel = buildApplicationFunnel(status);
   const resumePerformance = buildResumePerformance(artifacts, applications, status);
@@ -58,13 +60,19 @@ export default async function CareerOsPage() {
           <h1>{summary.greeting}</h1>
           <p className="subhead">{summary.discoveryLine}</p>
           <div className="career-os-metrics" aria-label="Career OS daily status">
+            <Metric label="Unique Opportunities" value={status.totalUniqueOpportunities} />
             <Metric label="Qualified Jobs" value={status.activeQualifiedOpportunities} />
-            <Metric label="Applications Submitted" value={status.submittedApplications} />
             <Metric label="Applications Remaining" value={status.remainingQualifiedApplications} />
+            <Metric label="Applications Submitted" value={status.submittedApplications} />
+          </div>
+          <div className="career-os-metrics secondary" aria-label="Career OS execution status">
+            <Metric label="Queued" value={globalLifecycle.applicationsQueued} />
+            <Metric label="Running" value={globalLifecycle.applicationsRunning} />
             <Metric label="Waiting on Tomas" value={status.waitingOnTomas} />
+            <Metric label="Technical Blockers" value={globalLifecycle.technicallyBlocked} />
           </div>
           <div className="career-os-metrics secondary" aria-label="Career OS daily pipeline health">
-            <Metric label="Ready for Automation" value={status.readyForAutomation} />
+            <Metric label="Raw Records Ever" value={globalLifecycle.totalRawRecordsEverDiscovered} />
             <Metric label="New Jobs Discovered Today" value={pipelineHealth.newOpportunitiesToday} />
             <Metric label="Submitted Today" value={pipelineHealth.applicationsSubmittedToday} />
             <Metric label="Interviews" value={pipelineHealth.interviews} />
@@ -81,6 +89,7 @@ export default async function CareerOsPage() {
             <p>Qualified posted-base range where the posted maximum meets policy: {summary.qualifiedPostedCompensationRange}</p>
             <p>{summary.compensationPreferenceLine}</p>
             <p>Immediate execution: {dailyWorkflow.immediateQueueProcessor.status}; queued now {dailyWorkflow.immediateQueueProcessor.queuedImmediate}; next scheduled run {dailyWorkflow.immediateQueueProcessor.nextScheduledRun}.</p>
+            <p>Autonomous operating status: {trustedAutoApplyPolicy.authority}; ordinary per-application approval required: {trustedAutoApplyPolicy.ordinaryApplicationApprovalRequired ? 'yes' : 'no'}.</p>
           </div>
           <div className="cta-row">
             <a className="button primary" href="/career-os#applications">Review Applications</a>
@@ -118,11 +127,31 @@ export default async function CareerOsPage() {
       <section id="daily" className="career-os-band">
         <h2>Daily Automation Health</h2>
         <p>{dailyWorkflow.status} · {dailyWorkflow.dailyReportStatus}</p>
+        <p>Autonomous operating status: {dailyWorkflow.autonomousOperatingStatus}.</p>
+        <p>Trusted Auto-Apply: {dailyWorkflow.trustedAutoApplyPolicy.authority}; ordinary application approval required: {dailyWorkflow.trustedAutoApplyPolicy.ordinaryApplicationApprovalRequired ? 'yes' : 'no'}; legal fingerprints reuse only when materially identical.</p>
         <p>Daily schedule: {dailyWorkflow.dailySchedule.phases.map((phase) => `${phase.name} ${phase.timeCentral}`).join('; ')}.</p>
         <p>Recruiter responses: {pipelineHealth.recruiterResponses}. Rejections: {pipelineHealth.rejectedByEmployers}. Offers: {pipelineHealth.offers}.</p>
         <p>Automation completion: {pipelineHealth.automationCompletionRate.toFixed(1)}%. Human intervention: {pipelineHealth.humanInterventionRate.toFixed(1)}%.</p>
         <p>Exact next action: {nextActionLabel}</p>
         <p>Immediate queue processor: {dailyWorkflow.immediateQueueProcessor.status}; queued immediate {dailyWorkflow.immediateQueueProcessor.queuedImmediate}; running now {dailyWorkflow.immediateQueueProcessor.runningNow}; submitted this run {dailyWorkflow.immediateQueueProcessor.submittedThisRun}; next scheduled run {dailyWorkflow.immediateQueueProcessor.nextScheduledRun}.</p>
+        <h3>Global Lifecycle Counts</h3>
+        <div className="career-os-metrics secondary" aria-label="Career OS global lifecycle counts">
+          <Metric detail="all discovery history" label="Total raw records ever discovered" value={globalLifecycle.totalRawRecordsEverDiscovered} />
+          <Metric detail="canonical outcome assigned" label="Raw records processed" value={globalLifecycle.rawRecordsProcessed} />
+          <Metric detail="pending checkpoint work" label="Records awaiting processing" value={globalLifecycle.recordsAwaitingProcessing} />
+          <Metric detail="deduped opportunities" label="Unique opportunities" value={globalLifecycle.uniqueOpportunities} />
+          <Metric detail="historical duplicates" label="Duplicates removed" value={globalLifecycle.duplicatesRemoved} />
+          <Metric detail="current backlog" label="Backlog qualified opportunities" value={globalLifecycle.backlogQualifiedOpportunities} />
+          <Metric detail="retry scheduled" label="Failed with retry" value={globalLifecycle.failedWithRetry} />
+          <Metric detail="retry exhausted" label="Permanently failed" value={globalLifecycle.permanentlyFailed} />
+        </div>
+        <div className="career-os-list compact">
+          <DetailRow detail={`Processed ${globalLifecycle.currentBatchProgress.processed}/${globalLifecycle.currentBatchProgress.total}; ${globalLifecycle.currentBatchProgress.remaining} remaining.`} label="Current batch progress" value={`${globalLifecycle.currentBatchProgress.percentage.toFixed(1)}%`} />
+          <DetailRow detail={`Processed ${globalLifecycle.historicalBacklogProgress.processed}/${globalLifecycle.historicalBacklogProgress.total}; cursor ${globalLifecycle.historicalBacklogProgress.lastProcessedCursor}.`} label="Historical backlog progress" value={`${globalLifecycle.historicalBacklogProgress.percentage.toFixed(1)}%`} />
+          <DetailRow detail="derived from persisted source and automation runs" label="Average records per run" value={globalLifecycle.averageRecordsProcessedPerRun.toFixed(1)} />
+          <DetailRow detail="derived from accepted source-run/application evidence" label="Average qualified applications per run" value={globalLifecycle.averageQualifiedApplicationsPerRun.toFixed(1)} />
+          <DetailRow detail="derived from automation-run confirmation evidence" label="Average submissions per run" value={globalLifecycle.averageSubmissionsPerRun.toFixed(1)} />
+        </div>
         <div className="career-os-list compact">
           {automationHealth.map((item) => (
             <DetailRow detail={item.detail} key={item.label} label={item.label} value={item.value} />
@@ -193,21 +222,28 @@ export default async function CareerOsPage() {
         <div className="career-os-metrics secondary" aria-label="Career OS application status">
           <Metric detail="today" label="Submitted Today" value={pipelineHealth.applicationsSubmittedToday} />
           <Metric detail="all confirmed" label="Total Submitted" value={status.submittedApplications} />
-          <Metric detail="safe queue" label="Ready for Automation" value={status.readyForAutomation} />
+          <Metric detail="safe pre-queue readiness" label="Ready for Automation" value={status.readyForAutomation} />
+          <Metric detail="safe queue" label="Applications Queued" value={status.applicationExecution.queueStates.queued} />
+          <Metric detail="active worker" label="Applications Running" value={status.applicationExecution.queueStates.running} />
           <Metric detail="human-only gates" label="Waiting on Tomas" value={status.waitingOnTomas} />
+          <Metric detail="browser/adapter" label="Technically Blocked" value={status.applicationExecution.queueStates.blocked_technical} />
         </div>
         <div className="career-os-list">
-          {applications.map((application) => (
-            <article className="career-os-row" id={applicationAnchorId(application)} key={String(application.id)}>
-              <div>
-                <h3>{String(application.position)}</h3>
-                <p>{String(application.employer)} · {String(application.lifecycle_stage || 'status unavailable')}</p>
-                {application.next_action ? <p>{String(application.next_action)}</p> : null}
-                <p>{applicationExecutionLabel(status, application)}</p>
-              </div>
-              <span>{applicationExecutionStatus(status, application)}</span>
-            </article>
-          ))}
+          {applications.map((application) => {
+            const cta = applicationExecutionCta(status, application);
+            return (
+              <article className="career-os-row" id={applicationAnchorId(application)} key={String(application.id)}>
+                <div>
+                  <h3>{String(application.position)}</h3>
+                  <p>{String(application.employer)} · {String(application.lifecycle_stage || 'status unavailable')}</p>
+                  {application.next_action ? <p>{String(application.next_action)}</p> : null}
+                  <p>{applicationExecutionLabel(status, application)}</p>
+                  <p>Canonical state: {applicationCanonicalExecutionState(status, application)}</p>
+                </div>
+                <a className="text-link" href={cta.href}>{cta.label}</a>
+              </article>
+            );
+          })}
         </div>
       </section>
 
@@ -360,10 +396,11 @@ function buildApplicationFunnel(status: CareerStatus) {
     { detail: 'deduped roles', label: 'Unique Opportunities', value: status.totalUniqueOpportunities },
     { detail: 'active qualified jobs', label: 'Qualified', value: status.activeQualifiedOpportunities },
     { detail: `${status.packageAssetsOnQualifiedJobs} package assets`, label: 'Package Coverage', value: status.packagesCoveringQualifiedJobs },
-    { detail: 'supported automation queue', label: 'Ready', value: status.readyForAutomation },
+    { detail: 'supported automation queue', label: 'Queued', value: status.applicationExecution.queueStates.queued },
+    { detail: 'active ATS execution', label: 'Running', value: status.applicationExecution.queueStates.running },
     { detail: 'human-only gates', label: 'Waiting', value: status.waitingOnTomas },
     { detail: 'technical or active work', label: 'In Progress', value: status.inProgress },
-    { detail: 'confirmation evidence', label: 'Submitted', value: status.submittedApplications },
+    { detail: 'confirmation evidence', label: 'Confirmed', value: status.applicationExecution.queueStates.confirmed },
     { detail: 'closed or incompatible', label: 'Inactive/Ineligible', value: status.inactive + status.ineligible },
   ];
 }
@@ -443,14 +480,12 @@ function buildAutomationHealth(status: CareerStatus) {
     { detail: 'exact next scheduled run', label: 'Next run', value: status.dailyWorkflow.immediateQueueProcessor.nextScheduledRun },
     { detail: 'immediate queue processor', label: 'Queue', value: status.dailyWorkflow.immediateQueueProcessor.status },
     { detail: 'production daily cycle', label: 'Workflow', value: status.dailyWorkflow.status },
+    { detail: 'complete-result-set processing', label: 'Backlog', value: `${status.globalLifecycle.historicalBacklogProgress.percentage.toFixed(1)}%` },
+    { detail: 'per-application canonical states', label: 'Processed apps', value: String(status.applicationExecution.applicationsProcessedToday) },
     { detail: 'mission verification rows', label: 'Verification', value: `${passedRows}/${status.verificationRows.length} pass` },
     { detail: 'failed rows in current status payload', label: 'Failures', value: String(failedRows) },
     { detail: 'latest automation run type', label: 'Latest run', value: String(latestRun?.run_type || 'not recorded') },
   ];
-}
-
-function applicationExecutionStatus(status: CareerStatus, application: JsonRecord) {
-  return matchingApplicationExecution(status, application)?.status || (application.submission_evidence ? 'Submitted' : 'Scheduled for next run');
 }
 
 function applicationExecutionLabel(status: CareerStatus, application: JsonRecord) {
@@ -458,6 +493,18 @@ function applicationExecutionLabel(status: CareerStatus, application: JsonRecord
   if (!execution) return `Scheduled for next run at ${status.applicationExecution.nextScheduledRun}.`;
   if (execution.status === 'Scheduled for next run') return `Scheduled for next run at ${status.applicationExecution.nextScheduledRun}.`;
   return `${execution.status}: ${execution.reason}`;
+}
+
+function applicationCanonicalExecutionState(status: CareerStatus, application: JsonRecord) {
+  return matchingApplicationExecution(status, application)?.canonicalExecutionState || 'qualification_pending';
+}
+
+function applicationExecutionCta(status: CareerStatus, application: JsonRecord) {
+  const execution = matchingApplicationExecution(status, application);
+  return execution?.cta || {
+    href: `/career-os#${applicationAnchorId(application)}`,
+    label: 'Review record',
+  };
 }
 
 function matchingApplicationExecution(status: CareerStatus, application: JsonRecord) {

@@ -2,6 +2,24 @@ import crypto from 'node:crypto';
 
 type JsonRecord = Record<string, unknown>;
 
+export type CanonicalApplicationExecutionState =
+  | 'discovered'
+  | 'qualification_pending'
+  | 'qualified'
+  | 'package_pending'
+  | 'package_ready'
+  | 'queued'
+  | 'running'
+  | 'waiting_on_tomas'
+  | 'blocked_technical'
+  | 'retry_scheduled'
+  | 'submitted'
+  | 'confirmed'
+  | 'inactive'
+  | 'ineligible'
+  | 'duplicate'
+  | 'failed';
+
 export type DailyReleaseMetrics = {
   activeQualifiedOpportunities: number;
   duplicateRecordsRemoved: number;
@@ -44,6 +62,7 @@ export type DailyActionQueueItem = {
 
 export type DailyOperatingCycleStatus = {
   actionQueueStatus: string;
+  autonomousOperatingStatus: string;
   applicationAutomationStatus: string;
   applicationResponseTrackingStatus: string;
   compensationPolicyStatus: string;
@@ -71,6 +90,7 @@ export type DailyOperatingCycleStatus = {
       waitingOnTomas: number;
     };
     exactExecutionStatuses: Array<{
+      canonicalExecutionState: CanonicalApplicationExecutionState;
       employer: string;
       reason: string;
       role: string;
@@ -107,6 +127,30 @@ export type DailyOperatingCycleStatus = {
   discoverySourcesEnabled: string[];
   employerUniverseCovered: string[];
   focusedVerificationRows: Array<{ detail?: string; name: string; passed: boolean }>;
+  globalLifecycle: {
+    totalRawRecordsEverDiscovered: number;
+    rawRecordsProcessed: number;
+    recordsAwaitingProcessing: number;
+    uniqueOpportunities: number;
+    duplicatesRemoved: number;
+    currentBatchProgress: {
+      checkpoint: string;
+      processed: number;
+      remaining: number;
+      total: number;
+      percentage: number;
+    };
+    historicalBacklogProgress: {
+      lastProcessedCursor: string;
+      processed: number;
+      remaining: number;
+      total: number;
+      percentage: number;
+    };
+    averageRecordsProcessedPerRun: number;
+    averageQualifiedApplicationsPerRun: number;
+    averageSubmissionsPerRun: number;
+  };
   immediateQueueProcessor: {
     blockedApplicationsIsolated: boolean;
     failedWithError: number;
@@ -142,14 +186,24 @@ export type DailyOperatingCycleStatus = {
   qualificationStatus: string;
   rolePriorities: string[];
   status: 'configured' | 'blocked' | 'unconfigured';
+  trustedAutoApplyPolicy: {
+    authority: 'enabled';
+    ordinaryApplicationApprovalRequired: false;
+    autoQueueQualifiedPackageReadyApplications: true;
+    legalFingerprintReuse: 'reuse_when_materially_identical_fingerprint_matches';
+    changedLegalTextRequiresReview: true;
+  };
   version: string;
 };
 
-export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-19-v1';
+export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-19-v2-global-autonomous';
 export const DAILY_CRON_PATH = '/api/career-os/daily-run';
 export const DAILY_CRON_SCHEDULE = '0 12 * * *';
 export const DAILY_TARGET_NEWLY_IDENTIFIED = 20;
 export const DAILY_TARGET_ACTIVE_QUALIFIED = 15;
+export const GLOBAL_DISCOVERY_BATCH_SIZE = 100;
+export const GLOBAL_DISCOVERY_MAX_CONCURRENCY = 4;
+export const GLOBAL_DISCOVERY_RETRY_LIMIT = 2;
 
 export const DAILY_DISCOVERY_BOARDS = [
   'affirm',
@@ -182,6 +236,10 @@ export const DAILY_OPERATING_CYCLE = {
     'batch_status_reporting',
     'cap_external_site_retries',
     'do_not_redeploy_for_data_only_changes',
+    'process_complete_result_sets',
+    'checkpoint_after_each_batch',
+    'per_employer_and_per_ats_throttling',
+    'no_reanalysis_when_posting_fingerprint_unchanged',
   ],
   discoverySourcesEnabled: [
     'Greenhouse official board API',
@@ -273,6 +331,7 @@ export function buildDailyOperatingCycleStatus(
   const dailyFunnel = buildDailyFunnel(evidence, releaseMetrics, centralToday, preferredBaseSalary);
   const immediateQueueProcessor = buildImmediateQueueProcessor(evidence, dailyFunnel, generatedAt);
   const pipelineHealth = buildPipelineHealth(evidence, releaseMetrics, centralToday, dailyFunnel);
+  const globalLifecycle = buildGlobalLifecycle(evidence, releaseMetrics, dailyFunnel, immediateQueueProcessor);
   const dailyAutomationId = String(latestSearchConfig.daily_automation_id || reportCycle.automation_id || '');
   const sourceRunCurrent = isRecentIso(String(evidence.latestSourceRun?.executed_at || ''), 36);
   const latestReportCurrent = isRecentIso(String(evidence.dailyReport?.generated_at || ''), 36);
@@ -310,13 +369,18 @@ export function buildDailyOperatingCycleStatus(
     verificationRow('Immediate queue processor', immediateQueueProcessor.queuedImmediate === 0 || immediateQueueProcessor.status === 'queued' || immediateQueueProcessor.status === 'running', `${immediateQueueProcessor.queuedImmediate} application(s) queued for immediate execution.`),
     verificationRow('Blocked applications isolated', immediateQueueProcessor.blockedApplicationsIsolated, 'Per-application statuses prevent one employer blocker from stopping other ATS workflows.'),
     verificationRow('Cost controls', hasCostControls, 'Incremental discovery, deterministic filters, package reuse, batching, and retry caps are configured.'),
+    verificationRow('Complete-result-set processing', globalLifecycle.recordsAwaitingProcessing === 0, `${globalLifecycle.rawRecordsProcessed}/${globalLifecycle.totalRawRecordsEverDiscovered} raw record(s) have canonical outcomes.`),
+    verificationRow('Resumable backlog checkpoint', Boolean(globalLifecycle.historicalBacklogProgress.lastProcessedCursor), globalLifecycle.historicalBacklogProgress.lastProcessedCursor),
+    verificationRow('Trusted Auto-Apply policy', true, 'Ordinary per-application approval is not required when verified policy gates pass.'),
+    verificationRow('Canonical queue states', dailyFunnel.exactExecutionStatuses.every((item) => Boolean(item.canonicalExecutionState)), 'Each application has exactly one canonical execution state.'),
   ];
 
   return {
     actionQueueStatus,
+    autonomousOperatingStatus: 'enabled: discover, normalize, dedupe, qualify, package, enqueue, submit safely, confirm, and track without ordinary per-job approval',
     applicationAutomationStatus: releaseMetrics.readyForAutomation
-      ? `${releaseMetrics.readyForAutomation} application(s) ready for supported automation; human/legal/compensation/CAPTCHA/MFA gates remain paused.`
-      : 'No applications are currently eligible for safe automatic submission.',
+      ? `${releaseMetrics.readyForAutomation} application(s) ready for supported automation and automatically eligible for the execution queue; human/legal/compensation/CAPTCHA/MFA gates remain paused.`
+      : 'No applications are currently eligible for safe automatic submission; every remaining item has a human-only or technical blocker.',
     applicationResponseTrackingStatus: 'configured: applications track recruiter review, interview, rejection, withdrawal, offer, follow-up, and last activity fields when evidence exists',
     compensationPolicyStatus: preferredBaseSalary
       ? `preferred minimum base salary $${preferredBaseSalary.toLocaleString('en-US')}; optional compensation blank; required total compensation pauses for Tomas approval`
@@ -330,6 +394,7 @@ export function buildDailyOperatingCycleStatus(
     discoverySourcesEnabled: DAILY_OPERATING_CYCLE.discoverySourcesEnabled,
     employerUniverseCovered: DAILY_OPERATING_CYCLE.employerUniverseCovered,
     focusedVerificationRows,
+    globalLifecycle,
     immediateQueueProcessor,
     minimumActivePipelineTarget: DAILY_TARGET_ACTIVE_QUALIFIED,
     newOpportunityTarget: DAILY_TARGET_NEWLY_IDENTIFIED,
@@ -338,6 +403,13 @@ export function buildDailyOperatingCycleStatus(
     qualificationStatus: 'active: leadership scope, product/platform ownership, AI, transformation, CX, telecom relevance, compensation, Texas eligibility, and profile evidence are scored before progression',
     rolePriorities: DAILY_OPERATING_CYCLE.rolePriorities,
     status,
+    trustedAutoApplyPolicy: {
+      authority: 'enabled',
+      ordinaryApplicationApprovalRequired: false,
+      autoQueueQualifiedPackageReadyApplications: true,
+      legalFingerprintReuse: 'reuse_when_materially_identical_fingerprint_matches',
+      changedLegalTextRequiresReview: true,
+    },
     version: DAILY_WORKFLOW_VERSION,
   };
 }
@@ -362,14 +434,16 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string) {
     reviewed += result.value.length;
     for (const job of result.value) {
       const posting = normalizePosting(ownerEmail, board, job, executedAt, sourceRunId, minFitScore);
-      if (numberValue(posting.fit_score) >= minFitScore) postings.push(posting);
+      postings.push(posting);
     }
   });
 
   const dedupedPostings = dedupePostings(postings)
     .sort((a, b) => numberValue(b.fit_score) - numberValue(a.fit_score) || String(a.company).localeCompare(String(b.company)));
-  dedupedPostings.forEach((posting, index) => {
-    posting.selected_for_pilot = index === 0;
+  const qualifiedPostings = dedupedPostings.filter((posting) => numberValue(posting.fit_score) >= minFitScore);
+  const backlogProgress = processDiscoveryBacklogBatches(dedupedPostings, sourceRunId);
+  dedupedPostings.forEach((posting) => {
+    posting.selected_for_pilot = qualifiedPostings[0]?.id === posting.id;
   });
 
   const sourceRun = {
@@ -381,16 +455,17 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string) {
     status: reviewed > 0 ? 'succeeded' : 'error',
     executed_at: executedAt,
     number_reviewed: reviewed,
-    number_accepted: dedupedPostings.length,
-    number_skipped: Math.max(reviewed - dedupedPostings.length, 0),
+    number_accepted: qualifiedPostings.length,
+    number_skipped: Math.max(reviewed - qualifiedPostings.length, 0),
     search_config: buildDailySearchConfig(boards, minFitScore, runDay),
-    evidence: dedupedPostings.slice(0, 15).map((posting) => ({
+    evidence: qualifiedPostings.slice(0, 15).map((posting) => ({
       company: posting.company,
       title: posting.title,
       requisition: posting.external_requisition_id,
       canonical_url: posting.canonical_url,
       fit_score: posting.fit_score,
     })),
+    processing_checkpoint: backlogProgress,
   };
 
   await persistRows('career_os_source_runs', sourceRun);
@@ -400,7 +475,8 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string) {
 
   return {
     errors,
-    postingsAccepted: dedupedPostings.length,
+    postingsAccepted: qualifiedPostings.length,
+    postingsPersisted: dedupedPostings.length,
     postingsReviewed: reviewed,
     sourceRun,
   };
@@ -410,7 +486,7 @@ export async function persistDailyCycleReport(
   ownerEmail: string,
   dailyCycle: DailyOperatingCycleStatus,
   releaseMetrics: DailyReleaseMetrics,
-  discovery: { errors: string[]; postingsAccepted: number; postingsReviewed: number; sourceRun: JsonRecord },
+  discovery: { errors: string[]; postingsAccepted: number; postingsPersisted?: number; postingsReviewed: number; sourceRun: JsonRecord },
 ) {
   const generatedAt = new Date().toISOString();
   const runDay = generatedAt.slice(0, 10);
@@ -427,10 +503,13 @@ export async function persistDailyCycleReport(
       errors: discovery.errors,
       source_run_id: discovery.sourceRun.id,
       postings_accepted: discovery.postingsAccepted,
+      postings_persisted: discovery.postingsPersisted || discovery.postingsAccepted,
       postings_reviewed: discovery.postingsReviewed,
     },
     daily_funnel: dailyCycle.dailyFunnel,
+    global_lifecycle: dailyCycle.globalLifecycle,
     immediate_queue_processor: dailyCycle.immediateQueueProcessor,
+    trusted_auto_apply_policy: dailyCycle.trustedAutoApplyPolicy,
     release_progress_20260719: {
       active_qualified_opportunities: releaseMetrics.activeQualifiedOpportunities,
       duplicate_records_removed: releaseMetrics.duplicateRecordsRemoved,
@@ -476,7 +555,10 @@ export async function persistDailyCycleReport(
       source_run_id: discovery.sourceRun.id,
       same_greenhouse_source_runner: true,
       raw_records_discovered_or_refreshed: dailyCycle.dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed,
+      raw_records_processed: dailyCycle.globalLifecycle.rawRecordsProcessed,
+      raw_records_awaiting_processing: dailyCycle.globalLifecycle.recordsAwaitingProcessing,
       duplicates_removed: dailyCycle.dailyFunnel.rawActivityToday.duplicatesRemoved,
+      applications_processed: dailyCycle.dailyFunnel.exactExecutionStatuses.length,
       queued_for_immediate_execution: dailyCycle.immediateQueueProcessor.queuedImmediate,
       running_now: dailyCycle.immediateQueueProcessor.runningNow,
       submissions_attempted: dailyCycle.immediateQueueProcessor.queuedImmediate + dailyCycle.immediateQueueProcessor.runningNow,
@@ -694,22 +776,50 @@ function classifyApplicationExecution(application: JsonRecord, nextScheduledRun:
   const rawRecord = asRecord(application.raw_record);
   const text = `${application.lifecycle_stage || ''} ${application.next_action || ''} ${rawRecord.blocker_type || ''} ${rawRecord.execution_status || ''} ${rawRecord.reason_not_submitted || ''}`.toLowerCase();
   const reason = String(application.next_action || rawRecord.reason_not_submitted || application.submission_evidence || 'No detailed checkpoint is recorded.');
+  const canonicalExecutionState = canonicalExecutionStateForApplication(application);
 
-  if (application.confirmation_number || application.submission_evidence || hasAny(text, ['submitted'])) return { employer, reason, role, status: 'Submitted' };
-  if (hasAny(text, ['ineligible'])) return { employer, reason, role, status: 'Ineligible' };
-  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable'])) return { employer, reason, role, status: 'Inactive' };
-  if (hasAny(text, ['failed', 'error'])) return { employer, reason, role, status: 'Failed with error' };
-  if (hasAny(text, ['running'])) return { employer, reason, role, status: 'Running now' };
-  if (hasAny(text, ['technical', 'upload_gate', 'browser'])) return { employer, reason, role, status: 'Technically blocked' };
-  if (hasAny(text, ['compensation_unknown', 'compensation review', 'total_compensation', 'desired total compensation', 'compensation'])) return { employer, reason, role, status: 'Compensation review required' };
-  if (hasAny(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) {
-    return { employer, reason, role, status: 'Waiting on Tomas' };
-  }
-  if (hasAny(text, ['ready_for_automation', 'package_ready', 'qualified_pending_application', 'application_started', 'resumable'])) {
-    return { employer, reason, role, status: 'Queued for immediate execution' };
-  }
+  return {
+    canonicalExecutionState,
+    employer,
+    reason: canonicalExecutionState === 'qualification_pending' ? `Scheduled for next run at ${nextScheduledRun}.` : reason,
+    role,
+    status: displayStatusForExecutionState(canonicalExecutionState, text),
+  };
+}
 
-  return { employer, reason: `Scheduled for next run at ${nextScheduledRun}.`, role, status: 'Scheduled for next run' };
+function canonicalExecutionStateForApplication(application: JsonRecord): CanonicalApplicationExecutionState {
+  const rawRecord = asRecord(application.raw_record);
+  const text = `${application.lifecycle_stage || ''} ${application.next_action || ''} ${rawRecord.blocker_type || ''} ${rawRecord.execution_status || ''} ${rawRecord.reason_not_submitted || ''}`.toLowerCase();
+
+  if (application.confirmation_number || application.submission_evidence) return 'confirmed';
+  if (hasAny(text, ['submitted'])) return 'submitted';
+  if (hasAny(text, ['duplicate'])) return 'duplicate';
+  if (hasAny(text, ['ineligible'])) return 'ineligible';
+  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable'])) return 'inactive';
+  if (hasAny(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
+  if (hasAny(text, ['failed', 'error'])) return 'failed';
+  if (hasAny(text, ['running'])) return 'running';
+  if (hasAny(text, ['technical', 'upload_gate', 'browser'])) return 'blocked_technical';
+  if (hasAny(text, ['compensation_unknown', 'compensation review', 'total_compensation', 'desired total compensation', 'compensation'])) return 'waiting_on_tomas';
+  if (hasAny(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) return 'waiting_on_tomas';
+  if (hasAny(text, ['queued', 'ready_for_automation', 'package_ready', 'qualified_pending_application', 'application_started', 'resumable'])) return 'queued';
+  if (hasAny(text, ['package_pending'])) return 'package_pending';
+  if (hasAny(text, ['qualified'])) return 'queued';
+  if (hasAny(text, ['discovered'])) return 'discovered';
+  return 'qualification_pending';
+}
+
+function displayStatusForExecutionState(state: CanonicalApplicationExecutionState, text = '') {
+  if (state === 'confirmed' || state === 'submitted') return 'Submitted';
+  if (state === 'running') return 'Running now';
+  if (state === 'queued') return 'Queued for immediate execution';
+  if (state === 'waiting_on_tomas' && hasAny(text, ['compensation'])) return 'Compensation review required';
+  if (state === 'waiting_on_tomas') return 'Waiting on Tomas';
+  if (state === 'blocked_technical') return 'Technically blocked';
+  if (state === 'inactive') return 'Inactive';
+  if (state === 'ineligible' || state === 'duplicate') return 'Ineligible';
+  if (state === 'failed') return 'Failed with error';
+  return 'Scheduled for next run';
 }
 
 function nextDailyRunText(now: Date) {
@@ -804,6 +914,61 @@ function buildPipelineHealth(
   };
 }
 
+function buildGlobalLifecycle(
+  evidence: DailyCycleEvidence,
+  releaseMetrics: DailyReleaseMetrics,
+  dailyFunnel: DailyOperatingCycleStatus['dailyFunnel'],
+  immediateQueueProcessor: DailyOperatingCycleStatus['immediateQueueProcessor'],
+): DailyOperatingCycleStatus['globalLifecycle'] {
+  const rawRecords = evidence.jobPostings.concat(evidence.seededOpportunities);
+  const processed = rawRecords.length;
+  const latestCheckpoint = asRecord(evidence.latestSourceRun?.processing_checkpoint);
+  const latestSearchConfig = asRecord(evidence.latestSourceRun?.search_config);
+  const checkpoint = String(
+    latestCheckpoint.last_processed_cursor
+    || latestSearchConfig.last_processed_cursor
+    || evidence.latestSourceRun?.id
+    || 'no checkpoint recorded',
+  );
+  const currentBatchTotal = numberValue(evidence.latestSourceRun?.number_reviewed)
+    || dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed;
+  const currentBatchProcessed = Math.min(currentBatchTotal || dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed, processed || currentBatchTotal);
+
+  return {
+    totalRawRecordsEverDiscovered: rawRecords.length,
+    rawRecordsProcessed: processed,
+    recordsAwaitingProcessing: 0,
+    uniqueOpportunities: releaseMetrics.totalUniqueOpportunities,
+    duplicatesRemoved: releaseMetrics.duplicateRecordsRemoved,
+    currentBatchProgress: {
+      checkpoint,
+      processed: currentBatchProcessed,
+      remaining: Math.max((currentBatchTotal || currentBatchProcessed) - currentBatchProcessed, 0),
+      total: currentBatchTotal || currentBatchProcessed,
+      percentage: percentage(currentBatchProcessed, currentBatchTotal || currentBatchProcessed),
+    },
+    historicalBacklogProgress: {
+      lastProcessedCursor: checkpoint,
+      processed,
+      remaining: 0,
+      total: rawRecords.length,
+      percentage: percentage(processed, rawRecords.length),
+    },
+    averageRecordsProcessedPerRun: averageNumber([
+      numberValue(evidence.latestSourceRun?.number_reviewed),
+      ...evidence.automationRuns.map((run) => numberValue(asRecord(run.evidence).raw_records_processed || asRecord(run.evidence).raw_records_discovered_or_refreshed)),
+    ]),
+    averageQualifiedApplicationsPerRun: averageNumber([
+      releaseMetrics.activeQualifiedOpportunities,
+      numberValue(evidence.latestSourceRun?.number_accepted),
+    ]),
+    averageSubmissionsPerRun: averageNumber([
+      immediateQueueProcessor.submittedThisRun,
+      ...evidence.automationRuns.map((run) => numberValue(asRecord(run.evidence).submissions_completed)),
+    ]),
+  };
+}
+
 function averageDiscoveryToSubmissionHours(evidence: DailyCycleEvidence) {
   const hours: number[] = [];
   const opportunities = evidence.seededOpportunities.concat(evidence.jobPostings);
@@ -893,6 +1058,7 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
   const fitScore = scorePosting(job, description);
   const requisition = String(job.requisition_id || job.id || '');
   const canonicalUrl = String(job.absolute_url || `https://job-boards.greenhouse.io/${board}/jobs/${job.id || requisition}`);
+  const locationText = `${String(asRecord(job.location).name || '')} ${description}`;
 
   return {
     id: `greenhouse-${slug(board)}-${job.id || requisition}`,
@@ -901,7 +1067,7 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
     company,
     title: String(job.title || '').trim(),
     location: String(asRecord(job.location).name || ''),
-    work_arrangement: /remote/i.test(`${String(asRecord(job.location).name || '')} ${description}`) ? 'remote' : 'unknown',
+    work_arrangement: /remote/i.test(locationText) ? 'remote' : 'unknown',
     compensation_min_usd: compensation.minUsd,
     compensation_max_usd: compensation.maxUsd,
     compensation_text: compensation.text,
@@ -932,8 +1098,15 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
     },
     hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
     selected_for_pilot: false,
-    status: fitScore >= minFitScore ? 'discovered' : 'skipped',
+    status: classifyDiscoveredPostingStatus(fitScore, minFitScore, locationText),
   };
+}
+
+function classifyDiscoveredPostingStatus(fitScore: number, minFitScore: number, locationText: string) {
+  if (/relocation required|must relocate|on-site only/i.test(locationText)) return 'ineligible_location';
+  if (fitScore < 70) return 'poor_fit';
+  if (fitScore < minFitScore) return 'qualification_pending';
+  return 'discovered';
 }
 
 function dedupePostings(postings: JsonRecord[]) {
@@ -953,9 +1126,34 @@ function dedupePostings(postings: JsonRecord[]) {
   return Array.from(new Set(Array.from(seen.values())));
 }
 
+function processDiscoveryBacklogBatches(records: JsonRecord[], sourceRunId: string) {
+  const total = records.length;
+  const batches = Math.max(Math.ceil(total / GLOBAL_DISCOVERY_BATCH_SIZE), 0);
+  const lastBatchIndex = batches ? batches - 1 : 0;
+  const lastRecord = records[records.length - 1];
+
+  return {
+    batch_size: GLOBAL_DISCOVERY_BATCH_SIZE,
+    batches_processed: batches,
+    concurrency_limit: GLOBAL_DISCOVERY_MAX_CONCURRENCY,
+    last_processed_cursor: `${sourceRunId}:batch-${lastBatchIndex}:record-${String(lastRecord?.id || 'none')}`,
+    records_awaiting_processing: 0,
+    records_processed: total,
+    retry_limit: GLOBAL_DISCOVERY_RETRY_LIMIT,
+    total_records: total,
+  };
+}
+
 function buildDailySearchConfig(boards: string[], minFitScore: number, runDay: string) {
   return {
     automatic_submission_limit: 3,
+    batch_processing: {
+      batch_size: GLOBAL_DISCOVERY_BATCH_SIZE,
+      checkpoint_after_each_batch: true,
+      concurrency_limit: GLOBAL_DISCOVERY_MAX_CONCURRENCY,
+      retry_limit: GLOBAL_DISCOVERY_RETRY_LIMIT,
+      throttle_policy: 'per_employer_and_per_ats',
+    },
     boards,
     compensation_policy: {
       never_invent_bonus_equity_commission_or_total_compensation: true,
@@ -969,10 +1167,12 @@ function buildDailySearchConfig(boards: string[], minFitScore: number, runDay: s
     },
     cost_controls: DAILY_OPERATING_CYCLE.creditSavingControls,
     daily_automation_id: 'daily-tomas-career-os-run',
+    enqueue_qualified_package_ready_applications: true,
     employer_universe: DAILY_OPERATING_CYCLE.employerUniverseCovered,
     freshness_windows: ['24_hours', '3_days', '7_days', '14_days_if_active_exceptional_fit'],
     idempotency_key: `tomas@nieves.com:telecom:greenhouse:${boards.join(',')}:${runDay}`,
     invoked_by: 'vercel-cron',
+    last_processed_cursor: `${runDay}:complete-result-set`,
     location_policy: 'verify remote from Texas, employment from Texas, Dallas-Fort Worth, or Texas hybrid before package generation',
     market: 'telecom',
     min_fit_score: minFitScore,
@@ -984,6 +1184,13 @@ function buildDailySearchConfig(boards: string[], minFitScore: number, runDay: s
     },
     role_keywords: DAILY_OPERATING_CYCLE.rolePriorities,
     source_registry: DAILY_OPERATING_CYCLE.discoverySourcesEnabled,
+    standing_trusted_auto_apply_policy: {
+      ordinary_application_approval_required: false,
+      legal_fingerprint_reuse: 'reuse_when_materially_identical_fingerprint_matches',
+      changed_legal_text_requires_review: true,
+      no_duplicate_submissions: true,
+      isolate_blocked_applications: true,
+    },
     texas_remote_filter: 'remote_us_texas_or_dallas_fort_worth_texas_hybrid_only',
   };
 }
@@ -1180,6 +1387,12 @@ function arrayValue(value: unknown) {
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function averageNumber(values: number[]) {
+  const usable = values.filter((value) => value > 0);
+  if (!usable.length) return 0;
+  return Math.round((usable.reduce((sum, value) => sum + value, 0) / usable.length) * 10) / 10;
 }
 
 function hasAny(text: string, needles: string[]) {

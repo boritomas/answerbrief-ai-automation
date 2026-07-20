@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
     discovery: {
       errors: discovery.errors,
       postingsAccepted: discovery.postingsAccepted,
+      postingsPersisted: discovery.postingsPersisted,
       postingsReviewed: discovery.postingsReviewed,
       sourceRunId: discovery.sourceRun.id,
     },
