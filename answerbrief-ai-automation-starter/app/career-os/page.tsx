@@ -71,22 +71,22 @@ export default async function CareerOsPage() {
           <h1>{summary.greeting}</h1>
           <p className="subhead">{summary.discoveryLine}</p>
           <div className="career-os-metrics" aria-label="Career OS daily status">
-            <Metric label="Unique Opportunities" value={status.totalUniqueOpportunities} />
-            <Metric label="Qualified Jobs" value={status.activeQualifiedOpportunities} />
-            <Metric label="Applications Remaining" value={status.remainingQualifiedApplications} />
-            <Metric label="Applications Submitted" value={status.submittedApplications} />
+            <Metric href="/career-os#opportunities" label="Unique Opportunities" value={status.totalUniqueOpportunities} />
+            <Metric href="/career-os#opportunities" label="Qualified Jobs" value={status.activeQualifiedOpportunities} />
+            <Metric href="/career-os#applications" label="Applications Remaining" value={status.remainingQualifiedApplications} />
+            <Metric href="/career-os#applications" label="Applications Submitted" value={status.submittedApplications} />
           </div>
           <div className="career-os-metrics secondary" aria-label="Career OS execution status">
-            <Metric label="Queued" value={globalLifecycle.applicationsQueued} />
-            <Metric label="Running" value={globalLifecycle.applicationsRunning} />
-            <Metric label="Waiting on Tomas" value={status.waitingOnTomas} />
-            <Metric label="Technical Blockers" value={globalLifecycle.technicallyBlocked} />
+            <Metric href="/career-os#applications" label="Queued" value={globalLifecycle.applicationsQueued} />
+            <Metric href="/career-os#applications" label="Running" value={globalLifecycle.applicationsRunning} />
+            <Metric href="/career-os#applications" label="Waiting on Tomas" value={status.waitingOnTomas} />
+            <Metric href="/career-os#applications" label="Technical Blockers" value={globalLifecycle.technicallyBlocked} />
           </div>
           <div className="career-os-metrics secondary" aria-label="Career OS daily pipeline health">
-            <Metric label="Raw Records Ever" value={globalLifecycle.totalRawRecordsEverDiscovered} />
-            <Metric label="New Jobs Discovered Today" value={pipelineHealth.newOpportunitiesToday} />
-            <Metric label="Submitted Today" value={pipelineHealth.applicationsSubmittedToday} />
-            <Metric label="Interviews" value={pipelineHealth.interviews} />
+            <Metric href="/career-os#daily" label="Raw Records Ever" value={globalLifecycle.totalRawRecordsEverDiscovered} />
+            <Metric href="/career-os#opportunities" label="New Jobs Discovered Today" value={pipelineHealth.newOpportunitiesToday} />
+            <Metric href="/career-os#applications" label="Submitted Today" value={pipelineHealth.applicationsSubmittedToday} />
+            <Metric href="/career-os#interviews" label="Interviews" value={pipelineHealth.interviews} />
           </div>
           <div className="career-os-summary">
             <p>{summary.applyLine}</p>
@@ -244,7 +244,23 @@ export default async function CareerOsPage() {
                 {item.exactOptions.length ? <p>Options: {item.exactOptions.join(', ')}</p> : null}
                 {item.resumePath ? <p>Resume: {item.resumePath}</p> : null}
               </div>
-              <span>{item.estimatedMinutes} min</span>
+              {(() => {
+                const application = actionQueueApplication(applications, item);
+                if (!application) return <span>{item.estimatedMinutes} min</span>;
+                const cta = applicationExecutionCta(status, application);
+                return (
+                  <ApplicationActionControl
+                    actionToken={pageActionToken}
+                    actionTokenExpiresAt={actionTokenExpiresAt}
+                    actionKind={cta.actionKind}
+                    applicationId={String(application.id)}
+                    disabledReason={cta.disabledReason}
+                    href={cta.href}
+                    label={cta.label}
+                    whatTomasMustDo={cta.whatTomasMustDo}
+                  />
+                );
+              })()}
             </article>
           ))}
         </div>
@@ -426,12 +442,26 @@ export default async function CareerOsPage() {
   );
 }
 
-function Metric({ detail, label, value }: { detail?: string; label: string; value: number }) {
-  return (
-    <div className="career-os-metric">
+function Metric({ detail, href, label, value }: { detail?: string; href?: string; label: string; value: number }) {
+  const content = (
+    <>
       <strong>{value}</strong>
       <span>{label}</span>
       {detail ? <small>{detail}</small> : null}
+    </>
+  );
+
+  if (href) {
+    return (
+      <a className="career-os-metric" href={href}>
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <div className="career-os-metric">
+      {content}
     </div>
   );
 }
@@ -599,6 +629,17 @@ function applicationExecutionCta(status: CareerStatus, application: JsonRecord) 
     whatCareerOsCompleted: 'Career OS preserved this application checkpoint.',
     whatTomasMustDo: 'Review the checkpoint, then resume automation if no legal, factual, security, or browser blocker remains.',
   };
+}
+
+function actionQueueApplication(applications: JsonRecord[], item: ReturnType<typeof flattenActionQueue>[number]) {
+  const employer = item.employer.toLowerCase();
+  const role = item.role.toLowerCase();
+  return applications.find((application) => (
+    String(application.employer || '').toLowerCase() === employer
+      && String(application.position || '').toLowerCase() === role
+      && !application.confirmation_number
+      && !application.submission_evidence
+  ));
 }
 
 function matchingApplicationExecution(status: CareerStatus, application: JsonRecord) {

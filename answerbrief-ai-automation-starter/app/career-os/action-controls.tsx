@@ -94,8 +94,12 @@ export function ApplicationActionControl({
   function openCheckpoint() {
     startTransition(async () => {
       setState('loading');
+      const checkpointWindow = href && /^https?:\/\//.test(href)
+        ? window.open('about:blank', '_blank')
+        : null;
       const result = await postCareerAction({ action: 'inspect_application', actionToken, actionTokenExpiresAt, applicationId });
       if (!result.ok) {
+        checkpointWindow?.close();
         setState(result.status === 'blocked' ? 'blocked' : 'error');
         setMessage(result.error || result.message || 'Action failed.');
         return;
@@ -103,7 +107,16 @@ export function ApplicationActionControl({
       setState('success');
       setCheckpointOpened(true);
       setMessage(result.message || 'Checkpoint opened. Complete the required step, then resume automation.');
-      if (result.openUrl && /^https?:\/\//.test(result.openUrl)) window.open(result.openUrl, '_blank', 'noopener,noreferrer');
+      if (result.openUrl && /^https?:\/\//.test(result.openUrl)) {
+        if (checkpointWindow) {
+          checkpointWindow.opener = null;
+          checkpointWindow.location.href = result.openUrl;
+        } else {
+          window.open(result.openUrl, '_blank', 'noopener,noreferrer');
+        }
+      } else {
+        checkpointWindow?.close();
+      }
       router.refresh();
     });
   }

@@ -493,6 +493,8 @@ test('Career OS waiting-on-Tomas CTAs expose one action, resume explicitly, and 
   assert.match(controls, /primaryAction/);
   assert.match(controls, /primaryLabel/);
   assert.match(controls, /Done - Resume Automation/);
+  assert.match(controls, /window\.open\('about:blank', '_blank'\)/);
+  assert.match(controls, /checkpointWindow\.location\.href = result\.openUrl/);
   assert.equal(controls.includes('router.refresh()'), true);
   assert.equal(controls.includes('Open checkpoint</a>'), false);
   assert.match(queue, /allowPausedForApplication/);
@@ -510,6 +512,16 @@ test('Career OS daily discovery is independent from submission queue processing'
   assert.match(dailyRun, /careerOsQueuePaused/);
   assert.match(dailyRun, /career_os_queue_paused/);
   assert.match(dailyRun, /persistDailyCycleReport/);
+});
+
+test('Career OS dashboard metrics and daily action queue are actionable controls', () => {
+  const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
+
+  assert.equal(page.includes('href="/career-os#applications" label="Applications Remaining"'), true);
+  assert.equal(page.includes('href="/career-os#applications" label="Waiting on Tomas"'), true);
+  assert.match(page, /actionQueueApplication/);
+  assert.equal(page.includes('queueItems.slice(0, 8).map'), true);
+  assert.match(page, /ApplicationActionControl/);
 });
 
 function findDuplicate(candidate, existingApplications) {
