@@ -178,7 +178,12 @@ function parseEmploymentPeriod(raw: JsonRecord) {
   };
 }
 
-function determineDatePrecision(startMonth?: string, startYear?: number, endMonth?: string, endYear?: number) {
+function determineDatePrecision(
+  startMonth?: string,
+  startYear?: number,
+  endMonth?: string,
+  endYear?: number,
+): CandidateEmploymentRecord['datePrecision'] {
   if ((startMonth && startYear) || (endMonth && endYear)) return 'month_year';
   if (startYear || endYear) return 'year';
   if (startMonth || endMonth) return 'month';
