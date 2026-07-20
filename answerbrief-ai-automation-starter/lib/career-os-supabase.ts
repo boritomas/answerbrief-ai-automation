@@ -175,7 +175,7 @@ async function pgPatchRowById(databaseUrl: string, table: string, id: string, pa
   await getPool(databaseUrl).query(sql, values);
 }
 
-async function pgUpsertRows(databaseUrl: string, rows: JsonRecord | JsonRecord[]) {
+async function pgUpsertRows(databaseUrl: string, table: string, rows: JsonRecord | JsonRecord[]) {
   const rowList = Array.isArray(rows) ? rows : [rows];
   if (!rowList.length) return;
   const columns = Array.from(new Set(rowList.flatMap((row) => Object.keys(row))));
@@ -206,7 +206,7 @@ function parseSupabaseQuery(query: string) {
   const orders: Array<{ column: string; direction: 'ASC' | 'DESC'; nulls: '' | ' NULLS FIRST' | ' NULLS LAST' }> = [];
   let limit: number | undefined;
 
-  for (const [key, value] of params.entries()) {
+  for (const [key, value] of Array.from(params.entries())) {
     if (key === 'select') continue;
     if (key === 'limit') {
       const parsed = Number(value);
