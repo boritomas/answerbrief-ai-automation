@@ -574,6 +574,17 @@ test('Career OS CTAs invoke a secured autonomous queue processor and record audi
   assert.equal(statusSource.includes("serverAction: '/api/career-os/actions'"), true);
 });
 
+test('Career OS review approvals create or reuse a canonical opportunity before application upsert', () => {
+  const actionsRoute = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'actions', 'route.ts'), 'utf8');
+
+  assert.match(actionsRoute, /findExistingOpportunity/);
+  assert.match(actionsRoute, /career_os_opportunities/);
+  assert.match(actionsRoute, /resolvedOpportunityId/);
+  assert.match(actionsRoute, /opportunity_id: resolvedOpportunityId/);
+  assert.match(actionsRoute, /status: 'approved_pending_application'/);
+  assert.match(actionsRoute, /canonical_job_posting_id: opportunityId/);
+});
+
 test('Career OS duplicate-submission locks prevent requeueing and backward transitions', () => {
   const queue = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
   const duplicateLock = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-duplicate-lock.ts'), 'utf8');

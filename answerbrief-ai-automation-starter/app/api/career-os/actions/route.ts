@@ -238,6 +238,39 @@ async function recordOpportunityReviewDecision({
     };
   }
 
+  const canonicalUrl = String(posting.canonical_url || '');
+  const requisition = String(posting.external_requisition_id || '');
+  const existingOpportunity = await findExistingOpportunity({
+    canonicalUrl,
+    opportunityId,
+    ownerEmail,
+    requisition,
+  });
+  const resolvedOpportunityId = String(existingOpportunity?.id || opportunityId);
+  if (!existingOpportunity) {
+    await careerOsUpsertRows('career_os_opportunities', {
+      id: resolvedOpportunityId,
+      owner_email: ownerEmail,
+      employer: String(posting.company || employer || 'Employer'),
+      position: String(posting.title || 'Role'),
+      requisition: requisition || null,
+      source: String(posting.ats_platform || asRecord(posting.raw_record).ats_platform || 'Career OS review queue'),
+      job_url: canonicalUrl || null,
+      match_score: Number(posting.fit_score || 0) || null,
+      recommendation: 'Review',
+      status: 'approved_pending_application',
+      next_action: 'Tomas approved this review-queue role. Career OS will reuse or generate the package before autonomous submission.',
+      discovered_at: posting.created_at || now,
+      updated_at: now,
+      raw_record: {
+        canonical_job_posting_id: opportunityId,
+        execution_status: 'qualified',
+        review_approved_at: now,
+        review_source: 'my_review_queue',
+      },
+    });
+  }
+
   const applications = await careerOsSelectRows('career_os_applications', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&opportunity_id=eq.${encodeURIComponent(opportunityId)}&limit=1`);
   const existing = applications[0] as Record<string, unknown> | undefined;
   const applicationId = String(existing?.id || `app-review-${opportunityId}`);
@@ -251,7 +284,7 @@ async function recordOpportunityReviewDecision({
   const applicationRow = {
     id: applicationId,
     owner_email: ownerEmail,
-    opportunity_id: opportunityId,
+    opportunity_id: resolvedOpportunityId,
     employer: String(posting.company || employer || 'Employer'),
     position: String(posting.title || 'Role'),
     lifecycle_stage: 'qualified_pending_application',
@@ -295,6 +328,33 @@ function similarityKey(posting: Record<string, unknown>) {
   const employer = String(posting.company || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const title = String(posting.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   return `${employer}:${title}`;
+}
+
+async function findExistingOpportunity({
+  canonicalUrl,
+  opportunityId,
+  ownerEmail,
+  requisition,
+}: {
+  canonicalUrl: string;
+  opportunityId: string;
+  ownerEmail: string;
+  requisition: string;
+}) {
+  const byId = await careerOsSelectRows('career_os_opportunities', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&id=eq.${encodeURIComponent(opportunityId)}&limit=1`);
+  if (byId[0]) return byId[0] as Record<string, unknown>;
+
+  if (requisition) {
+    const byRequisition = await careerOsSelectRows('career_os_opportunities', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&requisition=eq.${encodeURIComponent(requisition)}&limit=1`);
+    if (byRequisition[0]) return byRequisition[0] as Record<string, unknown>;
+  }
+
+  if (canonicalUrl) {
+    const byUrl = await careerOsSelectRows('career_os_opportunities', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&job_url=eq.${encodeURIComponent(canonicalUrl)}&limit=1`);
+    if (byUrl[0]) return byUrl[0] as Record<string, unknown>;
+  }
+
+  return undefined;
 }
 
 function deterministicUuid(input: string) {
