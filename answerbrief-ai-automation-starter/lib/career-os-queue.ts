@@ -116,7 +116,14 @@ const HUMAN_BLOCKER_TERMS = [
   'total_compensation',
 ];
 
-const TECHNICAL_BLOCKER_TERMS = ['technical', 'browser', 'upload_gate', 'unsupported', 'file-upload limitation'];
+const TECHNICAL_BLOCKER_TERMS = [
+  'technical',
+  'upload_gate',
+  'unsupported',
+  'file-upload limitation',
+  'chrome_file_upload_not_allowed',
+  'browser_worker_blocked_technical',
+];
 
 export function careerOsActionMetadata(application: JsonRecord) {
   const state = canonicalQueueState(application);
