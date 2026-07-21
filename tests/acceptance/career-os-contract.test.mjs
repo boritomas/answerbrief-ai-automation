@@ -42,6 +42,114 @@ test('posting normalization, duplicate prevention, and expired-job rejection wor
   assert.match(unique[0].dedupeKey, /example-regulated-tech/);
 });
 
+test('terminal applications with duplicate locks or confirmation evidence cannot re-enter active execution states', () => {
+  const activeExecutionResidue = (application) => {
+    const raw = application.raw_record || {};
+    const workerStatus = String(raw.browser_worker?.status || '').toLowerCase();
+    const lastReportStatus = String(raw.browser_worker_last_report?.status || '').toLowerCase();
+    const executionStatus = String(raw.execution_status || '').toLowerCase();
+    const reasons = [];
+    if (['queued', 'running', 'waiting_on_tomas'].includes(workerStatus)) reasons.push(`browser_worker.status ${workerStatus}`);
+    if (['queued', 'running', 'waiting_on_tomas'].includes(lastReportStatus)) reasons.push(`browser_worker_last_report.status ${lastReportStatus}`);
+    if (['queued', 'running', 'waiting_on_tomas', 'resumable'].includes(executionStatus)) reasons.push(`execution_status ${executionStatus}`);
+    return reasons;
+  };
+
+  const staleResidueFixtures = [
+    {
+      id: 'app-affirm-7718659003',
+      raw_record: {
+        duplicate_locked: true,
+        externally_submitted: true,
+        execution_status: 'externally_submitted',
+        browser_worker: { status: 'waiting_on_tomas' },
+        browser_worker_last_report: { status: 'waiting_on_tomas' },
+      },
+    },
+    {
+      id: 'app-affirm-7780490003',
+      raw_record: {
+        externally_confirmed: true,
+        externally_submitted: true,
+        execution_status: 'confirmed',
+        browser_worker: { status: 'waiting_on_tomas' },
+        browser_worker_last_report: { status: 'waiting_on_tomas' },
+      },
+    },
+  ];
+  assert.deepEqual(
+    staleResidueFixtures.map((application) => ({ id: application.id, reasons: activeExecutionResidue(application) })),
+    [
+      { id: 'app-affirm-7718659003', reasons: ['browser_worker.status waiting_on_tomas', 'browser_worker_last_report.status waiting_on_tomas'] },
+      { id: 'app-affirm-7780490003', reasons: ['browser_worker.status waiting_on_tomas', 'browser_worker_last_report.status waiting_on_tomas'] },
+    ],
+  );
+
+  const cleanedTerminalFixtures = [
+    {
+      id: 'app-affirm-7718659003',
+      raw_record: {
+        duplicate_locked: true,
+        externally_submitted: true,
+        execution_status: 'externally_submitted',
+        browser_worker: { status: 'terminal_locked' },
+        browser_worker_last_report: { status: 'terminal_locked' },
+      },
+    },
+    {
+      id: 'app-affirm-7780490003',
+      raw_record: {
+        externally_confirmed: true,
+        externally_submitted: true,
+        execution_status: 'confirmed',
+        browser_worker: { status: 'terminal_locked' },
+        browser_worker_last_report: { status: 'terminal_locked' },
+      },
+    },
+    {
+      id: 'app-twilio-8029164',
+      raw_record: {
+        manual_submission_attested: true,
+        execution_status: 'externally_submitted',
+      },
+    },
+    {
+      id: 'app-cloudflare-8022491',
+      raw_record: {
+        manual_submission_attested: true,
+        execution_status: 'externally_submitted',
+      },
+    },
+    {
+      id: 'app-mongodb-7974801',
+      raw_record: {
+        duplicate_locked: true,
+        externally_confirmed: true,
+        execution_status: 'duplicate_locked',
+      },
+    },
+    {
+      id: 'app-servicenow-744000138413067',
+      raw_record: {
+        duplicate_locked: true,
+        externally_confirmed: true,
+        execution_status: 'duplicate_locked',
+      },
+    },
+    {
+      id: 'app-five9-5811077004',
+      raw_record: {
+        duplicate_locked: true,
+        externally_confirmed: true,
+        execution_status: 'duplicate_locked',
+      },
+    },
+  ];
+  for (const application of cleanedTerminalFixtures) {
+    assert.deepEqual(activeExecutionResidue(application), [], application.id);
+  }
+});
+
 test('Candidate Master Profile validation and unsupported-fact rejection protect external artifacts', () => {
   const validation = validateCandidateProfile(profile);
   assert.equal(validation.passed, true, validation.issues.join(', '));
@@ -251,6 +359,7 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
 test('Career OS daily execution separates raw records, qualification, queueing, and compensation policy', () => {
   const dailyCycleSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-daily-cycle.ts'), 'utf8');
   const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+  const queueSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
 
   assert.match(dailyCycleSource, /rawRecordsDiscoveredOrRefreshed/);
   assert.match(dailyCycleSource, /newlyDiscoveredRecords/);
@@ -265,8 +374,7 @@ test('Career OS daily execution separates raw records, qualification, queueing, 
   assert.match(statusSource, /total_compensation_exception/);
   assert.match(statusSource, /Compensation review required/);
   assert.match(statusSource, /base_and_total_compensation_not_interchangeable|hasTotalCompensationEvidence/);
-  assert.match(statusSource, /queued_for_browser_worker/);
-  assert.match(statusSource, /waiting_on_tomas_browser_worker/);
+  assert.match(queueSource, /waiting_on_tomas_browser_worker/);
   assert.match(dailyCycleSource, /queued_for_browser_worker/);
   assert.match(dailyCycleSource, /waiting_on_tomas_browser_worker/);
 });
@@ -284,7 +392,8 @@ test('global autonomous discovery supports complete result sets, checkpoints, an
   assert.match(statusSource, /CanonicalApplicationExecutionState/);
   assert.match(statusSource, /globalLifecycle/);
   assert.match(statusSource, /supabaseSelectAll/);
-  assert.match(statusSource, /Range: `\$\{offset\}-\$\{offset \+ pageSize - 1\}`/);
+  assert.match(statusSource, /rangeEnd: offset \+ pageSize - 1/);
+  assert.match(statusSource, /rangeStart: offset/);
   assert.match(statusSource, /totalRawRecordsEverDiscovered/);
   assert.match(statusSource, /recordsAwaitingProcessing/);
   assert.match(statusSource, /queueStates/);

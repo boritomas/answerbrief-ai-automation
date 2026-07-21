@@ -409,9 +409,8 @@ export function canonicalQueueState(application: JsonRecord): QueueState {
   const browserWorker = asRecord(raw.browser_worker);
   const lastReport = asRecord(raw.browser_worker_last_report);
   const text = applicationText(application);
-  if (application.confirmation_number || application.submission_evidence) return 'confirmed';
-  if (hasManualSubmissionAttestation(application)) return 'submitted';
-  if (lifecycleStage === 'duplicate_locked' || raw.duplicate_locked === true) return 'duplicate';
+  const terminalState = terminalQueueState(application);
+  if (terminalState) return terminalState;
   if (hasAny(text, TECHNICAL_BLOCKER_TERMS)) return 'blocked_technical';
   if (lifecycleStage === 'waiting_on_tomas_browser_worker' || stringValue(lastReport.status).toLowerCase() === 'waiting_on_tomas') return 'waiting_on_tomas';
   if (lifecycleStage === 'browser_worker_blocked_technical' || stringValue(lastReport.status).toLowerCase() === 'blocked_technical') return 'blocked_technical';
@@ -439,10 +438,10 @@ function actionKindForApplication(application: JsonRecord, state: QueueState): Q
   if (state === 'blocked_technical') return 'view_technical_blocker';
   if (hasAny(text, ['total_compensation', 'desired total compensation', 'compensation_unknown', 'compensation review'])) return 'enter_compensation';
   if (hasAny(text, ['employment_start_month', 'employment date', 'start month', 'employment history facts', 'verified employment history', 'requires additional verified answers', 'missing required fields', 'job title*', 'company*', 'from*', 'to*'])) return 'answer_question';
+  if (hasAny(text, ['account', 'workday', 'login', 'sign in', 'sign into', 'acknowledgement', 'acknowledgment'])) return 'create_or_open_account';
   if (hasAny(text, ['ai policy'])) return 'review_legal';
   if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'policy'])) return 'review_legal';
   if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'open_security_step';
-  if (hasAny(text, ['account', 'workday', 'login', 'sign in'])) return 'create_or_open_account';
   if (hasAny(text, ['upload', 'resume'])) return 'upload_resume';
   if (state === 'queued' || state === 'running') return 'continue_application';
   return 'continue_application';
@@ -462,7 +461,7 @@ function actionLabel(kind: QueueActionKind, text: string) {
     if (hasAny(text, ['job title*', 'company*', 'from*', 'to*', 'requires additional verified answers', 'missing required fields'])) return 'Verify Employment Details';
     return hasAny(text, ['employment']) ? 'Verify Employment History' : 'Answer Question';
   }
-  if (kind === 'create_or_open_account') return 'Create Workday Account';
+  if (kind === 'create_or_open_account') return hasAny(text, ['geico']) ? 'Open GEICO Workday' : 'Create Workday Account';
   if (kind === 'upload_resume') return 'View Resume Package';
   if (kind === 'open_security_step') {
     if (hasAny(text, ['captcha'])) return 'Complete CAPTCHA';
@@ -504,10 +503,23 @@ function humanOrTechnicalBlocker(application: JsonRecord) {
   if (hasAny(text, ['employment_start_month', 'employment date', 'start month', 'employment history facts', 'verified employment history', 'requires additional verified answers', 'missing required fields', 'job title*', 'company*', 'from*', 'to*'])) {
     return 'Tomas must verify the missing employment history facts requested by the ATS before automation can continue.';
   }
+  if (hasAny(text, ['geico', 'acknowledgement', 'acknowledgment']) && hasAny(text, ['account', 'workday', 'login', 'sign in', 'sign into'])) {
+    return 'Tomas must create or sign in to the GEICO Workday account and review the required acknowledgement before automation can continue.';
+  }
+  if (hasAny(text, ['account', 'workday', 'login', 'sign in', 'sign into', 'acknowledgement', 'acknowledgment'])) return 'Tomas must create or open the employer account, then resume automation.';
   if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'ai policy', 'policy'])) return 'Tomas must review and approve the exact legal, privacy, AI, NDA, or attestation text.';
-  if (hasAny(text, ['account', 'workday', 'login', 'sign in'])) return 'Tomas must create or open the employer account, then resume automation.';
   if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'Tomas must complete the security or identity step in the employer session.';
   return '';
+}
+
+function terminalQueueState(application: JsonRecord): QueueState | null {
+  const lifecycleStage = stringValue(application.lifecycle_stage).toLowerCase();
+  const raw = asRecord(application.raw_record);
+  if (application.confirmation_number || application.submission_evidence || raw.externally_confirmed === true) return 'confirmed';
+  if (hasManualSubmissionAttestation(application) || lifecycleStage === 'externally_submitted' || raw.externally_submitted === true) return 'submitted';
+  if (lifecycleStage === 'duplicate_locked' || raw.duplicate_locked === true) return 'duplicate';
+  if (lifecycleStage === 'withdrawn' || lifecycleStage === 'inactive') return 'inactive';
+  return null;
 }
 
 function completedSummary(application: JsonRecord, state: QueueState) {

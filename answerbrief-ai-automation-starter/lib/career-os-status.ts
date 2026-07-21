@@ -164,6 +164,11 @@ type VerificationRow = {
   passed: boolean;
 };
 
+type DuplicateSafetyFailure = {
+  applicationId: string;
+  reason: string;
+};
+
 export type CompensationPolicyStatus = {
   allDiscoveredPostedCompensationRange: {
     minUsd?: number;
@@ -438,6 +443,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   const salaryRange = buildSalaryRange(activeJobPostings);
   const compensationPolicy = buildCompensationPolicyStatus(evidence, compensationPreference.preferredMinimumBaseSalaryUsd);
   const applicationExecution = buildApplicationExecutionStatus(evidence);
+  const duplicateSafety = evaluateDuplicateApplicationSafety(evidence.applications);
   const trustedAutoApplyPolicy = buildTrustedAutoApplyPolicy();
   const globalLifecycle = buildGlobalLifecycleStatus(
     evidence,
@@ -448,7 +454,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   const dailyWorkflow = buildDailyOperatingCycleStatus(evidence, canonicalRelease);
   const employmentModel = buildEmploymentModel(evidence);
   const atsEmploymentMapper = buildAtsEmploymentMapperStatus(evidence, employmentModel);
-  const verificationRows = buildVerificationRows(evidence, supabaseConnected, dailyWorkflow);
+  const verificationRows = buildVerificationRows(evidence, supabaseConnected, dailyWorkflow, duplicateSafety);
 
   return {
     environment: supabaseConnected ? 'production' : 'unconfigured',
@@ -539,7 +545,12 @@ function buildNextAction(
   return undefined;
 }
 
-function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: boolean, dailyWorkflow: DailyOperatingCycleStatus): VerificationRow[] {
+function buildVerificationRows(
+  evidence: CareerOsEvidence,
+  supabaseConnected: boolean,
+  dailyWorkflow: DailyOperatingCycleStatus,
+  duplicateSafety: { checked: number; failures: DuplicateSafetyFailure[] },
+): VerificationRow[] {
   const pilot = evidence.jobPostings.find((job) => job.selected_for_pilot) || evidence.jobPostings[0];
   const pilotArtifacts = evidence.artifacts.filter((artifact) => artifact.opportunity_id === pilot?.id);
   const pilotWorkflow = evidence.workflowEvents.filter((event) => event.opportunity_id === pilot?.id);
@@ -604,7 +615,13 @@ function buildVerificationRows(evidence: CareerOsEvidence, supabaseConnected: bo
     row('Employer account record saved', Boolean(affirmAccount)),
     row('Live UI shows factual production state', supabaseConnected && Boolean(pilot && evidence.latestSourceRun)),
     row('Daily automation uses same workflow', automationUsesSamePipeline),
-    row('Duplicate prevention passes', evidence.jobPostings.length === new Set(evidence.jobPostings.map((job) => `${job.company}:${job.external_requisition_id}`)).size),
+    row(
+      'Duplicate prevention passes',
+      duplicateSafety.failures.length === 0,
+      duplicateSafety.failures.length
+        ? duplicateSafety.failures.map((failure) => `${failure.applicationId}: ${failure.reason}`).join('; ')
+        : `Verified ${duplicateSafety.checked} terminal or duplicate-locked application(s) cannot re-enter active execution states.`,
+    ),
     row('Production health passes', supabaseConnected && evidence.diagnostics.length === 0),
     row('Deployment evidence exists', Boolean(evidence.deployment.deploymentUrl)),
     row('Production browser validation evidence exists', evidence.workflowEvents.some((event) => event.event_type === 'production_browser_validation')),
@@ -1303,6 +1320,61 @@ function canonicalExecutionStateForApplication(application: JsonRecord): Canonic
     default:
       return 'qualification_pending';
   }
+}
+
+function evaluateDuplicateApplicationSafety(applications: JsonRecord[]) {
+  const failures: DuplicateSafetyFailure[] = [];
+  let checked = 0;
+
+  for (const application of applications) {
+    const applicationId = stringValue(application.id) || 'unknown-application';
+    const lifecycleStage = stringValue(application.lifecycle_stage).toLowerCase();
+    const raw = asRecord(application.raw_record);
+    const isTerminal = Boolean(
+      application.confirmation_number
+      || application.submission_evidence
+      || raw.externally_submitted === true
+      || raw.externally_confirmed === true
+      || hasManualSubmissionAttestation(application)
+      || raw.duplicate_locked === true
+      || ['externally_submitted', 'confirmed', 'duplicate_locked', 'withdrawn', 'inactive'].includes(lifecycleStage),
+    );
+    if (!isTerminal) continue;
+    checked += 1;
+
+    const reasons: string[] = [];
+    const state = canonicalQueueState(application);
+    if (['qualified', 'package_ready', 'queued', 'running', 'waiting_on_tomas', 'retry_scheduled'].includes(state)) {
+      reasons.push(`canonical state ${state}`);
+    }
+
+    const browserWorker = asRecord(raw.browser_worker);
+    const lastReport = asRecord(raw.browser_worker_last_report);
+    const workerStatus = stringValue(browserWorker.status).toLowerCase();
+    const lastReportStatus = stringValue(lastReport.status).toLowerCase();
+    const executionStatus = stringValue(raw.execution_status).toLowerCase();
+
+    if (['queued', 'running', 'waiting_on_tomas'].includes(workerStatus)) reasons.push(`browser_worker.status ${workerStatus}`);
+    if (['queued', 'running', 'waiting_on_tomas'].includes(lastReportStatus)) reasons.push(`browser_worker_last_report.status ${lastReportStatus}`);
+    if (['queued', 'running', 'waiting_on_tomas', 'resumable'].includes(executionStatus)) reasons.push(`execution_status ${executionStatus}`);
+    if (raw.browser_worker_ready === true || raw.resumable === true) reasons.push('resumable execution flag present');
+
+    if (reasons.length) {
+      failures.push({
+        applicationId,
+        reason: reasons.join(', '),
+      });
+    }
+  }
+
+  return { checked, failures };
+}
+
+function hasManualSubmissionAttestation(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return raw.manual_submission_attested === true
+    || raw.submission_source === 'manual_tomas_attestation'
+    || raw.user_confirmed_submission === true;
 }
 
 function displayStatusForExecutionState(state: CanonicalApplicationExecutionState, text = ''): ApplicationExecutionItem['status'] {
