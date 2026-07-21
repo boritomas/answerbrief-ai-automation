@@ -145,7 +145,7 @@ export default async function CareerOsPage() {
             <p>Autonomous operating status: {trustedAutoApplyPolicy.authority}; ordinary per-application approval required: {trustedAutoApplyPolicy.ordinaryApplicationApprovalRequired ? 'yes' : 'no'}.</p>
           </div>
           <div className="cta-row">
-            <a className="button primary" href="/career-os#applications">Review Applications</a>
+            <a className="button primary" href="/career-os#applications">Open My Action Center</a>
             <a className="button secondary" href="/career-os#daily">Show All</a>
           </div>
         </div>
@@ -284,33 +284,13 @@ export default async function CareerOsPage() {
           ))}
         </div>
         <div className="career-os-list">
-          {queueItems.slice(0, 8).map((item) => (
-            <article className="career-os-row" key={`${item.group}-${item.employer}-${item.role}-${item.exactQuestionOrAction}`}>
-              <div>
-                <h3>{item.employer}: {item.exactQuestionOrAction}</h3>
-                <p>{item.role} · {item.group.replace(/_/g, ' ')} · unlocks {item.applicationsUnlocked}</p>
-                {item.exactOptions.length ? <p>Options: {item.exactOptions.join(', ')}</p> : null}
-                {item.resumePath ? <p>Resume: {item.resumePath}</p> : null}
-              </div>
-              {(() => {
-                const application = actionQueueApplication(applications, item);
-                if (!application) return <a className="button secondary" href="/career-os#applications">Review Applications</a>;
-                const cta = applicationExecutionCta(status, application);
-                return (
-                  <ApplicationActionControl
-                    actionToken={pageActionToken}
-                    actionTokenExpiresAt={actionTokenExpiresAt}
-                    actionKind={cta.actionKind}
-                    applicationId={String(application.id)}
-                    disabledReason={cta.disabledReason}
-                    href={cta.href}
-                    label={cta.label}
-                    whatTomasMustDo={cta.whatTomasMustDo}
-                  />
-                );
-              })()}
-            </article>
-          ))}
+          <article className="career-os-row">
+            <div>
+              <h3>My Action Center owns all human-required steps.</h3>
+              <p>Career OS hides legacy workflow prompts here so every human gate is handled from one consistent Action Center card.</p>
+            </div>
+            <a className="button secondary" href="/career-os#applications">Open My Action Center</a>
+          </article>
         </div>
       </section>
 
@@ -786,7 +766,8 @@ function primaryLabelForVariant(variant: ActionCenterVariant, execution: CareerS
   if (variant === 'missing_fact') return 'Save Answer and Resume';
   if (variant === 'technical') return 'View Technical Details';
   if (variant === 'terminal') return 'View Confirmation';
-  return execution.cta.label || 'Open Employer Workday';
+  if (/geico/i.test(execution.employer)) return 'Open GEICO Workday';
+  return 'Open Employer Workday';
 }
 
 function plainReason(reason: string) {

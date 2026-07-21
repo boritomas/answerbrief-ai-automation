@@ -695,11 +695,11 @@ test('Career OS dashboard metrics and daily action queue are actionable controls
 
   assert.equal(page.includes('href="/career-os#applications" label="Applications Remaining"'), true);
   assert.equal(page.includes('href="/career-os#applications" label="Waiting on You"'), true);
-  assert.match(page, /actionQueueApplication/);
-  assert.equal(page.includes('queueItems.slice(0, 8).map'), true);
+  assert.equal(page.includes('Open My Action Center'), true);
+  assert.equal(page.includes('My Action Center owns all human-required steps.'), true);
   assert.match(page, /ApplicationActionControl/);
-  assert.match(page, /applicationHasActiveAction/);
-  assert.equal(page.includes('href="/career-os#applications">Review Applications</a>'), true);
+  assert.equal(page.includes('queueItems.slice(0, 8).map'), false);
+  assert.equal(page.includes('href="/career-os#applications">Review Applications</a>'), false);
   assert.match(page, /applicationTerminalLabel/);
 });
 
