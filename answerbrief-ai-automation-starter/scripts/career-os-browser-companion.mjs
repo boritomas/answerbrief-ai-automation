@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
-import { getATSAdapter } from './lib/career-os-ats-adapters.mjs';
+import { detectVisibleCaptchaEvidence, getATSAdapter } from './lib/career-os-ats-adapters.mjs';
 
 const root = process.cwd();
 const companionId = clean(process.env.CAREER_OS_COMPANION_ID) || `${os.hostname()}-career-os-companion`;
@@ -194,37 +194,54 @@ async function selectValue(page, labelPattern, value) {
 }
 
 async function detectHumanGate(page, task) {
-  const body = String(await page.textContent('body') || '');
   const currentUrl = page.url();
-  const visibleCaptcha = await page.evaluate(() => {
+  const snapshot = await page.evaluate(() => {
     const visible = (element) => {
       const style = window.getComputedStyle(element);
       const rect = element.getBoundingClientRect();
       return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
     };
-    return Array.from(document.querySelectorAll('iframe, .g-recaptcha, .grecaptcha-badge, .h-captcha, #captcha, [aria-label*="captcha" i]'))
-      .some((node) => {
-        if (!(node instanceof HTMLElement) || !visible(node)) return false;
-        const title = String(node.getAttribute('title') || '').toLowerCase();
-        const src = String(node.getAttribute('src') || '').toLowerCase();
-        const className = String(node.className || '').toLowerCase();
-        const text = String(node.textContent || '').toLowerCase();
-        const isPassiveRecaptchaBadge = (className.includes('grecaptcha-badge') || title === 'recaptcha')
-          && src.includes('size=invisible')
-          && node.getBoundingClientRect().height <= 80;
-        if (isPassiveRecaptchaBadge) return false;
-        return /captcha|challenge|i am human|verify you are human/.test(`${title} ${src} ${className} ${text}`);
-      });
+    const selectorFor = (node) => {
+      if (!(node instanceof HTMLElement)) return '';
+      if (node.id) return `#${node.id}`;
+      const className = String(node.className || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join('.');
+      return className ? `${node.tagName.toLowerCase()}.${className}` : node.tagName.toLowerCase();
+    };
+    const elements = Array.from(document.querySelectorAll('iframe, .g-recaptcha, .grecaptcha-badge, .h-captcha, [data-sitekey], [id*="captcha" i], [class*="captcha" i], [aria-label*="captcha" i], [title*="captcha" i], [title*="challenge" i]'))
+      .map((node) => {
+        if (!(node instanceof HTMLElement) || !visible(node)) return null;
+        return {
+          selector: selectorFor(node),
+          tagName: node.tagName.toLowerCase(),
+          title: String(node.getAttribute('title') || ''),
+          src: String(node.getAttribute('src') || ''),
+          className: String(node.className || ''),
+          text: String(node.textContent || '').replace(/\s+/g, ' ').trim(),
+          visible: true,
+        };
+      })
+      .filter(Boolean);
+    return {
+      detectedAt: new Date().toISOString(),
+      elements,
+      visibleText: String(document.body?.innerText || '').replace(/\s+/g, ' ').trim(),
+    };
   });
-  if (visibleCaptcha || /i am human|complete the captcha|verify you are human|cloudflare security challenge/i.test(body)) {
+  const captcha = detectVisibleCaptchaEvidence(snapshot);
+  if (captcha.detected) {
     await report(task, {
       status: 'waiting_on_tomas',
       currentUrl,
       evidenceText: 'Employer presented CAPTCHA or bot verification.',
+      details: {
+        classification: 'captcha',
+        captchaEvidence: captcha,
+      },
       screenshotPath: await safeShot(page, task, 'captcha'),
     });
     return true;
   }
+  const body = String(await page.textContent('body') || '');
   if (/multi-factor|mfa|security code sent|verify your identity|sign in/i.test(body) && !/security code/i.test(body)) {
     await report(task, {
       status: 'waiting_on_tomas',

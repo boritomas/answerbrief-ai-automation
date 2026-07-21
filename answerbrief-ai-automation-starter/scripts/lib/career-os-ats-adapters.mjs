@@ -17,6 +17,9 @@ function normalized(value) {
   return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+const CAPTCHA_TEXT_PATTERN = /verify you are human|i am human|complete the captcha|security challenge|bot verification|human verification|prove you are human/i;
+const GREENHOUSE_CONFIRMATION_PATTERN = /thank you for applying|application has been received|we have received your application|application submitted|your application has been submitted/i;
+
 function employmentDate(record, which) {
   if (!record) return '';
   const month = which === 'start' ? record.startMonth : record.endMonth;
@@ -98,9 +101,85 @@ async function bodyText(page) {
   return String(await page.textContent('body') || '');
 }
 
+export function detectVisibleCaptchaEvidence(snapshot = {}) {
+  const candidates = Array.isArray(snapshot.elements) ? snapshot.elements : [];
+  for (const element of candidates) {
+    const selector = clean(element.selector);
+    const tagName = clean(element.tagName).toLowerCase();
+    const title = clean(element.title);
+    const src = clean(element.src);
+    const className = clean(element.className);
+    const text = clean(element.text);
+    const visible = element.visible !== false;
+    const haystack = `${selector} ${tagName} ${title} ${src} ${className} ${text}`.toLowerCase();
+    if (!visible) continue;
+    if (!/captcha|recaptcha|hcaptcha|turnstile|challenge|verify you are human|i am human|bot verification|security challenge/.test(haystack)) continue;
+    const detectorType = src.includes('recaptcha') || className.includes('recaptcha') || title.toLowerCase().includes('recaptcha')
+      ? 'visible_recaptcha'
+      : src.includes('hcaptcha') || className.includes('hcaptcha') || title.toLowerCase().includes('hcaptcha')
+        ? 'visible_hcaptcha'
+        : src.includes('turnstile') || className.includes('turnstile') || title.toLowerCase().includes('turnstile')
+          ? 'visible_turnstile'
+          : /challenge|verify you are human|i am human|bot verification|security challenge/i.test(text || title)
+            ? 'visible_challenge'
+            : 'visible_captcha';
+    return {
+      detected: true,
+      detectorType,
+      matchedSelector: selector || tagName || 'unknown',
+      visibleText: text,
+      iframeSource: src,
+      confidence: detectorType === 'visible_challenge' ? 0.82 : 0.98,
+      detectedAt: clean(snapshot.detectedAt) || new Date().toISOString(),
+    };
+  }
+
+  const visibleText = clean(snapshot.visibleText);
+  if (CAPTCHA_TEXT_PATTERN.test(visibleText)) {
+    return {
+      detected: true,
+      detectorType: 'visible_text',
+      matchedSelector: 'body',
+      visibleText,
+      iframeSource: '',
+      confidence: 0.74,
+      detectedAt: clean(snapshot.detectedAt) || new Date().toISOString(),
+    };
+  }
+
+  if (snapshot.employerReportedFailure === true) {
+    return {
+      detected: true,
+      detectorType: 'employer_reported_failure',
+      matchedSelector: '',
+      visibleText,
+      iframeSource: '',
+      confidence: 0.9,
+      detectedAt: clean(snapshot.detectedAt) || new Date().toISOString(),
+    };
+  }
+
+  return {
+    detected: false,
+    detectorType: '',
+    matchedSelector: '',
+    visibleText,
+    iframeSource: '',
+    confidence: 0,
+    detectedAt: clean(snapshot.detectedAt) || new Date().toISOString(),
+  };
+}
+
+export function greenhouseConfirmationDetected({ currentUrl = '', pageText = '' } = {}) {
+  const url = clean(currentUrl).toLowerCase();
+  const text = clean(pageText);
+  return url.endsWith('/confirmation')
+    || GREENHOUSE_CONFIRMATION_PATTERN.test(text);
+}
+
 async function captureConfirmation(page, task, runtime, adapterId) {
   const text = await bodyText(page);
-  if (!/thank you for applying|application has been received|we have received your application|application submitted|your application has been submitted/i.test(text)) {
+  if (!greenhouseConfirmationDetected({ currentUrl: page.url(), pageText: text })) {
     return false;
   }
   const screenshotPath = await runtime.takeShot(`${adapterId}-confirmed`);
@@ -144,6 +223,23 @@ async function fillGreenhouseForm(page, task, runtime) {
   await runtime.selectValue(/visa \/ work permit/i, task.candidate.sponsorshipNow);
   await runtime.selectValue(/worked at nice/i, 'No');
   await runtime.selectValue(/first-degree relatives/i, 'No');
+}
+
+async function detectUnresolvedGreenhouseFields(page, task, runtime) {
+  const missing = await visibleRequiredFields(page);
+  if (!missing.length) return false;
+  const unresolved = missing.join('; ');
+  await runtime.report({
+    status: 'waiting_on_tomas',
+    currentUrl: page.url(),
+    evidenceText: `Greenhouse requires additional verified answers before continuing: ${unresolved}.`,
+    screenshotPath: await runtime.safeShot('greenhouse-missing-required'),
+    details: {
+      classification: 'missing_required_field',
+      missingRequiredFields: missing,
+    },
+  });
+  return true;
 }
 
 async function visibleRequiredFields(page) {
@@ -465,6 +561,7 @@ const greenhouseAdapter = {
     await runtime.takeShot('greenhouse-filled');
 
     if (await runtime.detectCommonHumanGate()) return true;
+    if (await detectUnresolvedGreenhouseFields(page, task, runtime)) return true;
 
     const submit = page.locator('button[type="submit"], input[type="submit"]').filter({ hasText: /submit application|submit/i }).first();
     if (await submit.count()) {

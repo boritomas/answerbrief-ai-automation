@@ -1374,6 +1374,7 @@ function hasManualSubmissionAttestation(application: JsonRecord) {
   const raw = asRecord(application.raw_record);
   return raw.manual_submission_attested === true
     || raw.submission_source === 'manual_tomas_attestation'
+    || raw.submission_source === 'manual_tomas_completion'
     || raw.user_confirmed_submission === true;
 }
 

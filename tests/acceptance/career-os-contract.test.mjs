@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  detectVisibleCaptchaEvidence,
+  greenhouseConfirmationDetected,
+} from '../../answerbrief-ai-automation-starter/scripts/lib/career-os-ats-adapters.mjs';
+import {
   createTargetedResume,
   dedupeOpportunities,
   detectContradictions,
@@ -148,6 +152,51 @@ test('terminal applications with duplicate locks or confirmation evidence cannot
   for (const application of cleanedTerminalFixtures) {
     assert.deepEqual(activeExecutionResidue(application), [], application.id);
   }
+});
+
+test('Affirm Greenhouse false-CAPTCHA regression requires visible challenge evidence and terminal confirmation', () => {
+  const noCaptcha = detectVisibleCaptchaEvidence({
+    detectedAt: '2026-07-21T13:00:00.000Z',
+    elements: [],
+    visibleText: 'Please complete all required fields before submitting your application.',
+  });
+  assert.equal(noCaptcha.detected, false);
+
+  const visibleCaptcha = detectVisibleCaptchaEvidence({
+    detectedAt: '2026-07-21T13:00:00.000Z',
+    elements: [
+      {
+        selector: 'iframe[src*="recaptcha"]',
+        tagName: 'iframe',
+        title: 'reCAPTCHA',
+        src: 'https://www.google.com/recaptcha/api2/anchor?k=test',
+        className: '',
+        text: '',
+        visible: true,
+      },
+    ],
+    visibleText: '',
+  });
+  assert.equal(visibleCaptcha.detected, true);
+  assert.equal(visibleCaptcha.detectorType, 'visible_recaptcha');
+
+  assert.equal(
+    greenhouseConfirmationDetected({
+      currentUrl: 'https://job-boards.greenhouse.io/affirm/jobs/7770395003/confirmation',
+      pageText: 'Thank you for applying to Affirm. We have received your application and will be in touch shortly.',
+    }),
+    true,
+  );
+
+  const queueSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+  const companionSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'scripts', 'career-os-browser-companion.mjs'), 'utf8');
+  const adaptersSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'scripts', 'lib', 'career-os-ats-adapters.mjs'), 'utf8');
+
+  assert.match(companionSource, /captchaEvidence/);
+  assert.match(adaptersSource, /Greenhouse requires additional verified answers before continuing/);
+  assert.match(queueSource, /manual tomas completion/);
+  assert.match(statusSource, /manual_tomas_completion/);
 });
 
 test('Candidate Master Profile validation and unsupported-fact rejection protect external artifacts', () => {

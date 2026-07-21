@@ -792,7 +792,7 @@ function hasManualSubmissionAttestation(application: JsonRecord) {
   return lifecycleStage === 'externally_submitted'
     || raw.externally_submitted === true
     || raw.manual_submission_attested === true
-    || hasAny(`${application.next_action || ''} ${raw.submission_source || ''}`, ['manual tomas attestation', 'manual_submission_reconciled']);
+    || hasAny(`${application.next_action || ''} ${raw.submission_source || ''}`, ['manual tomas attestation', 'manual tomas completion', 'manual_submission_reconciled']);
 }
 
 function deterministicUuid(input: string) {
