@@ -148,6 +148,8 @@ function canFallbackToRest(configuration: SupabaseConfiguration) {
 function shouldFallbackToRest(error: unknown) {
   const message = String(error instanceof Error ? error.message : error || '').toLowerCase();
   return [
+    'ecircuitbreaker',
+    'too many authentication failures',
     'password authentication failed',
     'authentication query failed',
     'connection timeout',
