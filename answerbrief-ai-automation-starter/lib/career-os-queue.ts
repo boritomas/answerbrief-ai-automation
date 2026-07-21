@@ -110,6 +110,8 @@ const HUMAN_BLOCKER_TERMS = [
   'employment date',
   'employment history facts',
   'verified employment history',
+  'requires additional verified answers',
+  'missing required fields',
   'compensation_unknown',
   'compensation review',
   'desired total compensation',
@@ -123,6 +125,10 @@ const TECHNICAL_BLOCKER_TERMS = [
   'file-upload limitation',
   'chrome_file_upload_not_allowed',
   'browser_worker_blocked_technical',
+  'did not confirm after per-character code entry',
+  'per-character code entry',
+  'otp loop',
+  'stale checkpoint',
 ];
 
 export function careerOsActionMetadata(application: JsonRecord) {
@@ -406,6 +412,7 @@ export function canonicalQueueState(application: JsonRecord): QueueState {
   if (application.confirmation_number || application.submission_evidence) return 'confirmed';
   if (hasManualSubmissionAttestation(application)) return 'submitted';
   if (lifecycleStage === 'duplicate_locked' || raw.duplicate_locked === true) return 'duplicate';
+  if (hasAny(text, TECHNICAL_BLOCKER_TERMS)) return 'blocked_technical';
   if (lifecycleStage === 'waiting_on_tomas_browser_worker' || stringValue(lastReport.status).toLowerCase() === 'waiting_on_tomas') return 'waiting_on_tomas';
   if (lifecycleStage === 'browser_worker_blocked_technical' || stringValue(lastReport.status).toLowerCase() === 'blocked_technical') return 'blocked_technical';
   if (lifecycleStage === 'browser_worker_running' || stringValue(browserWorker.status).toLowerCase() === 'running') return 'running';
@@ -431,7 +438,7 @@ function actionKindForApplication(application: JsonRecord, state: QueueState): Q
   if (state === 'confirmed' || state === 'submitted') return 'view_confirmation';
   if (state === 'blocked_technical') return 'view_technical_blocker';
   if (hasAny(text, ['total_compensation', 'desired total compensation', 'compensation_unknown', 'compensation review'])) return 'enter_compensation';
-  if (hasAny(text, ['employment_start_month', 'employment date', 'start month', 'employment history facts', 'verified employment history'])) return 'answer_question';
+  if (hasAny(text, ['employment_start_month', 'employment date', 'start month', 'employment history facts', 'verified employment history', 'requires additional verified answers', 'missing required fields', 'job title*', 'company*', 'from*', 'to*'])) return 'answer_question';
   if (hasAny(text, ['ai policy'])) return 'review_legal';
   if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'policy'])) return 'review_legal';
   if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'open_security_step';
@@ -451,7 +458,10 @@ function actionLabel(kind: QueueActionKind, text: string) {
     if (hasAny(text, ['nda'])) return 'Review NDA';
     return 'Review Privacy Terms';
   }
-  if (kind === 'answer_question') return hasAny(text, ['employment']) ? 'Verify Employment History' : 'Answer Question';
+  if (kind === 'answer_question') {
+    if (hasAny(text, ['job title*', 'company*', 'from*', 'to*', 'requires additional verified answers', 'missing required fields'])) return 'Verify Employment Details';
+    return hasAny(text, ['employment']) ? 'Verify Employment History' : 'Answer Question';
+  }
   if (kind === 'create_or_open_account') return 'Create Workday Account';
   if (kind === 'upload_resume') return 'View Resume Package';
   if (kind === 'open_security_step') {
@@ -491,7 +501,7 @@ function humanOrTechnicalBlocker(application: JsonRecord) {
   if (hasAny(text, TECHNICAL_BLOCKER_TERMS)) return 'Unsupported browser or ATS operation remains after verified fields/package steps.';
   if (hasAny(text, ['total_compensation', 'desired total compensation'])) return 'Tomas must approve a reusable desired total-compensation answer; base salary and total compensation are distinct.';
   if (hasAny(text, ['compensation_unknown', 'compensation review'])) return 'Tomas must approve the compensation exception or review because no posted compensation is available.';
-  if (hasAny(text, ['employment_start_month', 'employment date', 'start month', 'employment history facts', 'verified employment history'])) {
+  if (hasAny(text, ['employment_start_month', 'employment date', 'start month', 'employment history facts', 'verified employment history', 'requires additional verified answers', 'missing required fields', 'job title*', 'company*', 'from*', 'to*'])) {
     return 'Tomas must verify the missing employment history facts requested by the ATS before automation can continue.';
   }
   if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'ai policy', 'policy'])) return 'Tomas must review and approve the exact legal, privacy, AI, NDA, or attestation text.';
