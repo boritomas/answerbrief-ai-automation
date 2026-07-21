@@ -7,6 +7,7 @@ export type CareerOsSourceCandidate = {
   category: string;
   employer: string;
   priority: number;
+  sourceUrl?: string;
   supported: boolean;
 };
 
@@ -19,11 +20,12 @@ export type CareerOsDiscoveryPlan = {
   };
   fingerprint: string;
   greenhouseBoards: string[];
+  oracleSources: CareerOsSourceCandidate[];
   sourceCandidates: CareerOsSourceCandidate[];
   sourceRegistry: string[];
 };
 
-export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-leadership-market-2026-07-20';
+export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-management-market-2026-07-21';
 
 export const CAREER_OS_SOURCE_REGISTRY = [
   'Greenhouse official board API',
@@ -40,70 +42,37 @@ export const CAREER_OS_SOURCE_REGISTRY = [
 ];
 
 export const CAREER_OS_EMPLOYER_UNIVERSE = [
-  'U.S. wireless and telecom carriers',
-  'mobile virtual network operators and regional wireless carriers',
-  'broadband, fiber, cable, and internet providers',
-  'satellite, fixed wireless, and rural connectivity providers',
-  'networking, telecom equipment, OSS/BSS, and infrastructure software',
-  'towers, fiber infrastructure, data centers, neutral-host, and digital real estate',
-  'cloud communications, contact center, and customer experience platforms',
-  'enterprise SaaS, AI product, digital transformation, cybersecurity, and infrastructure software',
-  'management consulting, enterprise transformation, and advisory firms with technology modernization practices',
-  'customer operations, service transformation, and workflow automation platforms',
-  'digital experience, martech, ecommerce, and consumer-platform product organizations',
-  'enterprise data, analytics, automation, and AI adoption platforms',
-  'fintech, payments, commerce, and large-scale consumer technology platforms',
-  'global telecom, networking, cloud, and technology employers with U.S. eligible roles',
+  'U.S. wireless, telecom, broadband, fiber, cable, and connectivity employers',
+  'networking, OSS/BSS, cloud communications, contact-center, and customer-experience platforms',
+  'enterprise software, AI product, workflow automation, cybersecurity, and infrastructure platforms',
+  'banking, fintech, payments, insurance, and regulated-industry product organizations',
+  'retail, commerce, healthcare technology, transportation, logistics, energy, and utilities employers',
+  'management consulting, digital transformation, customer-journey, and modernization practices',
+  'major Dallas-Fort Worth and Texas employers with product-led roles',
+  'Fortune 500 employers with product management, platform, AI adoption, and customer-experience scope',
 ];
 
 export const CAREER_OS_ROLE_PRIORITIES = [
-  'Vice President of Product',
-  'VP Product Management',
-  'VP Digital Product',
-  'VP Customer Experience',
-  'VP Digital Transformation',
-  'VP Platform',
-  'VP AI Products',
-  'Head of Product',
-  'Head of Digital',
-  'Head of Customer Experience',
-  'Head of Platform',
-  'Head of AI',
-  'Head of Commerce',
-  'Senior Director of Product',
-  'Executive Director of Product',
-  'Director of Product Management',
+  'Product Manager',
+  'Senior Product Manager',
   'Group Product Manager',
   'Principal Product Manager',
-  'Product Portfolio Leader',
-  'Digital Transformation Leader',
-  'Transformation Consultant',
-  'Enterprise Transformation Consultant',
-  'Transformation Strategy Leader',
-  'Business Transformation Leader',
-  'Customer Journey Leader',
-  'Customer Experience Transformation Leader',
-  'Platform Product Leader',
-  'Enterprise Platform Leader',
-  'Workflow Platform Leader',
-  'Product Operations Leader',
-  'AI Product Leader',
-  'AI Adoption Leader',
-  'Human-Centered AI Leader',
-  'Automation Strategy Leader',
-  'Digital Commerce Leader',
-  'Telecom Product Leader',
-  'Broadband Product Leader',
-  'Wireless Product Leader',
-  'Fiber Product Leader',
-  'Cloud Communications Product Leader',
-  'Contact Center Product Leader',
-  'Enterprise Customer Experience Leader',
-  'Network Experience Product Leader',
-  'Assisted Digital Product Leader',
-  'Self-Service Product Leader',
-  'Experience Transformation Leader',
-  'Operational Excellence Product Leader',
+  'Lead Product Manager',
+  'Product Lead',
+  'Director of Product Management',
+  'Senior Director of Product',
+  'Senior Director of Product Management',
+  'Product Portfolio Director',
+  'Digital Product Director',
+  'Customer Experience Product Director',
+  'Platform Product Director',
+  'AI Product Director',
+  'Automation Product Director',
+  'Product Operations Director',
+  'Digital Transformation Director',
+  'Customer Journey Director',
+  'Enterprise Product Director',
+  'Product Strategy Director',
 ];
 
 const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
@@ -191,9 +160,17 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Adobe', 'company_hosted', 'enterprise SaaS and digital transformation', 'digital experience platform', 76),
   source('Intuit', 'company_hosted', 'payments, digital commerce, and adjacent platforms', 'financial software platform', 74),
   source('Capital One', 'workday', 'payments, digital commerce, and adjacent platforms', 'financial platform', 74),
+  source('JPMorgan Chase', 'oracle', 'banking, payments, and enterprise platforms', 'banking and payments platform', 97, undefined, true, 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs'),
+  source('Bank of America', 'workday', 'banking, payments, and enterprise platforms', 'banking platform', 79),
+  source('Wells Fargo', 'workday', 'banking, payments, and enterprise platforms', 'banking platform', 78),
+  source('Citi', 'workday', 'banking, payments, and enterprise platforms', 'banking platform', 77),
+  source('Fidelity', 'company_hosted', 'banking, payments, and enterprise platforms', 'financial platform', 76),
+  source('Charles Schwab', 'workday', 'banking, payments, and enterprise platforms', 'financial platform', 75),
+  source('USAA', 'workday', 'banking, payments, and enterprise platforms', 'insurance and financial platform', 78),
+  source('PayPal', 'workday', 'banking, payments, and enterprise platforms', 'payments platform', 77),
+  source('Visa', 'company_hosted', 'banking, payments, and enterprise platforms', 'payments platform', 76),
+  source('Mastercard', 'workday', 'banking, payments, and enterprise platforms', 'payments platform', 76),
   source('American Express', 'company_hosted', 'payments, digital commerce, and adjacent platforms', 'payments platform', 72),
-  source('Mastercard', 'workday', 'payments, digital commerce, and adjacent platforms', 'payments platform', 72),
-  source('Visa', 'company_hosted', 'payments, digital commerce, and adjacent platforms', 'payments platform', 72),
   source('Oracle', 'company_hosted', 'enterprise SaaS and digital transformation', 'enterprise software', 72),
   source('IBM', 'company_hosted', 'enterprise SaaS and digital transformation', 'enterprise software', 72),
   source('SAP', 'company_hosted', 'enterprise SaaS and digital transformation', 'enterprise software', 72),
@@ -203,6 +180,21 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Okta', 'greenhouse', 'enterprise SaaS and digital transformation', 'identity platform', 72, 'okta'),
   source('Palo Alto Networks', 'company_hosted', 'enterprise SaaS and digital transformation', 'cybersecurity platform', 72),
   source('CrowdStrike', 'greenhouse', 'enterprise SaaS and digital transformation', 'cybersecurity platform', 72, 'crowdstrike'),
+  source('Adobe', 'company_hosted', 'enterprise SaaS and digital transformation', 'digital experience platform', 76),
+  source('Walmart', 'company_hosted', 'retail and commerce platforms', 'retail platform', 72),
+  source('Target', 'company_hosted', 'retail and commerce platforms', 'retail platform', 71),
+  source('Home Depot', 'company_hosted', 'retail and commerce platforms', 'retail platform', 71),
+  source('Lowe’s', 'company_hosted', 'retail and commerce platforms', 'retail platform', 71),
+  source('CVS Health', 'workday', 'healthcare technology and consumer platforms', 'healthcare platform', 72),
+  source('UnitedHealth Group', 'workday', 'healthcare technology and consumer platforms', 'healthcare platform', 72),
+  source('Accenture', 'workday', 'consulting and transformation', 'consulting and digital transformation', 74),
+  source('Deloitte', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 74),
+  source('PwC', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 72),
+  source('EY', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 72),
+  source('KPMG', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 71),
+  source('Capgemini', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 71),
+  source('Cognizant', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 71),
+  source('Slalom', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 71),
   source('Vodafone', 'company_hosted', 'global companies with U.S. opportunities', 'global telecom carrier', 70),
   source('Deutsche Telekom', 'company_hosted', 'global companies with U.S. opportunities', 'global telecom carrier', 70),
   source('Telefonica', 'company_hosted', 'global companies with U.S. opportunities', 'global telecom carrier', 70),
@@ -252,6 +244,8 @@ export function buildCareerOsDiscoveryPlan(input: {
   ]).map((board) => source(companyNameFromBoard(board), 'greenhouse', 'dynamic employer discovery', 'official Greenhouse source', 74, board, true));
   const sourceCandidates = dedupeSourceCandidates(BASELINE_SOURCE_CANDIDATES.concat(dynamicBoardCandidates))
     .sort((a, b) => b.priority - a.priority || a.employer.localeCompare(b.employer));
+  const oracleSources = sourceCandidates
+    .filter((candidate) => candidate.supported && candidate.ats === 'oracle');
   const greenhouseBoards = uniqueStrings(sourceCandidates
     .filter((candidate) => candidate.supported && candidate.ats === 'greenhouse' && candidate.board)
     .map((candidate) => candidate.board || ''));
@@ -259,12 +253,13 @@ export function buildCareerOsDiscoveryPlan(input: {
   return {
     coverageSummary: {
       discoveryMode: 'broad_dynamic_supported_source_plan',
-      supportedOfficialSources: greenhouseBoards.length,
+      supportedOfficialSources: greenhouseBoards.length + oracleSources.length,
       totalEmployerCandidates: sourceCandidates.length,
       unsupportedSourceCandidates: sourceCandidates.filter((candidate) => !candidate.supported).length,
     },
     fingerprint: simpleHash(sourceCandidates.map((candidate) => `${candidate.employer}:${candidate.ats}:${candidate.board || 'unsupported'}`).join('|')),
     greenhouseBoards,
+    oracleSources,
     sourceCandidates,
     sourceRegistry: CAREER_OS_SOURCE_REGISTRY,
   };
@@ -283,8 +278,9 @@ function source(
   priority: number,
   board?: string,
   supported = ats === 'greenhouse' && Boolean(board),
+  sourceUrl?: string,
 ): CareerOsSourceCandidate {
-  return { ats, board, businessType, category, employer, priority, supported };
+  return { ats, board, businessType, category, employer, priority, sourceUrl, supported };
 }
 
 function dedupeSourceCandidates(candidates: CareerOsSourceCandidate[]) {

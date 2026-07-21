@@ -225,7 +225,7 @@ export type DailyOperatingCycleStatus = {
   version: string;
 };
 
-export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-20-v3-broader-greenhouse-autonomy';
+export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-21-v4-role-policy-and-oracle-pilot';
 export const DAILY_CRON_PATH = '/api/career-os/daily-run';
 export const DAILY_CRON_SCHEDULE = '0 12 * * *';
 export const DAILY_TARGET_NEWLY_IDENTIFIED = 20;
@@ -237,6 +237,17 @@ export const GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS = 5000;
 export const FOREGROUND_DISCOVERY_MAX_BOARDS = 3;
 
 export const DAILY_DISCOVERY_BOARDS = buildCareerOsDiscoveryPlan().greenhouseBoards;
+const TARGET_ROLE_POLICY_VERSION = 'career-os-role-policy-2026-07-21';
+const EXECUTIVE_EXCLUSION_TOKENS = [
+  'vice president',
+  ' head of ',
+  ' head,',
+  ' chief ',
+  ' executive director',
+  ' managing director',
+  'svp',
+  'evp',
+];
 
 export const DAILY_OPERATING_CYCLE = {
   creditSavingControls: [
@@ -403,6 +414,7 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
   let reviewed = 0;
 
   const settled = await fetchGreenhouseSourceBatches(discoveryPlan, boards);
+  const oracleResults = await fetchOracleSourceResults(discoveryPlan);
 
   settled.forEach((result) => {
     if (result.status === 'rejected') {
@@ -419,6 +431,14 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
       postings.push(posting);
     }
   });
+  oracleResults.forEach((result) => {
+    sourceStatuses.push(sourceStatus(result.source, result.source.employer, result.jobs.length ? 'succeeded' : 'failed', result.jobs.length, result.error || ''));
+    if (result.error) errors.push(`${result.source.employer}: ${result.error}`);
+    reviewed += result.jobs.length;
+    for (const job of result.jobs) {
+      postings.push(normalizeOraclePosting(ownerEmail, job, executedAt, sourceRunId, minFitScore, result.source));
+    }
+  });
 
   const dedupedPostings = dedupePostings(postings)
     .sort((a, b) => numberValue(b.fit_score) - numberValue(a.fit_score) || String(a.company).localeCompare(String(b.company)));
@@ -432,8 +452,8 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
     id: sourceRunId,
     owner_email: ownerEmail,
     source_type: 'global_supported_official_source_plan',
-    source_name: 'Broader product leadership, digital transformation, customer experience, enterprise platform, and human-led AI official sources',
-    source_url: 'https://boards-api.greenhouse.io/v1/boards plus Career OS official-source registry',
+    source_name: 'Broader product management, digital transformation, customer experience, enterprise platform, banking, and human-led AI official sources',
+    source_url: 'https://boards-api.greenhouse.io/v1/boards plus Oracle Candidate Experience official-source registry',
     status: reviewed > 0 ? 'succeeded' : 'error',
     executed_at: executedAt,
     number_reviewed: reviewed,
@@ -1167,8 +1187,10 @@ async function fetchGreenhouseJobs(board: string) {
 function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
   const company = companyName(board, job);
   const description = htmlToText(String(job.content || ''));
+  const title = String(job.title || '').trim();
+  const rolePolicy = classifyRolePolicy(title, description);
   const compensation = extractCompensation(description);
-  const fitScore = scorePosting(job, description);
+  const fitScore = rolePolicy.excluded ? 0 : scorePosting(job, description);
   const requisition = String(job.requisition_id || job.id || '');
   const canonicalUrl = String(job.absolute_url || `https://job-boards.greenhouse.io/${board}/jobs/${job.id || requisition}`);
   const locationText = `${String(asRecord(job.location).name || '')} ${description}`;
@@ -1178,7 +1200,7 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
     source_run_id: sourceRunId,
     owner_email: ownerEmail,
     company,
-    title: String(job.title || '').trim(),
+    title,
     location: String(asRecord(job.location).name || ''),
     work_arrangement: /remote/i.test(locationText) ? 'remote' : 'unknown',
     compensation_min_usd: compensation.minUsd,
@@ -1191,6 +1213,8 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
     posting_validation_status: 'active',
     last_checked_at: lastCheckedAt,
     raw_record: job,
+    normalized_role_level: rolePolicy.normalizedLevel,
+    deterministic_filter_reason: rolePolicy.reason,
     source_category: source.category,
     source_employer: source.employer,
     source_business_type: source.businessType,
@@ -1214,15 +1238,161 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
     },
     hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
     selected_for_pilot: false,
-    status: classifyDiscoveredPostingStatus(fitScore, minFitScore, locationText),
+    status: classifyDiscoveredPostingStatus(fitScore, minFitScore, locationText, rolePolicy),
   };
 }
 
-function classifyDiscoveredPostingStatus(fitScore: number, minFitScore: number, locationText: string) {
+function classifyDiscoveredPostingStatus(
+  fitScore: number,
+  minFitScore: number,
+  locationText: string,
+  rolePolicy?: { excluded: boolean },
+) {
+  if (rolePolicy?.excluded) return 'ineligible';
   if (/relocation required|must relocate|on-site only/i.test(locationText)) return 'ineligible_location';
   if (fitScore < 70) return 'poor_fit';
   if (fitScore < minFitScore) return 'qualification_pending';
   return 'discovered';
+}
+
+function normalizeOraclePosting(ownerEmail: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
+  const title = String(job.Title || '').trim();
+  const description = [String(job.ShortDescriptionStr || ''), String(job.ExternalResponsibilitiesStr || ''), String(job.ExternalQualificationsStr || '')]
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+  const rolePolicy = classifyRolePolicy(title, description);
+  const location = String(job.PrimaryLocation || '');
+  const locationText = `${location} ${description}`;
+  const fitScore = rolePolicy.excluded ? 0 : scoreOraclePosting(job, description);
+  const canonicalUrl = `${source.sourceUrl || 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs'}/job/${encodeURIComponent(String(job.Id || ''))}`;
+
+  return {
+    id: `oracle-${slug(source.employer)}-${String(job.Id || '')}`,
+    source_run_id: sourceRunId,
+    owner_email: ownerEmail,
+    company: source.employer,
+    title,
+    location,
+    work_arrangement: classifyOracleWorkArrangement(locationText, String(job.WorkplaceType || ''), String(job.WorkplaceTypeCode || '')),
+    compensation_min_usd: null,
+    compensation_max_usd: null,
+    compensation_text: '',
+    canonical_url: canonicalUrl,
+    external_requisition_id: String(job.Id || ''),
+    ats_job_id: String(job.Id || ''),
+    job_description: description,
+    normalized_description: description.slice(0, 12000),
+    posting_validation_status: 'active',
+    last_checked_at: lastCheckedAt,
+    raw_record: job,
+    normalized_role_level: rolePolicy.normalizedLevel,
+    deterministic_filter_reason: rolePolicy.reason,
+    source_category: source.category,
+    source_employer: source.employer,
+    source_business_type: source.businessType,
+    fit_score: fitScore,
+    ats_platform: 'oracle',
+    ats_analysis: {
+      method: 'deterministic_oracle_daily_cycle_v1',
+      risks: [],
+      score: fitScore,
+      signals: matchingOracleSignals(job, description),
+    },
+    ai_readiness_analysis: {
+      method: 'answerbrief_deterministic_readiness_v1',
+      score: rolePolicy.excluded ? 0 : scoreAiReadiness(description),
+      signals: ['platform strategy', 'automation', 'customer experience', 'enterprise platforms'].filter((signal) => hasAny(description, [signal])),
+    },
+    recruiter_intelligence: {
+      decision: fitScore >= minFitScore ? 'worth_applying' : 'skip',
+      location: location || 'not published',
+      salary: 'not published',
+      score: rolePolicy.excluded ? 0 : scoreRecruiterFit({ title, location: { name: location } }, description),
+    },
+    hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
+    selected_for_pilot: false,
+    status: classifyDiscoveredPostingStatus(fitScore, minFitScore, locationText, rolePolicy),
+  };
+}
+
+async function fetchOracleSourceResults(discoveryPlan: CareerOsDiscoveryPlan) {
+  const results: Array<{ error?: string; jobs: JsonRecord[]; source: CareerOsSourceCandidate }> = [];
+  for (const source of discoveryPlan.oracleSources) {
+    try {
+      results.push({ jobs: await fetchJpmorganOracleJobs(source), source });
+    } catch (error) {
+      results.push({ error: error instanceof Error ? error.message : String(error), jobs: [], source });
+    }
+  }
+  return results;
+}
+
+async function fetchJpmorganOracleJobs(source: CareerOsSourceCandidate) {
+  const querySets = [
+    { keyword: 'product', selectedCategoriesFacet: '300000086251864', selectedLocationsFacet: '300000020657211' },
+    { keyword: 'product', selectedCategoriesFacet: '300000086251864', selectedLocationsFacet: '300000020709331' },
+    { keyword: 'product manager', selectedCategoriesFacet: '300000086251864', selectedLocationsFacet: '300000020657211' },
+    { keyword: 'digital transformation', selectedCategoriesFacet: '300035862339235', selectedLocationsFacet: '300000020657211' },
+  ];
+  const jobs: JsonRecord[] = [];
+
+  for (const query of querySets) {
+    const finder = `findReqs;siteNumber=CX_1001,keyword=${query.keyword},selectedCategoriesFacet=${query.selectedCategoriesFacet},selectedLocationsFacet=${query.selectedLocationsFacet},limit=25,offset=0`;
+    const response = await fetch(`https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?finder=${encodeURIComponent(finder)}&expand=requisitionList&onlyData=true`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new Error(`Oracle ${source.employer} returned ${response.status}`);
+    const payload = await response.json() as { items?: Array<{ requisitionList?: unknown[] }> };
+    const requisitions = Array.isArray(payload.items)
+      ? payload.items.flatMap((item) => Array.isArray(item?.requisitionList) ? item.requisitionList : [])
+      : [];
+    requisitions.forEach((item) => jobs.push(asRecord(item)));
+  }
+
+  return Array.from(new Map(jobs.map((job) => [String(job.Id || ''), job])).values());
+}
+
+function scoreOraclePosting(job: JsonRecord, description: string) {
+  return scorePosting({ title: String(job.Title || ''), location: { name: String(job.PrimaryLocation || '') } }, description);
+}
+
+function matchingOracleSignals(job: JsonRecord, description: string) {
+  return matchingSignals({ title: String(job.Title || ''), location: { name: String(job.PrimaryLocation || '') } }, description);
+}
+
+function classifyOracleWorkArrangement(locationText: string, workplaceType: string, workplaceTypeCode: string) {
+  const text = `${locationText} ${workplaceType} ${workplaceTypeCode}`.toLowerCase();
+  if (text.includes('remote')) return 'remote';
+  if (text.includes('hybrid')) return 'hybrid';
+  return 'unknown';
+}
+
+function classifyRolePolicy(title: string, description: string) {
+  const normalized = ` ${title.toLowerCase()} ${description.toLowerCase()} `;
+  if (EXECUTIVE_EXCLUSION_TOKENS.some((token) => normalized.includes(token)) || /\bvp\b/.test(normalized)) {
+    return { excluded: true, normalizedLevel: 'excluded_executive_level', reason: 'excluded_executive_level' };
+  }
+  if (/\b(intern|internship|student|campus|summer analyst|analyst development|associate development|apprentice)\b/.test(normalized)) {
+    return { excluded: true, normalizedLevel: 'excluded_junior_level', reason: 'excluded_junior_or_student_role' };
+  }
+  if (/\bproduct owner\b/.test(normalized) && !/\b(senior|principal|director)\b/.test(normalized)) {
+    return { excluded: true, normalizedLevel: 'excluded_junior_level', reason: 'excluded_lower_scope_product_owner_role' };
+  }
+  if (/\b(software engineer|sales|account executive|project manager)\b/.test(normalized) && !/\bproduct\b/.test(normalized)) {
+    return { excluded: true, normalizedLevel: 'excluded_non_product_scope', reason: 'excluded_non_product_scope' };
+  }
+  if (/\bsenior director\b/.test(normalized)) return { excluded: false, normalizedLevel: 'senior_director_product_management', reason: '' };
+  if (/\bdirector\b/.test(normalized)) return { excluded: false, normalizedLevel: 'director_product_management', reason: '' };
+  if (/\bprincipal product manager\b/.test(normalized)) return { excluded: false, normalizedLevel: 'principal_product_manager', reason: '' };
+  if (/\bgroup product manager\b/.test(normalized)) return { excluded: false, normalizedLevel: 'group_product_manager', reason: '' };
+  if (/\bsenior product manager\b/.test(normalized)) return { excluded: false, normalizedLevel: 'senior_product_manager', reason: '' };
+  if (/\b(product manager|product lead|lead product manager)\b/.test(normalized)) return { excluded: false, normalizedLevel: 'product_manager', reason: '' };
+  if (/\b(product|customer experience|digital transformation|platform|automation|ai)\b/.test(normalized) && /\bdirector\b/.test(normalized)) {
+    return { excluded: false, normalizedLevel: 'director_product_management', reason: '' };
+  }
+  return { excluded: true, normalizedLevel: 'excluded_non_product_scope', reason: 'excluded_outside_target_role_band' };
 }
 
 function dedupePostings(postings: JsonRecord[]) {
@@ -1304,7 +1474,7 @@ function buildDailySearchConfig(
     },
     cost_controls: DAILY_OPERATING_CYCLE.creditSavingControls,
     daily_automation_id: 'daily-tomas-career-os-run',
-    discovery_mode: 'broader_product_leadership_greenhouse_market',
+    discovery_mode: 'broader_product_management_oracle_and_greenhouse_market',
     enqueue_qualified_package_ready_applications: true,
     employer_universe: DAILY_OPERATING_CYCLE.employerUniverseCovered,
     freshness_windows: ['24_hours', '3_days', '7_days', '14_days_if_active_exceptional_fit'],
@@ -1322,12 +1492,15 @@ function buildDailySearchConfig(
       qualified_unique_adds_when_available: 5,
     },
     role_keywords: DAILY_OPERATING_CYCLE.rolePriorities,
+    role_policy_version: TARGET_ROLE_POLICY_VERSION,
+    excluded_role_levels: ['excluded_executive_level', 'excluded_junior_level', 'excluded_non_product_scope'],
     source_candidates: discoveryPlan.sourceCandidates.map((candidate) => ({
       ats: candidate.ats,
       board: candidate.board,
       business_type: candidate.businessType,
       category: candidate.category,
       employer: candidate.employer,
+      source_url: candidate.sourceUrl,
       supported: candidate.supported,
     })),
     source_registry: DAILY_OPERATING_CYCLE.discoverySourcesEnabled,
@@ -1385,8 +1558,8 @@ function scorePosting(job: JsonRecord, description: string) {
   const title = String(job.title || '').toLowerCase();
   const text = `${title} ${String(asRecord(job.location).name || '')} ${description}`.toLowerCase();
   let score = 30;
-  if (hasPhrase(title, 'senior director') || hasPhrase(title, 'vice president')) score += 22;
-  else if (hasPhrase(title, 'director') || hasPhrase(title, 'head of')) score += 16;
+  if (hasPhrase(title, 'senior director')) score += 22;
+  else if (hasPhrase(title, 'director')) score += 16;
   else if (hasPhrase(title, 'principal') || hasPhrase(title, 'group product')) score += 14;
   if (hasPhrase(title, 'product management')) score += 25;
   else if (hasPhrase(title, 'product manager') || /\bproduct\b/.test(title)) score += 19;

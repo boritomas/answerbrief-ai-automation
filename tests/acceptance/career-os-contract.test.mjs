@@ -468,10 +468,55 @@ test('global autonomous discovery supports complete result sets, checkpoints, an
   assert.match(marketUniverseSource, /satellite, fixed wireless, and connectivity/);
   assert.match(marketUniverseSource, /towers, fiber infrastructure, and digital real estate/);
   assert.match(marketUniverseSource, /dynamic employer discovery/);
+  assert.match(marketUniverseSource, /JPMorgan Chase/);
+  assert.match(marketUniverseSource, /oracle/);
   assert.match(marketUniverseSource, /unsupportedSourceCandidates/);
+  assert.match(marketUniverseSource, /oracleSources/);
   assert.match(marketUniverseSource, /greenhouseBoards/);
   assert.match(cronRoute, /postingsPersisted/);
   assert.equal(cronRoute.includes('before.evidence'), true);
+});
+
+test('Career OS permanent role policy retains target product-management levels and excludes executive titles before scoring', () => {
+  const marketUniverseSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-market-universe.ts'), 'utf8');
+  const dailyCycleSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-daily-cycle.ts'), 'utf8');
+  const sourceRunner = readFileSync(path.join(repoRoot, 'scripts', 'run-career-os-source.mjs'), 'utf8');
+
+  assert.match(marketUniverseSource, /'Product Manager'/);
+  assert.match(marketUniverseSource, /'Senior Product Manager'/);
+  assert.match(marketUniverseSource, /'Group Product Manager'/);
+  assert.match(marketUniverseSource, /'Principal Product Manager'/);
+  assert.match(marketUniverseSource, /'Director of Product Management'/);
+  assert.match(marketUniverseSource, /'Senior Director of Product Management'/);
+  assert.doesNotMatch(marketUniverseSource, /'Vice President of Product'/);
+  assert.doesNotMatch(marketUniverseSource, /'Head of Product'/);
+  assert.match(dailyCycleSource, /classifyRolePolicy/);
+  assert.match(dailyCycleSource, /excluded_executive_level/);
+  assert.match(dailyCycleSource, /excluded_junior_level/);
+  assert.match(dailyCycleSource, /excluded_non_product_scope/);
+  assert.match(sourceRunner, /excluded_executive_level/);
+  assert.match(sourceRunner, /executiveExclusionTokens/);
+  assert.doesNotMatch(marketUniverseSource, /'Vice President'/);
+  assert.doesNotMatch(marketUniverseSource, /'Head of Product'/);
+});
+
+test('JPMorgan Oracle pilot uses the public Candidate Experience finder and persists individual requisitions', () => {
+  const dailyCycleSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-daily-cycle.ts'), 'utf8');
+  const sourceRunner = readFileSync(path.join(repoRoot, 'scripts', 'run-career-os-source.mjs'), 'utf8');
+
+  assert.match(dailyCycleSource, /fetchJpmorganOracleJobs/);
+  assert.match(dailyCycleSource, /const finder = `findReqs;siteNumber=CX_1001/);
+  assert.match(dailyCycleSource, /findReqs/);
+  assert.match(dailyCycleSource, /encodeURIComponent\(finder\)/);
+  assert.match(dailyCycleSource, /expand=requisitionList/);
+  assert.match(dailyCycleSource, /selectedCategoriesFacet/);
+  assert.match(dailyCycleSource, /selectedLocationsFacet/);
+  assert.match(dailyCycleSource, /normalizeOraclePosting/);
+  assert.match(dailyCycleSource, /hcmUI\/CandidateExperience/);
+  assert.match(dailyCycleSource, /\/job\/\$\{encodeURIComponent/);
+  assert.match(sourceRunner, /fetchJpmorganOraclePilot/);
+  assert.match(sourceRunner, /deterministic_oracle_source_runner_v1/);
+  assert.match(sourceRunner, /career_os_job_postings/);
 });
 
 test('minimal employment history model maps only ATS employment fields and validates Cisco safely', () => {

@@ -2,7 +2,9 @@
 import crypto from 'node:crypto';
 
 const ownerEmail = process.env.CAREER_OS_OWNER_EMAIL || 'tomas@nieves.com';
-const market = argValue('--market', process.env.CAREER_OS_MARKET || 'telecom');
+const market = argValue('--market', process.env.CAREER_OS_MARKET || 'broader_product_management');
+const rolePolicyVersion = 'career-os-role-policy-2026-07-21';
+const executiveExclusionTokens = ['vice president', ' head of ', ' chief ', ' executive director', ' managing director', 'svp', 'evp'];
 const expandedTelecomBoards = [
   'affirm',
   'bandwidth',
@@ -35,24 +37,13 @@ const dailySourceRegistry = [
   'company-hosted official career portals',
 ];
 const dailyEmployerUniverse = [
-  'telecommunications carriers',
-  'wireless providers',
-  'broadband and fiber companies',
-  'cable and media companies',
-  'satellite and connectivity providers',
-  'telecom infrastructure companies',
-  'networking companies',
-  'cloud communications',
-  'contact-center and customer-experience platforms',
-  'enterprise SaaS',
-  'AI platforms',
-  'digital commerce',
-  'fintech and payments',
-  'cybersecurity',
-  'large technology companies',
-  'consulting and transformation organizations',
+  'telecommunications, wireless, broadband, fiber, and connectivity employers',
+  'banking, fintech, payments, and insurance platforms',
+  'enterprise software, AI, customer experience, and automation platforms',
+  'retail, healthcare technology, transportation, logistics, energy, and utilities',
+  'consulting, digital transformation, and major Dallas-Fort Worth employers',
 ];
-const boards = argValue('--boards', process.env.CAREER_OS_SOURCE_BOARDS || (market === 'telecom' ? expandedTelecomBoards.join(',') : 'affirm'))
+const boards = argValue('--boards', process.env.CAREER_OS_SOURCE_BOARDS || expandedTelecomBoards.join(','))
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
@@ -65,11 +56,9 @@ const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:${mark
 const sourceRun = {
   id: sourceRunId,
   owner_email: ownerEmail,
-  source_type: market === 'telecom' ? 'expanded_public_ats_api' : 'public_ats_api',
-  source_name: market === 'telecom'
-    ? 'Expanded telecom, communications, connectivity, cloud, and adjacent platform official Greenhouse sources'
-    : `Greenhouse public job boards: ${boards.join(', ')}`,
-  source_url: 'https://boards-api.greenhouse.io/v1/boards',
+  source_type: 'expanded_public_ats_api',
+  source_name: 'Expanded broader-market Greenhouse and Oracle product-management discovery',
+  source_url: 'https://boards-api.greenhouse.io/v1/boards plus Oracle Candidate Experience official sources',
   status: 'succeeded',
   executed_at: executedAt,
   number_reviewed: 0,
@@ -89,22 +78,20 @@ const sourceRun = {
       'adjacent digital platform industries',
     ] : undefined,
     role_keywords: [
-      'senior director',
-      'director',
-      'vice president',
-      'head of product',
-      'principal product manager',
+      'product manager',
+      'senior product manager',
       'group product manager',
-      'product management',
+      'principal product manager',
+      'director of product management',
+      'senior director of product management',
       'platform',
       'customer experience',
-      'contact center',
-      'communications',
       'transformation',
       'automation',
       'ai',
     ],
     min_fit_score: minFitScore,
+    role_policy_version: rolePolicyVersion,
     texas_remote_filter: 'remote_us_texas_or_reasonable_texas_markets',
     location_policy: 'verify remote from Texas, employment from Texas, Dallas-Fort Worth, or Texas hybrid before package generation',
     freshness_windows: ['24_hours', '3_days', '7_days', '14_days_if_active_exceptional_fit'],
@@ -156,10 +143,15 @@ for (const board of boards) {
     const posting = normalizePosting(board, job, executedAt, sourceRunId);
     if (posting.fit_score < minFitScore) {
       sourceRun.number_skipped += 1;
-      continue;
     }
     postings.push(posting);
   }
+}
+
+for (const job of await fetchJpmorganOraclePilot(executedAt, sourceRunId)) {
+  sourceRun.number_reviewed += 1;
+  if (job.fit_score < minFitScore) sourceRun.number_skipped += 1;
+  postings.push(job);
 }
 
 postings.sort((a, b) => b.fit_score - a.fit_score || a.company.localeCompare(b.company));
@@ -205,8 +197,9 @@ async function fetchGreenhouseJobs(board) {
 function normalizePosting(board, job, lastCheckedAt, sourceRunId) {
   const company = companyName(board, job);
   const description = htmlToText(job.content || '');
+  const rolePolicy = classifyRolePolicy(String(job.title || ''), description);
   const compensation = extractCompensation(description);
-  const fitScore = scorePosting(job, description);
+  const fitScore = rolePolicy.excluded ? 0 : scorePosting(job, description);
   const requisition = String(job.requisition_id || job.id);
   const canonicalUrl = job.absolute_url || `https://job-boards.greenhouse.io/${board}/jobs/${job.id}`;
 
@@ -225,6 +218,8 @@ function normalizePosting(board, job, lastCheckedAt, sourceRunId) {
     external_requisition_id: requisition,
     job_description: description,
     normalized_description: description.slice(0, 12000),
+    normalized_role_level: rolePolicy.normalizedLevel,
+    deterministic_filter_reason: rolePolicy.reason,
     posting_validation_status: 'active',
     last_checked_at: lastCheckedAt,
     raw_record: job,
@@ -248,7 +243,80 @@ function normalizePosting(board, job, lastCheckedAt, sourceRunId) {
     },
     hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
     selected_for_pilot: false,
-    status: fitScore >= minFitScore ? 'discovered' : 'skipped',
+    status: rolePolicy.excluded ? 'ineligible' : fitScore >= minFitScore ? 'discovered' : 'qualification_pending',
+  };
+}
+
+async function fetchJpmorganOraclePilot(lastCheckedAt, sourceRunId) {
+  const querySets = [
+    { keyword: 'product', selectedCategoriesFacet: '300000086251864', selectedLocationsFacet: '300000020657211' },
+    { keyword: 'product', selectedCategoriesFacet: '300000086251864', selectedLocationsFacet: '300000020709331' },
+  ];
+  const seen = new Map();
+  for (const query of querySets) {
+    const finder = `findReqs;siteNumber=CX_1001,keyword=${query.keyword},selectedCategoriesFacet=${query.selectedCategoriesFacet},selectedLocationsFacet=${query.selectedLocationsFacet},limit=25,offset=0`;
+    const response = await fetch(`https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?finder=${encodeURIComponent(finder)}&expand=requisitionList&onlyData=true`, {
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error(`Oracle JPMorgan Chase returned ${response.status}`);
+    const payload = await response.json();
+    const requisitions = Array.isArray(payload.items) ? payload.items.flatMap((item) => Array.isArray(item.requisitionList) ? item.requisitionList : []) : [];
+    for (const requisition of requisitions) {
+      const normalized = normalizeOraclePosting(requisition, lastCheckedAt, sourceRunId);
+      seen.set(normalized.id, normalized);
+    }
+  }
+  return Array.from(seen.values());
+}
+
+function normalizeOraclePosting(job, lastCheckedAt, sourceRunId) {
+  const title = String(job.Title || '').trim();
+  const description = [job.ShortDescriptionStr, job.ExternalResponsibilitiesStr, job.ExternalQualificationsStr].filter(Boolean).join('\n\n');
+  const rolePolicy = classifyRolePolicy(title, description);
+  const fitScore = rolePolicy.excluded ? 0 : scorePosting({ title, location: { name: job.PrimaryLocation || '' } }, description);
+  return {
+    id: `oracle-jpmorgan-chase-${job.Id}`,
+    source_run_id: sourceRunId,
+    owner_email: ownerEmail,
+    company: 'JPMorgan Chase',
+    title,
+    location: String(job.PrimaryLocation || ''),
+    work_arrangement: /remote/i.test(`${job.PrimaryLocation || ''} ${job.WorkplaceType || ''}`) ? 'remote' : /hybrid/i.test(`${job.PrimaryLocation || ''} ${job.WorkplaceType || ''}`) ? 'hybrid' : 'unknown',
+    compensation_min_usd: null,
+    compensation_max_usd: null,
+    compensation_text: '',
+    canonical_url: `https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/${encodeURIComponent(String(job.Id || ''))}`,
+    external_requisition_id: String(job.Id || ''),
+    ats_job_id: String(job.Id || ''),
+    job_description: description,
+    normalized_description: description.slice(0, 12000),
+    normalized_role_level: rolePolicy.normalizedLevel,
+    deterministic_filter_reason: rolePolicy.reason,
+    posting_validation_status: 'active',
+    last_checked_at: lastCheckedAt,
+    raw_record: job,
+    fit_score: fitScore,
+    ats_analysis: {
+      score: fitScore,
+      signals: matchingSignals({ title, location: { name: job.PrimaryLocation || '' } }, description),
+      risks: [],
+      method: 'deterministic_oracle_source_runner_v1',
+    },
+    ai_readiness_analysis: {
+      score: rolePolicy.excluded ? 0 : scoreAiReadiness(description),
+      signals: ['platform strategy', 'automation', 'customer experience'].filter((signal) => hasAny(description, signal)),
+      method: 'answerbrief_deterministic_readiness_v1',
+    },
+    recruiter_intelligence: {
+      score: rolePolicy.excluded ? 0 : scoreRecruiterFit({ title, location: { name: job.PrimaryLocation || '' } }, description),
+      salary: 'not published',
+      location: job.PrimaryLocation || 'not published',
+      decision: fitScore >= minFitScore ? 'worth_applying' : 'skip',
+    },
+    hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
+    selected_for_pilot: false,
+    status: rolePolicy.excluded ? 'ineligible' : fitScore >= minFitScore ? 'discovered' : 'qualification_pending',
+    ats_platform: 'oracle',
   };
 }
 
@@ -286,9 +354,9 @@ async function supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows) {
 function scorePosting(job, description) {
   const title = String(job.title || '').toLowerCase();
   const text = `${title} ${job.location?.name || ''} ${description}`.toLowerCase();
-  let score = market === 'telecom' ? 34 : 30;
-  if (hasPhrase(title, 'senior director') || hasPhrase(title, 'vice president')) score += 22;
-  else if (hasPhrase(title, 'director') || hasPhrase(title, 'head of')) score += 16;
+  let score = 30;
+  if (hasPhrase(title, 'senior director')) score += 22;
+  else if (hasPhrase(title, 'director')) score += 16;
   else if (hasPhrase(title, 'principal') || hasPhrase(title, 'group product')) score += 14;
   if (hasPhrase(title, 'product management')) score += 25;
   else if (hasPhrase(title, 'product manager') || /\bproduct\b/.test(title)) score += 19;
@@ -297,12 +365,35 @@ function scorePosting(job, description) {
   if (hasPhrase(text, 'customer experience') || hasPhrase(text, 'contact center') || hasPhrase(text, 'ccaas') || hasPhrase(text, 'ucaas')) score += 9;
   if (hasPhrase(text, 'telecom') || hasPhrase(text, 'communications') || hasPhrase(text, 'connectivity') || hasPhrase(text, 'wireless') || hasPhrase(text, 'broadband')) score += 8;
   if (hasPhrase(text, 'automation') || /\bai\b/.test(text) || hasPhrase(text, 'agentic')) score += 6;
-  if (hasPhrase(text, 'payments') || hasPhrase(text, 'cards') || hasPhrase(text, 'fintech')) score += market === 'telecom' ? 2 : 5;
+  if (hasPhrase(text, 'payments') || hasPhrase(text, 'cards') || hasPhrase(text, 'fintech')) score += 5;
   if (/remote\s*-\s*us|remote,\s*us|united states \(remote\)|usa\s*-\s*remote|work from home - us/i.test(job.location?.name || '')) score += 7;
   if (/austin|dallas|plano|irving|houston|san antonio|texas/i.test(`${job.location?.name || ''} ${description}`)) score += 5;
   if (/remote canada|remote uk|remote poland|remote spain|india|ireland|london|dublin|germany|japan|israel/i.test(job.location?.name || '')) score -= 25;
   if (!/\b(product|transformation|strategy|customer experience)\b/.test(title) && /compliance|counsel|sales|marketing|software engineer|learning|account|finance|analytics|designer|intern|apprentice/i.test(title)) score -= 34;
   return Math.min(score, 95);
+}
+
+function classifyRolePolicy(title, description) {
+  const normalized = ` ${String(title || '').toLowerCase()} ${String(description || '').toLowerCase()} `;
+  if (executiveExclusionTokens.some((token) => normalized.includes(token)) || /\bvp\b/.test(normalized)) {
+    return { excluded: true, normalizedLevel: 'excluded_executive_level', reason: 'excluded_executive_level' };
+  }
+  if (/\b(intern|internship|student|campus|summer analyst|analyst development|associate development|apprentice)\b/.test(normalized)) {
+    return { excluded: true, normalizedLevel: 'excluded_junior_level', reason: 'excluded_junior_or_student_role' };
+  }
+  if (/\bproduct owner\b/.test(normalized) && !/\b(senior|principal|director)\b/.test(normalized)) {
+    return { excluded: true, normalizedLevel: 'excluded_junior_level', reason: 'excluded_lower_scope_product_owner_role' };
+  }
+  if (/\bsenior director\b/.test(normalized)) return { excluded: false, normalizedLevel: 'senior_director_product_management', reason: '' };
+  if (/\bdirector\b/.test(normalized)) return { excluded: false, normalizedLevel: 'director_product_management', reason: '' };
+  if (/\bprincipal product manager\b/.test(normalized)) return { excluded: false, normalizedLevel: 'principal_product_manager', reason: '' };
+  if (/\bgroup product manager\b/.test(normalized)) return { excluded: false, normalizedLevel: 'group_product_manager', reason: '' };
+  if (/\bsenior product manager\b/.test(normalized)) return { excluded: false, normalizedLevel: 'senior_product_manager', reason: '' };
+  if (/\b(product manager|product lead|lead product manager)\b/.test(normalized)) return { excluded: false, normalizedLevel: 'product_manager', reason: '' };
+  if (/\b(product|customer experience|digital transformation|platform|automation|ai)\b/.test(normalized) && /\bdirector\b/.test(normalized)) {
+    return { excluded: false, normalizedLevel: 'director_product_management', reason: '' };
+  }
+  return { excluded: true, normalizedLevel: 'excluded_non_product_scope', reason: 'excluded_outside_target_role_band' };
 }
 
 function scoreAiReadiness(description) {
