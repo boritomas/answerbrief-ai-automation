@@ -12,6 +12,9 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
+const AUTO_APPLY_THRESHOLD = 85;
+const REVIEW_QUEUE_THRESHOLD = 60;
+
 export type CareerOsStatus = {
   environment: 'production' | 'unconfigured';
   generatedAt: string;
@@ -24,6 +27,8 @@ export type CareerOsStatus = {
   remainingQualifiedApplications: number;
   waitingOnTomas: number;
   readyForAutomation: number;
+  reviewQueueCount: number;
+  archivedOpportunities: number;
   inProgress: number;
   ineligible: number;
   inactive: number;
@@ -50,6 +55,8 @@ export type CareerOsStatus = {
   trustedAutoApplyPolicy: TrustedAutoApplyPolicyStatus;
   releaseCompletionPercentage: number;
   actionableProgressPercentage: number;
+  qualificationTiers: QualificationTierPolicy;
+  reviewQueue: ReviewQueueStatus;
   dailyWorkflow: DailyOperatingCycleStatus;
   nextAction?: {
     label: string;
@@ -68,6 +75,46 @@ export type CareerOsStatus = {
   blocker?: string;
   evidence: CareerOsEvidence;
   verificationRows: VerificationRow[];
+};
+
+export type QualificationTier = 'archive' | 'auto_apply' | 'tomas_review';
+
+export type QualificationTierPolicy = {
+  archiveRange: '0-59';
+  autoApplyRange: '85-100';
+  reviewQueueRange: '60-84';
+  autoApplyThreshold: 85;
+};
+
+export type ReviewQueueItem = {
+  applicationId?: string;
+  applicationStatus: 'Approved' | 'Not Submitted' | 'Skipped';
+  ats: string;
+  canonicalUrl: string;
+  concerns: string[];
+  currentLifecycleState: string;
+  duplicateLocked: boolean;
+  employer: string;
+  fitScore: number;
+  highestReason: string;
+  location: string;
+  opportunityId: string;
+  packageStatus: 'approved_existing' | 'none' | 'package_ready';
+  postedAt?: string;
+  qualificationReasons: string[];
+  requisitionId: string;
+  reviewDecision: 'approve' | 'none' | 'reject_similar' | 'skip';
+  scoreBreakdown: Array<{ category: string; score: number; summary: string }>;
+  tier: QualificationTier;
+  title: string;
+};
+
+export type ReviewQueueStatus = {
+  estimatedReviewMinutes: number;
+  highestScoringRole?: string;
+  items: ReviewQueueItem[];
+  oldestWaitingRole?: string;
+  total: number;
 };
 
 export type CanonicalEmploymentRecord = {
@@ -412,6 +459,7 @@ export function summarizeCareerOsStatus(status: CareerOsStatus) {
       : 'Career OS production systems are not connected in this runtime.',
     applyLine: `${status.activeQualifiedOpportunities} qualified active job${status.activeQualifiedOpportunities === 1 ? '' : 's'}.`,
     remainingLine: `${status.remainingQualifiedApplications} qualified application${status.remainingQualifiedApplications === 1 ? '' : 's'} remaining.`,
+    reviewLine: `${status.reviewQueue.total} role${status.reviewQueue.total === 1 ? '' : 's'} are waiting in My Review Queue.`,
     packageLine: `${status.totalPackages} package asset${status.totalPackages === 1 ? '' : 's'} generated, covering ${status.packagesCoveringQualifiedJobs} qualified job${status.packagesCoveringQualifiedJobs === 1 ? '' : 's'}.`,
     packageExplanation: 'Packages are application assets and may include multiple versions. Package count does not equal the number of unique jobs.',
     submittedLine: `${status.submittedApplications} submitted application${status.submittedApplications === 1 ? '' : 's'} with confirmation evidence.`,
@@ -419,7 +467,7 @@ export function summarizeCareerOsStatus(status: CareerOsStatus) {
     postedCompensationRange: salary,
     qualifiedPostedCompensationRange: qualifiedSalary,
     compensationPreferenceLine: `Tomas preferred minimum base salary: ${preferredBase}; optional desired-compensation fields stay blank.`,
-    dailyWorkflowLine: `${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new job record${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? '' : 's'} today; ${status.dailyWorkflow.pipelineHealth.readyForAutomation} ready for automation; ${status.dailyWorkflow.pipelineHealth.interviews} interview${status.dailyWorkflow.pipelineHealth.interviews === 1 ? '' : 's'}.`,
+    dailyWorkflowLine: `${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new job record${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? '' : 's'} today; ${status.dailyWorkflow.pipelineHealth.readyForAutomation} ready for automation; ${status.reviewQueue.total} waiting for Tomas review; ${status.dailyWorkflow.pipelineHealth.interviews} interview${status.dailyWorkflow.pipelineHealth.interviews === 1 ? '' : 's'}.`,
   };
 }
 
@@ -445,6 +493,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   const applicationExecution = buildApplicationExecutionStatus(evidence);
   const duplicateSafety = evaluateDuplicateApplicationSafety(evidence.applications);
   const trustedAutoApplyPolicy = buildTrustedAutoApplyPolicy();
+  const reviewQueue = buildReviewQueueStatus(evidence, compensationPreference.preferredMinimumBaseSalaryUsd);
   const globalLifecycle = buildGlobalLifecycleStatus(
     evidence,
     canonicalRelease,
@@ -468,6 +517,8 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     remainingQualifiedApplications: canonicalRelease.remainingQualifiedApplications,
     waitingOnTomas: canonicalRelease.waitingOnTomas,
     readyForAutomation: canonicalRelease.readyForAutomation,
+    reviewQueueCount: canonicalRelease.reviewQueueCount,
+    archivedOpportunities: canonicalRelease.archivedOpportunities,
     inProgress: canonicalRelease.inProgress,
     ineligible: canonicalRelease.ineligible,
     inactive: canonicalRelease.inactive,
@@ -487,6 +538,13 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     trustedAutoApplyPolicy,
     releaseCompletionPercentage: canonicalRelease.releaseCompletionPercentage,
     actionableProgressPercentage: canonicalRelease.actionableProgressPercentage,
+    qualificationTiers: {
+      archiveRange: '0-59',
+      autoApplyRange: '85-100',
+      reviewQueueRange: '60-84',
+      autoApplyThreshold: AUTO_APPLY_THRESHOLD,
+    },
+    reviewQueue,
     dailyWorkflow,
     nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates, applicationExecution),
     employmentModel,
@@ -1062,61 +1120,24 @@ type NormalizedOpportunity = ReturnType<typeof normalizeOpportunityIdentity>;
 
 type CanonicalOpportunity = {
   applications: JsonRecord[];
-  className: 'active_qualified' | 'ineligible' | 'inactive' | 'not_qualified';
+  className: 'active_retained' | 'archived' | 'ineligible' | 'inactive';
   key: string;
   packageAssets: number;
-  releaseState: 'submitted' | 'waiting_on_tomas' | 'ready_for_automation' | 'in_progress' | 'ineligible' | 'inactive';
+  preferredRecord: NormalizedOpportunity;
+  qualificationTier: QualificationTier;
+  releaseState: 'submitted' | 'tomas_review' | 'waiting_on_tomas' | 'ready_for_automation' | 'in_progress' | 'ineligible' | 'inactive';
   sourceOpportunityIds: Set<string>;
   submitted: boolean;
 };
 
 function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number) {
+  const canonical = buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd);
   const keyed = [
     ...evidence.jobPostings.map((job) => normalizeOpportunityIdentity(job, 'posting')),
     ...evidence.seededOpportunities.map((job) => normalizeOpportunityIdentity(job, 'opportunity')),
   ];
 
-  const groups = new Map<string, NormalizedOpportunity[]>();
-  for (const item of keyed) {
-    const bucket = groups.get(item.key) || [];
-    bucket.push(item);
-    groups.set(item.key, bucket);
-  }
-
-  const canonical: CanonicalOpportunity[] = [];
-
-  for (const [key, records] of Array.from(groups.entries())) {
-    const preferred = records.slice().sort((a, b) => {
-      if (a.sourceType !== b.sourceType) return a.sourceType === 'posting' ? -1 : 1;
-      return b.updatedAt - a.updatedAt;
-    })[0];
-    const sourceOpportunityIds = new Set<string>(records.flatMap((record: NormalizedOpportunity) => [record.sourceId, record.opportunityId]).filter((value): value is string => Boolean(value)));
-    const applications = evidence.applications.filter((application) => applicationMatchesCanonical(application, preferred, sourceOpportunityIds));
-    const submitted = applications.some((application) => {
-      const state = canonicalQueueState(application);
-      return state === 'confirmed' || state === 'submitted' || state === 'duplicate';
-    });
-    const packageAssets = evidence.artifacts.filter((artifact) => {
-      if (!['targeted_resume', 'application_package'].includes(String(artifact.artifact_type))) return false;
-      const artifactOpportunityId = String(artifact.opportunity_id || '');
-      const artifactApplicationId = String(artifact.application_id || '');
-      return sourceOpportunityIds.has(artifactOpportunityId)
-        || applications.some((application) => String(application.id) === artifactApplicationId);
-    }).length;
-    const className = classifyOpportunity(preferred, preferredMinimumBaseSalaryUsd);
-
-    canonical.push({
-      applications,
-      className,
-      key,
-      packageAssets,
-      releaseState: classifyReleaseState(preferred, className, applications, preferredMinimumBaseSalaryUsd),
-      sourceOpportunityIds,
-      submitted,
-    });
-  }
-
-  const activeQualified = canonical.filter((item) => item.className === 'active_qualified');
+  const activeQualified = canonical.filter((item) => item.className === 'active_retained');
   const submittedActive = activeQualified.filter((item) => item.submitted);
   const exactTomasCheckpoint = activeQualified.filter((item) => item.releaseState === 'waiting_on_tomas');
   const totalPackages = evidence.artifacts.filter((artifact) => ['targeted_resume', 'application_package'].includes(String(artifact.artifact_type))).length;
@@ -1136,6 +1157,8 @@ function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence, preferredMinim
     remainingQualifiedApplications: Math.max(activeQualified.length - submittedActive.length, 0),
     waitingOnTomas: activeQualified.filter((item) => item.releaseState === 'waiting_on_tomas').length,
     readyForAutomation: activeQualified.filter((item) => item.releaseState === 'ready_for_automation').length,
+    reviewQueueCount: activeQualified.filter((item) => item.releaseState === 'tomas_review').length,
+    archivedOpportunities: canonical.filter((item) => item.className === 'archived').length,
     inProgress: activeQualified.filter((item) => item.releaseState === 'in_progress').length,
     ineligible: canonical.filter((item) => item.className === 'ineligible').length,
     inactive: canonical.filter((item) => item.className === 'inactive').length,
@@ -1175,6 +1198,10 @@ function normalizeOpportunityIdentity(record: JsonRecord, sourceType: 'posting' 
     compensationMaxUsd: numberValue(record.compensation_max_usd),
     compensationMinUsd: numberValue(record.compensation_min_usd),
     compensationText: String(record.compensation_text || ''),
+    createdAt: Date.parse(String(record.created_at || record.discovered_at || 0)) || 0,
+    currentLifecycleState: String(record.status || ''),
+    location: String(record.location || ''),
+    normalizedRoleLevel: String(record.normalized_role_level || asRecord(record.raw_record).normalized_role_level || ''),
     opportunityId: sourceId,
     position,
     requisitionId,
@@ -1183,8 +1210,11 @@ function normalizeOpportunityIdentity(record: JsonRecord, sourceType: 'posting' 
     sourceType,
     status: String(record.status || ''),
     postingValidationStatus: String(record.posting_validation_status || ''),
+    workArrangement: String(record.work_arrangement || ''),
     titleKey,
     updatedAt: Date.parse(String(record.updated_at || record.last_checked_at || record.discovered_at || 0)) || 0,
+    raw: record,
+    url,
   };
 }
 
@@ -1196,19 +1226,30 @@ function applicationMatchesCanonical(application: JsonRecord, canonical: Normali
     && normalizeTitle(application.position) === canonical.titleKey;
 }
 
-function classifyOpportunity(item: NormalizedOpportunity, preferredMinimumBaseSalaryUsd?: number): CanonicalOpportunity['className'] {
+function qualificationTierForOpportunity(item: NormalizedOpportunity, preferredMinimumBaseSalaryUsd?: number): QualificationTier {
+  const raw = asRecord(item.raw.raw_record);
+  const reviewDecision = normalizedReviewDecision(raw.review_decision);
+  if (isInactiveStatus(item.status) || isInactiveStatus(item.postingValidationStatus)) return 'archive';
+  if (reviewDecision === 'skip' || reviewDecision === 'reject_similar') return 'archive';
+  if (item.status.startsWith('ineligible')) return 'archive';
+  if (preferredMinimumBaseSalaryUsd && item.compensationMaxUsd > 0 && item.compensationMaxUsd < preferredMinimumBaseSalaryUsd && !hasTotalCompensationEvidence(item.compensationText)) return 'archive';
+  if (item.score >= AUTO_APPLY_THRESHOLD) return 'auto_apply';
+  if (item.score >= REVIEW_QUEUE_THRESHOLD) return 'tomas_review';
+  return 'archive';
+}
+
+function classifyOpportunity(item: NormalizedOpportunity, qualificationTier: QualificationTier): CanonicalOpportunity['className'] {
   if (isInactiveStatus(item.status) || isInactiveStatus(item.postingValidationStatus)) return 'inactive';
   if (item.status.startsWith('ineligible')) return 'ineligible';
-  if (preferredMinimumBaseSalaryUsd && item.compensationMaxUsd > 0 && item.compensationMaxUsd < preferredMinimumBaseSalaryUsd && !hasTotalCompensationEvidence(item.compensationText)) return 'ineligible';
-  const activePosting = !item.postingValidationStatus || item.postingValidationStatus === 'active';
-  return activePosting && item.score >= 70 ? 'active_qualified' : 'not_qualified';
+  if (qualificationTier === 'archive') return 'archived';
+  return 'active_retained';
 }
 
 function classifyReleaseState(
   item: NormalizedOpportunity,
   className: CanonicalOpportunity['className'],
+  qualificationTier: QualificationTier,
   applications: JsonRecord[],
-  preferredMinimumBaseSalaryUsd?: number,
 ): CanonicalOpportunity['releaseState'] {
   const applicationStates = applications.map((application) => canonicalQueueState(application));
   if (applicationStates.some((state) => state === 'confirmed' || state === 'submitted' || state === 'duplicate')) return 'submitted';
@@ -1217,10 +1258,175 @@ function classifyReleaseState(
   if (applicationStates.some((state) => state === 'queued' || state === 'package_ready' || state === 'qualified')) return 'ready_for_automation';
   if (className === 'ineligible') return 'ineligible';
   if (className === 'inactive') return 'inactive';
+  if (qualificationTier === 'tomas_review') return 'tomas_review';
   const status = item.status;
   if (hasAnyStatus(status, ['technical'])) return 'in_progress';
   if (hasAnyStatus(status, ['compensation', 'legal', 'privacy', 'human', 'account'])) return 'waiting_on_tomas';
   return 'ready_for_automation';
+}
+
+function buildReviewQueueStatus(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): ReviewQueueStatus {
+  const canonicalRelease = buildCanonicalReleaseMetrics(evidence, preferredMinimumBaseSalaryUsd);
+  const items = buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd)
+    .filter((item) => item.releaseState === 'tomas_review')
+    .map((item) => reviewQueueItemFromCanonical(item))
+    .filter((item) => item.reviewDecision === 'none');
+
+  const highest = items[0];
+  const oldest = items.slice().sort((a, b) => {
+    const aTime = Date.parse(a.postedAt || '') || Number.MAX_SAFE_INTEGER;
+    const bTime = Date.parse(b.postedAt || '') || Number.MAX_SAFE_INTEGER;
+    return aTime - bTime;
+  })[0];
+
+  return {
+    estimatedReviewMinutes: items.length * 2,
+    highestScoringRole: highest ? `${highest.employer} · ${highest.title}` : undefined,
+    items,
+    oldestWaitingRole: oldest ? `${oldest.employer} · ${oldest.title}` : undefined,
+    total: items.length,
+  };
+}
+
+function buildCanonicalOpportunityList(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): CanonicalOpportunity[] {
+  const keyed = [
+    ...evidence.jobPostings.map((job) => normalizeOpportunityIdentity(job, 'posting')),
+    ...evidence.seededOpportunities.map((job) => normalizeOpportunityIdentity(job, 'opportunity')),
+  ];
+  const groups = new Map<string, NormalizedOpportunity[]>();
+  for (const item of keyed) {
+    const bucket = groups.get(item.key) || [];
+    bucket.push(item);
+    groups.set(item.key, bucket);
+  }
+  const canonical: CanonicalOpportunity[] = [];
+  for (const [key, records] of Array.from(groups.entries())) {
+    const preferred = records.slice().sort((a, b) => {
+      if (a.sourceType !== b.sourceType) return a.sourceType === 'posting' ? -1 : 1;
+      return b.updatedAt - a.updatedAt;
+    })[0];
+    const sourceOpportunityIds = new Set<string>(records.flatMap((record: NormalizedOpportunity) => [record.sourceId, record.opportunityId]).filter((value): value is string => Boolean(value)));
+    const applications = evidence.applications.filter((application) => applicationMatchesCanonical(application, preferred, sourceOpportunityIds));
+    const submitted = applications.some((application) => {
+      const state = canonicalQueueState(application);
+      return state === 'confirmed' || state === 'submitted' || state === 'duplicate';
+    });
+    const packageAssets = evidence.artifacts.filter((artifact) => {
+      if (!['targeted_resume', 'application_package'].includes(String(artifact.artifact_type))) return false;
+      const artifactOpportunityId = String(artifact.opportunity_id || '');
+      const artifactApplicationId = String(artifact.application_id || '');
+      return sourceOpportunityIds.has(artifactOpportunityId)
+        || applications.some((application) => String(application.id) === artifactApplicationId);
+    }).length;
+    const qualificationTier = qualificationTierForOpportunity(preferred, preferredMinimumBaseSalaryUsd);
+    const className = classifyOpportunity(preferred, qualificationTier);
+    canonical.push({
+      applications,
+      className,
+      key,
+      packageAssets,
+      preferredRecord: preferred,
+      qualificationTier,
+      releaseState: classifyReleaseState(preferred, className, qualificationTier, applications),
+      sourceOpportunityIds,
+      submitted,
+    });
+  }
+  return canonical;
+}
+
+function reviewQueueItemFromCanonical(item: CanonicalOpportunity): ReviewQueueItem {
+  const record = item.preferredRecord;
+  const raw = asRecord(record.raw);
+  const atsAnalysis = asRecord(record.raw.ats_analysis);
+  const aiReadiness = asRecord(record.raw.ai_readiness_analysis);
+  const recruiter = asRecord(record.raw.recruiter_intelligence);
+  const rawRecord = asRecord(record.raw.raw_record);
+  const reviewDecision = normalizedReviewDecision(rawRecord.review_decision);
+  const scoreBreakdown = buildScoreBreakdown(record.raw);
+  const application = item.applications[0];
+  return {
+    applicationId: stringValue(application?.id) || undefined,
+    applicationStatus: reviewDecision === 'approve' ? 'Approved' : reviewDecision === 'skip' ? 'Skipped' : 'Not Submitted',
+    ats: String(raw.ats_platform || rawRecord.ats_platform || atsAnalysis.platform || 'unknown').toUpperCase(),
+    canonicalUrl: record.url,
+    concerns: buildConcerns(record.raw, scoreBreakdown),
+    currentLifecycleState: record.currentLifecycleState || 'review_pending',
+    duplicateLocked: item.submitted,
+    employer: record.employer,
+    fitScore: record.score,
+    highestReason: scoreBreakdown[0]?.summary || String(rawRecord.qualification_reason || 'Promising product leadership alignment.'),
+    location: record.location || 'Location not verified',
+    opportunityId: record.sourceId,
+    packageStatus: item.packageAssets > 0 ? 'approved_existing' : item.applications.length ? 'package_ready' : 'none',
+    postedAt: formatIsoDate(record.raw.created_at || record.raw.updated_at || record.raw.last_checked_at),
+    qualificationReasons: buildQualificationReasons(record.raw, scoreBreakdown, recruiter, aiReadiness),
+    requisitionId: record.requisitionId,
+    reviewDecision,
+    scoreBreakdown,
+    tier: item.qualificationTier,
+    title: record.position,
+  };
+}
+
+function normalizedReviewDecision(value: unknown): ReviewQueueItem['reviewDecision'] {
+  const text = String(value || '').trim().toLowerCase();
+  if (text === 'approve') return 'approve';
+  if (text === 'skip') return 'skip';
+  if (text === 'reject_similar') return 'reject_similar';
+  return 'none';
+}
+
+function buildScoreBreakdown(record: JsonRecord) {
+  const description = `${record.title || ''} ${record.location || ''} ${record.normalized_description || record.job_description || ''}`.toLowerCase();
+  const roleLevel = String(record.normalized_role_level || '');
+  return [
+    scoreBreakdownRow('Role-level fit', roleLevel.includes('director') ? 12 : roleLevel.includes('principal') || roleLevel.includes('group') || roleLevel.includes('senior') ? 10 : 8, roleLevel.includes('director') ? 'Approved product-led director band.' : 'Approved product-management band.'),
+    scoreBreakdownRow('Product-management alignment', hasAnyStatus(description, ['product manager', 'product management', 'product lead']) ? 12 : 4, 'Strong product-management alignment.'),
+    scoreBreakdownRow('Leadership scope', hasAnyStatus(description, ['leadership', 'cross-functional', 'stakeholder', 'roadmap']) ? 8 : 4, hasAnyStatus(description, ['leadership', 'cross-functional']) ? 'Relevant leadership scale.' : 'Leadership scope is present but limited.'),
+    scoreBreakdownRow('Customer-experience relevance', hasAnyStatus(description, ['customer experience', 'customer journey', 'cx']) ? 8 : 0, 'Customer journey ownership is visible.'),
+    scoreBreakdownRow('Digital-transformation relevance', hasAnyStatus(description, ['digital transformation', 'transformation']) ? 8 : 0, 'Digital transformation signal detected.'),
+    scoreBreakdownRow('Enterprise-platform relevance', hasAnyStatus(description, ['platform', 'api', 'enterprise']) ? 8 : 2, 'Enterprise platform signal detected.'),
+    scoreBreakdownRow('AI/automation relevance', hasAnyStatus(description, ['ai', 'automation', 'machine learning']) ? 8 : 0, 'AI or automation relevance is visible.'),
+    scoreBreakdownRow('Telecom/connectivity relevance', hasAnyStatus(description, ['telecom', 'wireless', 'connectivity', 'fiber']) ? 8 : 0, 'Telecom or connectivity experience transfers well.'),
+    scoreBreakdownRow('Adjacent-industry transferability', hasAnyStatus(description, ['payments', 'banking', 'financial', 'fintech']) ? 6 : 4, 'Adjacent-industry transferability is credible.'),
+    scoreBreakdownRow('Location fit', hasAnyStatus(description, ['texas', 'dallas', 'plano', 'remote']) ? 6 : 4, hasAnyStatus(description, ['texas', 'dallas', 'plano']) ? 'Texas location policy fits.' : 'Location policy appears acceptable.'),
+    scoreBreakdownRow('Compensation fit', record.compensation_max_usd ? 6 : 3, record.compensation_max_usd ? 'Compensation data is posted.' : 'Compensation is not posted.'),
+    scoreBreakdownRow('Required technical depth', hasAnyStatus(description, ['api', 'platform', 'technical']) ? 4 : 6, hasAnyStatus(description, ['technical']) ? 'Technical depth is heavier than some target roles.' : 'Technical depth remains within the target band.'),
+    scoreBreakdownRow('Missing qualifications', hasAnyStatus(description, ['mba required', 'phd required', 'must have']) ? -4 : 0, hasAnyStatus(description, ['mba required', 'phd required']) ? 'A possible missing qualification is listed.' : 'No major missing qualification is obvious.'),
+    scoreBreakdownRow('Hard disqualifiers', String(record.deterministic_filter_reason || '').startsWith('excluded_') ? -100 : 0, String(record.deterministic_filter_reason || '').startsWith('excluded_') ? 'Hard policy disqualifier detected.' : 'No hard disqualifier detected.'),
+    scoreBreakdownRow('Final score', numberValue(record.fit_score || record.match_score), `Final fit score is ${numberValue(record.fit_score || record.match_score)}.`),
+  ];
+}
+
+function scoreBreakdownRow(category: string, score: number, summary: string) {
+  return { category, score, summary };
+}
+
+function buildQualificationReasons(record: JsonRecord, scoreBreakdown: Array<{ category: string; score: number; summary: string }>, recruiter: JsonRecord, aiReadiness: JsonRecord) {
+  const reasons: string[] = scoreBreakdown.filter((item) => item.score >= 6 && item.category !== 'Final score').map((item) => item.summary);
+  if (String(recruiter.location || '')) reasons.push(`${String(recruiter.location)} location policy match.`);
+  if (arrayValue(aiReadiness.signals).length) reasons.push(...arrayValue(aiReadiness.signals).slice(0, 2).map(String));
+  return Array.from(new Set(reasons)).slice(0, 5);
+}
+
+function buildConcerns(record: JsonRecord, scoreBreakdown: Array<{ category: string; score: number; summary: string }>) {
+  const atsAnalysis = asRecord(record.ats_analysis);
+  const concerns = arrayValue(atsAnalysis.risks).map(String);
+  if (!record.compensation_text) concerns.push('Compensation not posted.');
+  if (String(record.normalized_role_level || '').includes('product_manager')) concerns.push('Below preferred seniority for automatic submission.');
+  concerns.push(...scoreBreakdown.filter((item) => item.score < 0).map((item) => item.summary));
+  return Array.from(new Set(concerns)).slice(0, 5);
+}
+
+function formatIsoDate(value: unknown) {
+  const time = Date.parse(String(value || ''));
+  if (!Number.isFinite(time)) return undefined;
+  return new Date(time).toISOString();
+}
+
+function arrayValue(value: unknown) {
+  return Array.isArray(value) ? value : [];
 }
 
 function compensationPolicyClass(record: Record<string, unknown>, preferredMinimumBaseSalaryUsd?: number) {
@@ -1499,8 +1705,9 @@ function rawRecordOutcome(record: JsonRecord, evidence: CareerOsEvidence, prefer
   if (hasAnyStatus(`${record.status || ''} ${record.location || ''} ${record.work_arrangement || ''}`, ['ineligible_location', 'location-ineligible', 'relocation required'])) return 'location_ineligible';
   if (hasAnyStatus(String(record.status || ''), ['ineligible'])) return 'ineligible';
   if (compensationPolicyClass(record, preferredMinimumBaseSalaryUsd) === 'below_target') return 'compensation_ineligible';
-  if (numberValue(record.fit_score || record.match_score) > 0 && numberValue(record.fit_score || record.match_score) < 70) return 'poor_fit';
-  if (numberValue(record.fit_score || record.match_score) >= 70) return 'package_ready';
+  if (numberValue(record.fit_score || record.match_score) > 0 && numberValue(record.fit_score || record.match_score) < REVIEW_QUEUE_THRESHOLD) return 'poor_fit';
+  if (numberValue(record.fit_score || record.match_score) >= REVIEW_QUEUE_THRESHOLD && numberValue(record.fit_score || record.match_score) < AUTO_APPLY_THRESHOLD) return 'qualified';
+  if (numberValue(record.fit_score || record.match_score) >= AUTO_APPLY_THRESHOLD) return 'package_ready';
   return 'qualification_pending';
 }
 

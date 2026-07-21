@@ -377,6 +377,9 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
   assert.match(page, /Submitted Today/);
   assert.match(page, /Ready for Automation/);
   assert.match(page, /Waiting on You/);
+  assert.match(page, /My Review Queue/);
+  assert.match(page, /Open My Review Queue/);
+  assert.match(page, /These are promising 60-84 fit matches/);
   assert.match(page, /My Action Center/);
   assert.match(page, /Recruiter Activity and Follow-ups/);
   assert.match(page, /Resume Performance/);
@@ -562,12 +565,17 @@ test('Career OS CTAs invoke a secured autonomous queue processor and record audi
   assert.match(controls, /router\.refresh\(\)/);
   assert.match(controls, /save_answer/);
   assert.match(controls, /resume_application/);
+  assert.match(controls, /review_opportunity/);
+  assert.match(controls, /Approve Application/);
+  assert.match(controls, /Skip This Role/);
+  assert.match(controls, /Do Not Show Similar Roles/);
   assert.match(actionsRoute, /Unauthorized Career OS action/);
   assert.match(actionsRoute, /authorizeCareerOsAction/);
   assert.match(actionsRoute, /processCareerOsQueue/);
   assert.match(actionsRoute, /recordCareerOsAction/);
   assert.match(actionsRoute, /run_now/);
   assert.match(actionsRoute, /refresh_discovery/);
+  assert.match(actionsRoute, /recordOpportunityReviewDecision/);
   assert.match(actionsRoute, /runDailyGreenhouseDiscovery/);
   assert.match(actionsRoute, /persistDailyCycleReport/);
   assert.match(cronRoute, /processCareerOsQueue/);
@@ -737,15 +745,22 @@ test('Career OS daily discovery is independent from submission queue processing'
 
 test('Career OS dashboard metrics and daily action queue are actionable controls', () => {
   const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
 
   assert.equal(page.includes('href="/career-os#applications" label="Applications Remaining"'), true);
   assert.equal(page.includes('href="/career-os#applications" label="Waiting on You"'), true);
   assert.equal(page.includes('Open My Action Center'), true);
+  assert.equal(page.includes('Open My Review Queue'), true);
   assert.equal(page.includes('My Action Center owns all human-required steps.'), true);
   assert.match(page, /ApplicationActionControl/);
+  assert.match(page, /ReviewQueueActionControl/);
   assert.equal(page.includes('queueItems.slice(0, 8).map'), false);
   assert.equal(page.includes('href="/career-os#applications">Review Applications</a>'), false);
   assert.match(page, /applicationTerminalLabel/);
+  assert.match(statusSource, /autoApplyThreshold: 85/);
+  assert.match(statusSource, /reviewQueueRange: '60-84'/);
+  assert.match(statusSource, /archiveRange: '0-59'/);
+  assert.match(statusSource, /reviewQueueCount/);
 });
 
 function findDuplicate(candidate, existingApplications) {

@@ -831,7 +831,7 @@ function isLocationIneligible(record: JsonRecord) {
 
 function isPoorFit(record: JsonRecord) {
   const score = numberValue(record.fit_score || record.match_score);
-  return !isInactiveRecord(record) && !isLocationIneligible(record) && score > 0 && score < 70;
+  return !isInactiveRecord(record) && !isLocationIneligible(record) && score > 0 && score < 60;
 }
 
 function compensationPolicyClass(record: JsonRecord, preferredBaseSalary: number) {

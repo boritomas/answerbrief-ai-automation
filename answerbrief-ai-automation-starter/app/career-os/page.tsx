@@ -1,7 +1,7 @@
 import { getCareerOsStatus, summarizeCareerOsStatus, type CareerOsStatus } from '@/lib/career-os-status';
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
 import { buildCandidateProfile, type CandidateProfile } from '@/lib/career-os-candidate-profile';
-import { ApplicationActionControl, RunNowControl } from './action-controls';
+import { ApplicationActionControl, ReviewQueueActionControl, RunNowControl } from './action-controls';
 import { HashScroll } from './hash-scroll';
 
 export const dynamic = 'force-dynamic';
@@ -46,6 +46,7 @@ const navItems = [
   { href: '/career-os#funnel', label: 'Funnel' },
   { href: '/career-os#daily', label: 'Daily' },
   { href: '/career-os#opportunities', label: 'Opportunities' },
+  { href: '/career-os#review-queue', label: 'My Review Queue' },
   { href: '/career-os#applications', label: 'My Action Center' },
   { href: '/career-os#employers', label: 'Employers' },
   { href: '/career-os#compensation', label: 'Compensation' },
@@ -115,6 +116,7 @@ export default async function CareerOsPage() {
           <div className="career-os-metrics" aria-label="Career OS daily status">
             <Metric href="/career-os#opportunities" label="Unique Opportunities" value={status.totalUniqueOpportunities} />
             <Metric href="/career-os#opportunities" label="Qualified Jobs" value={status.activeQualifiedOpportunities} />
+            <Metric href="/career-os#review-queue" label="My Review Queue" value={status.reviewQueue.total} />
             <Metric href="/career-os#applications" label="Applications Remaining" value={status.remainingQualifiedApplications} />
             <Metric href="/career-os#applications" label="Applications Submitted" value={status.submittedApplications} />
           </div>
@@ -133,6 +135,7 @@ export default async function CareerOsPage() {
           <div className="career-os-summary">
             <p>{summary.applyLine}</p>
             <p>{summary.remainingLine}</p>
+            <p>{summary.reviewLine}</p>
             <p>{summary.packageLine}</p>
             <p>{summary.packageExplanation}</p>
             <p>{summary.submittedLine}</p>
@@ -145,6 +148,7 @@ export default async function CareerOsPage() {
             <p>Autonomous operating status: {trustedAutoApplyPolicy.authority}; ordinary per-application approval required: {trustedAutoApplyPolicy.ordinaryApplicationApprovalRequired ? 'yes' : 'no'}.</p>
           </div>
           <div className="cta-row">
+            <a className="button secondary" href="/career-os#review-queue">Open My Review Queue</a>
             <a className="button primary" href="/career-os#applications">Open My Action Center</a>
             <a className="button secondary" href="/career-os#daily">Show All</a>
           </div>
@@ -435,6 +439,70 @@ export default async function CareerOsPage() {
                 <p>{card.reason}</p>
               </div>
               {card.confirmationHref ? <a className="text-link" href={card.confirmationHref}>View Confirmation</a> : <span>{card.statusLabel}</span>}
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="review-queue" className="career-os-band">
+        <h2>My Review Queue</h2>
+        <p>{status.reviewQueue.total} active role{status.reviewQueue.total === 1 ? '' : 's'} are waiting for Tomas review. These are promising 60-84 fit matches that will not enter My Action Center until Tomas approves them.</p>
+        <div className="career-os-metrics secondary" aria-label="Career OS review queue status">
+          <Metric detail="60-84 fit score" href="/career-os#review-queue-list" label="Awaiting Review" value={status.reviewQueue.total} />
+          <Metric detail="minutes at two per role" href="/career-os#review-queue-list" label="Estimated Review Time" value={status.reviewQueue.estimatedReviewMinutes} />
+          <Metric detail={status.reviewQueue.highestScoringRole || 'No review role queued'} href="/career-os#review-queue-list" label="Highest-Scoring Role" value={status.reviewQueue.items[0]?.fitScore || 0} />
+          <Metric detail={status.reviewQueue.oldestWaitingRole || 'No review role queued'} href="/career-os#review-queue-list" label="Oldest Waiting Role" value={status.reviewQueue.items.length} />
+        </div>
+        <div className="career-os-list compact">
+          <DetailRow detail={`Automatic application starts at ${status.qualificationTiers.autoApplyThreshold}.`} label="Qualification Tiers" value={`Auto Apply ${status.qualificationTiers.autoApplyRange} · Review ${status.qualificationTiers.reviewQueueRange} · Archive ${status.qualificationTiers.archiveRange}`} />
+          <DetailRow detail="Review Queue is separate from human-only gates and does not block supported submissions already in flight." label="Queue Separation" value="Separate from My Action Center" />
+        </div>
+        <div className="career-os-action-center" id="review-queue-list">
+          {status.reviewQueue.items.map((item) => (
+            <article className="career-os-action-card" id={`review-opportunity-${item.opportunityId}`} key={item.opportunityId}>
+              <div className="career-os-status-pill">Tomas Review</div>
+              <section>
+                <p className="career-os-card-label">Employer and Role</p>
+                <h3>{item.employer}</h3>
+                <p>{item.title}</p>
+                <p>{item.location} · {item.ats} · Requisition {item.requisitionId || 'not published'}</p>
+                <p>{item.postedAt ? `Posting date ${formatDate(item.postedAt)}` : 'Posting date not published'}</p>
+              </section>
+              <section>
+                <p className="career-os-card-label">Fit</p>
+                <p>{item.fitScore}% · {item.tier === 'tomas_review' ? 'Tomas Review' : item.tier}</p>
+                <ul className="career-os-bullets">
+                  {item.scoreBreakdown.slice(0, 5).map((row) => <li key={`${item.opportunityId}-${row.category}`}>{row.category}: {row.score} · {row.summary}</li>)}
+                </ul>
+              </section>
+              <section>
+                <p className="career-os-card-label">Why It May Fit</p>
+                <ul className="career-os-bullets">
+                  {item.qualificationReasons.slice(0, 5).map((reason) => <li key={`${item.opportunityId}-${reason}`}>{reason}</li>)}
+                </ul>
+              </section>
+              <section>
+                <p className="career-os-card-label">Potential Concerns</p>
+                <ul className="career-os-bullets">
+                  {item.concerns.slice(0, 5).map((concern) => <li key={`${item.opportunityId}-${concern}`}>{concern}</li>)}
+                </ul>
+              </section>
+              <section>
+                <p className="career-os-card-label">Current Application Status</p>
+                <p>{item.applicationStatus}</p>
+                <p>Lifecycle: {item.currentLifecycleState}</p>
+                <p>Package: {item.packageStatus.replace(/_/g, ' ')}</p>
+              </section>
+              <ReviewQueueActionControl
+                actionToken={pageActionToken}
+                actionTokenExpiresAt={actionTokenExpiresAt}
+                employer={item.employer}
+                opportunityId={item.opportunityId}
+                title={item.title}
+              />
+              <div className="career-os-link-row">
+                {item.canonicalUrl ? <a className="text-link" href={item.canonicalUrl}>Open Posting</a> : null}
+              </div>
             </article>
           ))}
         </div>

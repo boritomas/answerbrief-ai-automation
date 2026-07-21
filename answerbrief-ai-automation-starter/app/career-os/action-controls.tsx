@@ -26,6 +26,8 @@ type ActionResult = {
   whatCareerOsCompleted?: string;
 };
 
+type ReviewAction = 'approve' | 'reject_similar' | 'skip';
+
 type AnswerField = {
   key: string;
   label: string;
@@ -329,6 +331,59 @@ export function ApplicationActionControl({
       <button className={variant === 'technical' || variant === 'terminal' ? 'button secondary' : 'button primary'} disabled={primaryDisabled} onClick={submit} type="button">
         {primaryLabel}
       </button>
+      <small>{state}: {message}</small>
+    </div>
+  );
+}
+
+export function ReviewQueueActionControl({
+  actionToken,
+  actionTokenExpiresAt,
+  employer,
+  opportunityId,
+  title,
+}: {
+  actionToken: string;
+  actionTokenExpiresAt: string;
+  employer: string;
+  opportunityId: string;
+  title: string;
+}) {
+  const [message, setMessage] = useState('Choose whether Career OS should apply, skip, or learn from this role.');
+  const [state, setState] = useState<'idle' | 'loading' | 'success' | 'blocked' | 'error'>('idle');
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  function submit(action: ReviewAction) {
+    startTransition(async () => {
+      setState('loading');
+      setMessage(`Saving ${action.replace('_', ' ')} for ${employer} · ${title}...`);
+      const result = await postCareerAction({
+        action: 'review_opportunity',
+        actionToken,
+        actionTokenExpiresAt,
+        employer,
+        opportunityId,
+        reviewAction: action,
+      });
+      if (!result.ok) {
+        setState(result.status === 'blocked' ? 'blocked' : 'error');
+        setMessage(result.error || result.message || 'Review action failed.');
+        return;
+      }
+      setState('success');
+      setMessage(result.message || 'Review decision saved.');
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className={`career-os-action-control ${state}`} aria-live="polite">
+      <div className="cta-row">
+        <button className="button primary" disabled={isPending} onClick={() => submit('approve')} type="button">Approve Application</button>
+        <button className="button secondary" disabled={isPending} onClick={() => submit('skip')} type="button">Skip This Role</button>
+        <button className="button secondary" disabled={isPending} onClick={() => submit('reject_similar')} type="button">Do Not Show Similar Roles</button>
+      </div>
       <small>{state}: {message}</small>
     </div>
   );
