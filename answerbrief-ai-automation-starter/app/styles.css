@@ -971,10 +971,25 @@ th { background: #eef1f3; }
 }
 
 .career-os-nav nav a {
+  align-items: center;
   border-radius: 8px;
   color: #344256;
+  display: inline-flex;
+  gap: 8px;
   padding: 8px 11px;
   text-decoration: none;
+}
+
+.career-os-nav-badge {
+  background: #dbe7ff;
+  border-radius: 999px;
+  color: #1d4ed8;
+  font-size: .76rem;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 1.5rem;
+  padding: 4px 8px;
+  text-align: center;
 }
 
 .career-os-nav nav a:hover {
@@ -1110,6 +1125,22 @@ a.career-os-metric:focus-visible {
   margin: 0;
 }
 
+.career-os-section-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.career-os-panel {
+  background: #ffffff;
+  border: 1px solid #d9e0e8;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 39, 72, .05);
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+}
+
 .career-os-band {
   background: #ffffff;
   border-top: 1px solid #d9e0e8;
@@ -1171,7 +1202,7 @@ a.career-os-metric:focus-visible {
 
 .career-os-action-center {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   margin-top: 22px;
 }
 
@@ -1181,9 +1212,22 @@ a.career-os-metric:focus-visible {
   border-radius: 14px;
   box-shadow: 0 10px 24px rgba(15, 39, 72, .05);
   display: grid;
-  gap: 16px;
-  padding: 22px;
+  gap: 14px;
+  padding: 18px;
   scroll-margin-top: 104px;
+}
+
+.career-os-card-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.career-os-card-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .career-os-status-pill {
@@ -1230,6 +1274,30 @@ a.career-os-metric:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.career-os-priority-list {
+  display: grid;
+  gap: 12px;
+}
+
+.career-os-priority-card {
+  background: #f8fbff;
+  border: 1px solid #d9e0e8;
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.career-os-priority-card h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.career-os-priority-card p {
+  color: #42556d;
+  margin: 0;
 }
 
 .career-os-action-control .cta-row {
@@ -1330,6 +1398,11 @@ a.career-os-metric:focus-visible {
   }
 
   .career-os-structured-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .career-os-section-grid,
+  .career-os-card-grid {
     grid-template-columns: 1fr;
   }
 

@@ -358,55 +358,35 @@ test('permanent daily workflow is scheduled, secured, and verified', () => {
   assert.match(statusSource, /focusedVerificationRows/);
 });
 
-test('Career OS dashboard exposes v2 operating sections without replacing the existing page', () => {
+test('Career OS default page is candidate-focused and moves operational detail into admin', () => {
   const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
+  const adminPage = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'admin', 'page.tsx'), 'utf8');
 
-  assert.match(page, /Executive Summary/);
-  assert.match(page, /Application Funnel/);
-  assert.match(page, /Raw Activity Today/);
-  assert.match(page, /Raw records discovered or refreshed/);
-  assert.match(page, /Existing records refreshed/);
-  assert.match(page, /Duplicates removed/);
-  assert.match(page, /Qualification Today/);
-  assert.match(page, /Below compensation target/);
-  assert.match(page, /Application Execution Today/);
-  assert.match(page, /Queued for immediate execution/);
-  assert.match(page, /Running now/);
-  assert.match(page, /Failed with error/);
-  assert.match(page, /New Jobs Discovered/);
-  assert.match(page, /Submitted Today/);
-  assert.match(page, /Ready for Automation/);
-  assert.match(page, /Waiting on You/);
+  assert.match(page, /Candidate Mode/);
+  assert.match(page, /Good morning, Tomas\./);
+  assert.match(page, /Today&apos;s Priorities/);
+  assert.match(page, /Recent Activity/);
+  assert.match(page, /Pipeline/);
   assert.match(page, /My Review Queue/);
   assert.match(page, /Open My Review Queue/);
-  assert.match(page, /These are promising 60-84 fit matches/);
   assert.match(page, /My Action Center/);
-  assert.match(page, /Recruiter Activity and Follow-ups/);
-  assert.match(page, /Resume Performance/);
-  assert.match(page, /Employer Intelligence/);
-  assert.match(page, /Compensation and Offers/);
-  assert.match(page, /Your Compensation Policy/);
-  assert.match(page, /Qualified Job Compensation/);
-  assert.match(page, /Posted compensation across all discovered jobs/);
-  assert.match(page, /Posted base range across jobs meeting policy/);
-  assert.match(page, /Below-Target Jobs/);
-  assert.match(page, /Daily Automation Health/);
-  assert.match(page, /Immediate queue processor/);
-  assert.match(page, /My Action Center/);
-  assert.match(page, /Complete Market Search Coverage/);
-  assert.match(page, /Employers Searched/);
-  assert.match(page, /Career Sites Checked/);
-  assert.match(page, /Raw Jobs Reviewed/);
-  assert.equal(page.includes('Top telecom/connectivity employer'), true);
-  assert.match(page, /Autonomous operating status/);
-  assert.match(page, /Trusted Auto-Apply/);
-  assert.match(page, /Global Lifecycle Counts/);
-  assert.match(page, /Total raw records ever discovered/);
-  assert.match(page, /Current batch progress/);
-  assert.match(page, /Historical backlog progress/);
-  assert.match(page, /Why Career OS Paused/);
+  assert.match(page, /Applications Submitted/);
+  assert.match(page, /Opportunities to Review/);
+  assert.match(page, /Actions Required/);
+  assert.match(page, /What We Need/);
   assert.match(page, /What Happens Next/);
-  assert.match(page, /applicationExecutionCta/);
+  assert.match(page, /Compensation not posted/);
+  assert.match(page, /Open Admin/);
+  assert.doesNotMatch(page, /Daily Automation Health/);
+  assert.doesNotMatch(page, /Global Lifecycle Counts/);
+  assert.doesNotMatch(page, /Complete Market Search Coverage/);
+  assert.doesNotMatch(page, /Current batch progress/);
+  assert.match(adminPage, /Operational Detail/);
+  assert.match(adminPage, /Daily Automation Health/);
+  assert.match(adminPage, /Funnel/);
+  assert.match(adminPage, /Discovery and Coverage/);
+  assert.match(adminPage, /System Health/);
+  assert.match(adminPage, /Employers and Knowledge Base/);
   assert.doesNotMatch(page, /hard-coded production metrics/i);
 });
 
@@ -549,13 +529,14 @@ test('minimal employment history model maps only ATS employment fields and valid
 
 test('Career OS CTAs invoke a secured autonomous queue processor and record audit events', () => {
   const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
+  const adminPage = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'admin', 'page.tsx'), 'utf8');
   const controls = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'action-controls.tsx'), 'utf8');
   const actionsRoute = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'actions', 'route.ts'), 'utf8');
   const cronRoute = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'api', 'career-os', 'daily-run', 'route.ts'), 'utf8');
   const queue = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
   const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
 
-  assert.match(page, /RunNowControl/);
+  assert.match(adminPage, /RunNowControl/);
   assert.match(page, /ApplicationActionControl/);
   assert.match(page, /nextActionApplication/);
   assert.match(controls, /Run Eligible Applications Now/);
@@ -747,20 +728,21 @@ test('Career OS dashboard metrics and daily action queue are actionable controls
   const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
   const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
 
-  assert.equal(page.includes('href="/career-os#applications" label="Applications Remaining"'), true);
-  assert.equal(page.includes('href="/career-os#applications" label="Waiting on You"'), true);
+  assert.equal(page.includes('href="/career-os#review-queue" label="Opportunities to Review"'), true);
+  assert.equal(page.includes('href="/career-os#action-center" label="Actions Required"'), true);
   assert.equal(page.includes('Open My Action Center'), true);
   assert.equal(page.includes('Open My Review Queue'), true);
-  assert.equal(page.includes('My Action Center owns all human-required steps.'), true);
+  assert.equal(page.includes('Career OS found ${newJobs} new job'), true);
   assert.match(page, /ApplicationActionControl/);
   assert.match(page, /ReviewQueueActionControl/);
-  assert.equal(page.includes('queueItems.slice(0, 8).map'), false);
-  assert.equal(page.includes('href="/career-os#applications">Review Applications</a>'), false);
-  assert.match(page, /applicationTerminalLabel/);
+  assert.match(page, /buildTodayPriorities/);
+  assert.match(page, /buildSystemNotice/);
   assert.match(statusSource, /autoApplyThreshold: 85/);
   assert.match(statusSource, /reviewQueueRange: '60-84'/);
   assert.match(statusSource, /archiveRange: '0-59'/);
   assert.match(statusSource, /reviewQueueCount/);
+  assert.match(statusSource, /export function selectReviewQueueItems/);
+  assert.match(statusSource, /reviewDecision === 'none'/);
 });
 
 function findDuplicate(candidate, existingApplications) {

@@ -91,6 +91,7 @@ export type ReviewQueueItem = {
   applicationStatus: 'Approved' | 'Not Submitted' | 'Skipped';
   ats: string;
   canonicalUrl: string;
+  compensationText?: string;
   concerns: string[];
   currentLifecycleState: string;
   duplicateLocked: boolean;
@@ -1267,10 +1268,7 @@ function classifyReleaseState(
 
 function buildReviewQueueStatus(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): ReviewQueueStatus {
   const canonicalRelease = buildCanonicalReleaseMetrics(evidence, preferredMinimumBaseSalaryUsd);
-  const items = buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd)
-    .filter((item) => item.releaseState === 'tomas_review')
-    .map((item) => reviewQueueItemFromCanonical(item))
-    .filter((item) => item.reviewDecision === 'none');
+  const items = selectReviewQueueItems(evidence, preferredMinimumBaseSalaryUsd);
 
   const highest = items[0];
   const oldest = items.slice().sort((a, b) => {
@@ -1286,6 +1284,13 @@ function buildReviewQueueStatus(evidence: CareerOsEvidence, preferredMinimumBase
     oldestWaitingRole: oldest ? `${oldest.employer} · ${oldest.title}` : undefined,
     total: items.length,
   };
+}
+
+export function selectReviewQueueItems(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): ReviewQueueItem[] {
+  return buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd)
+    .filter((item) => item.releaseState === 'tomas_review')
+    .map((item) => reviewQueueItemFromCanonical(item))
+    .filter((item) => item.reviewDecision === 'none');
 }
 
 function buildCanonicalOpportunityList(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): CanonicalOpportunity[] {
@@ -1350,6 +1355,7 @@ function reviewQueueItemFromCanonical(item: CanonicalOpportunity): ReviewQueueIt
     applicationStatus: reviewDecision === 'approve' ? 'Approved' : reviewDecision === 'skip' ? 'Skipped' : 'Not Submitted',
     ats: String(raw.ats_platform || rawRecord.ats_platform || atsAnalysis.platform || 'unknown').toUpperCase(),
     canonicalUrl: record.url,
+    compensationText: compensationSummary(record.raw),
     concerns: buildConcerns(record.raw, scoreBreakdown),
     currentLifecycleState: record.currentLifecycleState || 'review_pending',
     duplicateLocked: item.submitted,
@@ -1367,6 +1373,22 @@ function reviewQueueItemFromCanonical(item: CanonicalOpportunity): ReviewQueueIt
     tier: item.qualificationTier,
     title: record.position,
   };
+}
+
+function compensationSummary(record: JsonRecord) {
+  const text = String(record.compensation_text || '').trim();
+  if (text) return text;
+
+  const minUsd = numberValue(record.compensation_min_usd);
+  const maxUsd = numberValue(record.compensation_max_usd);
+  if (minUsd && maxUsd) return `${formatUsd(minUsd)}-${formatUsd(maxUsd)}`;
+  if (maxUsd) return `Up to ${formatUsd(maxUsd)}`;
+  if (minUsd) return `From ${formatUsd(minUsd)}`;
+  return '';
+}
+
+function formatUsd(value: number) {
+  return `$${Math.round(value).toLocaleString('en-US')}`;
 }
 
 function normalizedReviewDecision(value: unknown): ReviewQueueItem['reviewDecision'] {
