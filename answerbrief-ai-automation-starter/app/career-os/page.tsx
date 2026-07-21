@@ -50,7 +50,8 @@ export default async function CareerOsPage() {
   const pipelineHealth = dailyWorkflow.pipelineHealth;
   const actionCenterCards = buildActionCenterCards(status);
   const pendingActionCards = actionCenterCards.filter((card) => card.variant !== 'terminal');
-  const submittedCards = actionCenterCards.filter((card) => ['Confirmed', 'Submitted', 'Duplicate Locked'].includes(card.statusLabel));
+  const submittedApplicationIds = new Set(status.submittedApplicationIds);
+  const submittedCards = actionCenterCards.filter((card) => submittedApplicationIds.has(String(card.application.id)));
   const resumePerformance = buildResumePerformance(artifacts, applications, status);
   const activitySnapshot = buildActivitySnapshot(status.evidence.workflowEvents, applications);
   const candidateSummary = buildCandidateSummary(status);
@@ -64,7 +65,7 @@ export default async function CareerOsPage() {
     { href: '/career-os#opportunities', label: 'Opportunities' },
     { href: '/career-os#review-queue', label: 'My Review Queue', count: status.reviewQueue.total },
     { href: '/career-os#action-center', label: 'My Action Center', count: pendingActionCards.length },
-    { href: '/career-os#applications', label: 'Applications', count: submittedCards.length },
+    { href: '/career-os#applications', label: 'Applications', count: status.submittedApplications },
     { href: '/career-os#interviews', label: 'Interviews', count: pipelineHealth.interviews },
     { href: '/career-os#documents', label: 'Documents' },
     { href: '/career-os/admin', label: 'Admin' },
@@ -266,7 +267,7 @@ export default async function CareerOsPage() {
         <div className="career-os-metrics secondary" aria-label="Career OS action center status">
           <Metric detail="Needs your help" href="/career-os#action-center-list" label="Action Center" value={pendingActionCards.length} />
           <Metric detail="Ready to continue after your step" href="/career-os#action-center-list" label="Ready to Resume" value={status.readyForAutomation} />
-          <Metric detail="Already submitted and locked" href="/career-os#applications" label="Submitted" value={submittedCards.length} />
+          <Metric detail="Already submitted and locked" href="/career-os#applications" label="Submitted" value={status.submittedApplications} />
           <Metric detail="Only shown when they affect active work" href="/career-os/admin#system-health" label="System Issues" value={status.applicationExecution.queueStates.blocked_technical} />
         </div>
         <div className="career-os-action-center" id="action-center-list">

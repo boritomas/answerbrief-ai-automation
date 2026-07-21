@@ -4,6 +4,7 @@ import {
   type DailyOperatingCycleStatus,
 } from './career-os-daily-cycle';
 import { canonicalQueueState, careerOsActionMetadata } from './career-os-queue';
+import { duplicateLockKeys } from './career-os-duplicate-lock';
 import {
   careerOsSelectRows,
   cleanSupabaseEnv,
@@ -39,6 +40,7 @@ export type CareerOsStatus = {
   packageAssetsOnQualifiedJobs: number;
   orphanedPackages: number;
   submittedApplications: number;
+  submittedApplicationIds: string[];
   humanOnlyGates: number;
   salaryRange?: {
     minUsd?: number;
@@ -486,12 +488,13 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   });
   const compensationPreference = buildCompensationPreference(evidence.profile);
   const canonicalRelease = buildCanonicalReleaseMetrics(evidence, compensationPreference.preferredMinimumBaseSalaryUsd);
+  const submittedApplicationRows = selectCanonicalSubmittedApplications(evidence);
   const humanOnlyGates = canonicalRelease.waitingOnTomas || openHumanOnlyGates.length + openTasks.length;
-  const submittedApplications = canonicalRelease.submittedApplications || applications.filter((application) => application.confirmation_number || application.submission_evidence).length;
+  const submittedApplications = submittedApplicationRows.length;
   const preparedPackages = canonicalRelease.totalPackages;
   const salaryRange = buildSalaryRange(activeJobPostings);
   const compensationPolicy = buildCompensationPolicyStatus(evidence, compensationPreference.preferredMinimumBaseSalaryUsd);
-  const applicationExecution = buildApplicationExecutionStatus(evidence);
+  const applicationExecution = buildApplicationExecutionStatus(evidence, new Date(), submittedApplicationRows);
   const duplicateSafety = evaluateDuplicateApplicationSafety(evidence.applications);
   const trustedAutoApplyPolicy = buildTrustedAutoApplyPolicy();
   const reviewQueue = buildReviewQueueStatus(evidence, compensationPreference.preferredMinimumBaseSalaryUsd);
@@ -530,6 +533,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     packageAssetsOnQualifiedJobs: canonicalRelease.packageAssetsOnQualifiedJobs,
     orphanedPackages: canonicalRelease.orphanedPackages,
     submittedApplications,
+    submittedApplicationIds: submittedApplicationRows.map((item) => String(item.application.id)),
     humanOnlyGates,
     salaryRange,
     compensationPreference,
@@ -975,7 +979,11 @@ function buildCompensationPolicyStatus(evidence: CareerOsEvidence, preferredMini
   };
 }
 
-function buildApplicationExecutionStatus(evidence: CareerOsEvidence, generatedAt = new Date()): ApplicationExecutionStatus {
+function buildApplicationExecutionStatus(
+  evidence: CareerOsEvidence,
+  generatedAt = new Date(),
+  canonicalSubmittedApplications = selectCanonicalSubmittedApplications(evidence),
+): ApplicationExecutionStatus {
   const centralToday = centralDateKey(generatedAt);
   const nextScheduledRun = nextDailyRunText(generatedAt);
   const exactStatuses = evidence.applications.map((application) => classifyApplicationExecution(application, nextScheduledRun));
@@ -985,8 +993,8 @@ function buildApplicationExecutionStatus(evidence: CareerOsEvidence, generatedAt
     return centralDateKey(application.updated_at) === centralToday;
   }).length;
   const latestRun = evidence.automationRuns[0];
-  const confirmed = queueStates.confirmed;
-  const submitted = queueStates.submitted + confirmed;
+  const confirmed = canonicalSubmittedApplications.filter((item) => item.confirmationEvidence).length;
+  const submitted = canonicalSubmittedApplications.length;
 
   return {
     applicationsProcessedToday: exactStatuses.length,
@@ -1085,8 +1093,8 @@ function buildGlobalLifecycleStatus(
     backlogQualifiedOpportunities: Math.max(canonicalRelease.activeQualifiedOpportunities - applicationExecution.submittedToday, 0),
     applicationsQueued: applicationExecution.queueStates.queued,
     applicationsRunning: applicationExecution.queueStates.running,
-    applicationsSubmitted: applicationExecution.submitted,
-    applicationsConfirmed: applicationExecution.confirmed,
+    applicationsSubmitted: canonicalRelease.submittedApplications,
+    applicationsConfirmed: canonicalRelease.confirmedApplications,
     waitingOnTomas: applicationExecution.queueStates.waiting_on_tomas,
     technicallyBlocked: applicationExecution.queueStates.blocked_technical,
     inactive: canonicalRelease.inactive,
@@ -1131,6 +1139,15 @@ type CanonicalOpportunity = {
   submitted: boolean;
 };
 
+type CanonicalSubmittedApplication = {
+  application: JsonRecord;
+  confirmationEvidence: boolean;
+  duplicateLocked: boolean;
+  executionState: CanonicalApplicationExecutionState;
+  identityKey: string;
+  manualAttestation: boolean;
+};
+
 function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number) {
   const canonical = buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd);
   const keyed = [
@@ -1139,6 +1156,8 @@ function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence, preferredMinim
   ];
 
   const activeQualified = canonical.filter((item) => item.className === 'active_retained');
+  const submittedRows = selectCanonicalSubmittedApplications(evidence);
+  const confirmedRows = submittedRows.filter((item) => item.confirmationEvidence);
   const submittedActive = activeQualified.filter((item) => item.submitted);
   const exactTomasCheckpoint = activeQualified.filter((item) => item.releaseState === 'waiting_on_tomas');
   const totalPackages = evidence.artifacts.filter((artifact) => ['targeted_resume', 'application_package'].includes(String(artifact.artifact_type))).length;
@@ -1154,7 +1173,8 @@ function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence, preferredMinim
   return {
     totalUniqueOpportunities: canonical.length,
     activeQualifiedOpportunities: activeQualified.length,
-    submittedApplications: submittedActive.length,
+    submittedApplications: submittedRows.length,
+    confirmedApplications: confirmedRows.length,
     remainingQualifiedApplications: Math.max(activeQualified.length - submittedActive.length, 0),
     waitingOnTomas: activeQualified.filter((item) => item.releaseState === 'waiting_on_tomas').length,
     readyForAutomation: activeQualified.filter((item) => item.releaseState === 'ready_for_automation').length,
@@ -1338,6 +1358,86 @@ function buildCanonicalOpportunityList(evidence: CareerOsEvidence, preferredMini
     });
   }
   return canonical;
+}
+
+function selectCanonicalSubmittedApplications(evidence: CareerOsEvidence): CanonicalSubmittedApplication[] {
+  const bestByIdentity = new Map<string, CanonicalSubmittedApplication>();
+
+  for (const application of evidence.applications) {
+    const executionState = canonicalExecutionStateForApplication(application);
+    if (!['confirmed', 'submitted', 'duplicate'].includes(executionState)) continue;
+
+    const confirmationEvidence = hasConfirmationEvidence(application);
+    const manualAttestation = hasManualSubmissionAttestation(application);
+    if (!confirmationEvidence && !manualAttestation) continue;
+
+    const candidate: CanonicalSubmittedApplication = {
+      application,
+      confirmationEvidence,
+      duplicateLocked: executionState === 'duplicate' || asRecord(application.raw_record).duplicate_locked === true,
+      executionState,
+      identityKey: canonicalSubmittedApplicationIdentity(application),
+      manualAttestation,
+    };
+    const existing = bestByIdentity.get(candidate.identityKey);
+    if (!existing || submittedApplicationRank(candidate) > submittedApplicationRank(existing)) {
+      bestByIdentity.set(candidate.identityKey, candidate);
+    }
+  }
+
+  return Array.from(bestByIdentity.values()).sort((left, right) => {
+    const leftUpdated = Date.parse(String(left.application.updated_at || 0)) || 0;
+    const rightUpdated = Date.parse(String(right.application.updated_at || 0)) || 0;
+    return rightUpdated - leftUpdated;
+  });
+}
+
+function canonicalSubmittedApplicationIdentity(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const keys = duplicateLockKeys({
+    confirmation_number: stringValue(application.confirmation_number) || null,
+    employer: stringValue(application.employer) || null,
+    id: stringValue(application.id) || 'unknown-application',
+    lifecycle_stage: stringValue(application.lifecycle_stage) || null,
+    next_action: stringValue(application.next_action) || null,
+    opportunity_id: stringValue(application.opportunity_id) || null,
+    position: stringValue(application.position) || null,
+    raw_record: raw,
+    submission_evidence: stringValue(application.submission_evidence) || null,
+  });
+
+  if (keys.length) return keys[0];
+
+  return [
+    compactKey(application.employer),
+    normalizeTitle(application.position),
+    normalizeUrl(raw.canonical_url || raw.application_url || raw.job_url || raw.posting_url || ''),
+    compactKey(raw.external_requisition_id || raw.requisition_id || raw.ats_job_id || raw.job_id || raw.token),
+    stringValue(application.id),
+  ].filter(Boolean).join(':');
+}
+
+function hasConfirmationEvidence(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return Boolean(
+    application.confirmation_number
+    || application.submission_evidence
+    || raw.confirmation_number
+    || raw.confirmation_url
+    || raw.confirmation_page_url
+    || raw.confirmation_text
+    || raw.confirmation_evidence
+    || raw.externally_confirmed === true
+    || raw.user_confirmed_submission === true,
+  );
+}
+
+function submittedApplicationRank(item: CanonicalSubmittedApplication) {
+  if (item.confirmationEvidence && item.executionState === 'confirmed') return 5;
+  if (item.confirmationEvidence) return 4;
+  if (item.manualAttestation && item.executionState === 'submitted') return 3;
+  if (item.manualAttestation) return 2;
+  return 1;
 }
 
 function reviewQueueItemFromCanonical(item: CanonicalOpportunity): ReviewQueueItem {
