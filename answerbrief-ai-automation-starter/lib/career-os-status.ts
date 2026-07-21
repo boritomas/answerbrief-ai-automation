@@ -1298,7 +1298,7 @@ function buildReviewQueueStatus(evidence: CareerOsEvidence, preferredMinimumBase
   })[0];
 
   return {
-    estimatedReviewMinutes: items.length * 2,
+    estimatedReviewMinutes: items.length,
     highestScoringRole: highest ? `${highest.employer} · ${highest.title}` : undefined,
     items,
     oldestWaitingRole: oldest ? `${oldest.employer} · ${oldest.title}` : undefined,

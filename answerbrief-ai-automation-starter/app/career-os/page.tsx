@@ -203,47 +203,40 @@ export default async function CareerOsPage() {
 
       <section id="review-queue" className="career-os-band">
         <h2>My Review Queue</h2>
-        <p>{status.reviewQueue.total} opportunit{status.reviewQueue.total === 1 ? 'y needs' : 'ies need'} your decision. Estimated review time: {status.reviewQueue.estimatedReviewMinutes} minute{status.reviewQueue.estimatedReviewMinutes === 1 ? '' : 's'}.</p>
-        <div className="career-os-metrics secondary" aria-label="Career OS review queue status">
-          <Metric detail="Needs your decision" href="/career-os#review-queue-list" label="Awaiting Review" value={status.reviewQueue.total} />
-          <Metric detail="Minutes at two per role" href="/career-os#review-queue-list" label="Estimated Review Time" value={status.reviewQueue.estimatedReviewMinutes} />
-          <Metric detail={status.reviewQueue.highestScoringRole || 'No review role queued'} href="/career-os#review-queue-list" label="Highest Fit" value={status.reviewQueue.items[0]?.fitScore || 0} />
-          <Metric detail="Same live records as the status API" href="/career-os#review-queue-list" label="Rendered Cards" value={status.reviewQueue.items.length} />
+        <div className="career-os-review-summary">
+          <p>{status.reviewQueue.total} opportunit{status.reviewQueue.total === 1 ? 'y needs' : 'ies need'} your decision.</p>
+          <p>Estimated review time: {status.reviewQueue.estimatedReviewMinutes} minute{status.reviewQueue.estimatedReviewMinutes === 1 ? '' : 's'}.</p>
+          <p>Highest fit: {status.reviewQueue.items[0]?.fitScore || 0}{status.reviewQueue.highestScoringRole ? ` · ${status.reviewQueue.highestScoringRole}` : ''}</p>
         </div>
         <div className="career-os-action-center" id="review-queue-list">
           {status.reviewQueue.items.map((item) => (
-            <article className="career-os-action-card" id={`review-opportunity-${item.opportunityId}`} key={item.opportunityId}>
-              <div className="career-os-card-header">
-                <div>
-                  <p className="career-os-card-label">Employer and Role</p>
-                  <h3>{item.employer}</h3>
-                  <p>{item.title}</p>
-                  <p>{item.location}</p>
+            <article className="career-os-action-card career-os-review-card" id={`review-opportunity-${item.opportunityId}`} key={item.opportunityId}>
+              <div className="career-os-card-header career-os-review-header">
+                <div className="career-os-review-identity">
+                  <p className="career-os-review-employer">{item.employer}</p>
+                  <h3>{item.title}</h3>
+                  <p className="career-os-review-location">{item.location}</p>
                 </div>
                 <div className="career-os-status-pill">Needs Your Review</div>
               </div>
-              <div className="career-os-card-grid">
+              <div className="career-os-review-meta" aria-label="Review queue role details">
+                <span>Requisition {item.requisitionId || 'not published'}</span>
+                <span>Fit {item.fitScore}</span>
+                <span>{item.postedAt ? `Posted ${formatDate(item.postedAt)}` : 'Posting date not published'}</span>
+                <span>{item.compensationText || 'Compensation not posted'}</span>
+              </div>
+              <div className="career-os-card-grid career-os-review-grid">
                 <section>
-                  <p className="career-os-card-label">Role Details</p>
-                  <p>Requisition {item.requisitionId || 'not published'}</p>
-                  <p>Fit {item.fitScore}</p>
-                  <p>{item.postedAt ? `Posted ${formatDate(item.postedAt)}` : 'Posting date not published'}</p>
-                </section>
-                <section>
-                  <p className="career-os-card-label">Why It May Fit</p>
+                  <h4>Why It May Fit</h4>
                   <ul className="career-os-bullets">
                     {item.qualificationReasons.slice(0, 3).map((reason) => <li key={`${item.opportunityId}-${reason}`}>{reason}</li>)}
                   </ul>
                 </section>
                 <section>
-                  <p className="career-os-card-label">Potential Concerns</p>
+                  <h4>Potential Concerns</h4>
                   <ul className="career-os-bullets">
                     {(item.concerns.length ? item.concerns : ['No major concern is recorded yet.']).slice(0, 3).map((concern) => <li key={`${item.opportunityId}-${concern}`}>{concern}</li>)}
                   </ul>
-                </section>
-                <section>
-                  <p className="career-os-card-label">Compensation</p>
-                  <p>{item.compensationText || 'Compensation not posted'}</p>
                 </section>
               </div>
               <ReviewQueueActionControl
@@ -253,8 +246,8 @@ export default async function CareerOsPage() {
                 opportunityId={item.opportunityId}
                 title={item.title}
               />
-              <div className="career-os-link-row">
-                {item.canonicalUrl ? <a className="text-link" href={item.canonicalUrl}>Open Posting</a> : null}
+              <div className="career-os-link-row career-os-review-links">
+                {item.canonicalUrl ? <a className="text-link" href={item.canonicalUrl}>View Posting</a> : null}
               </div>
             </article>
           ))}
