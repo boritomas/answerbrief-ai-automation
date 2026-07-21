@@ -50,7 +50,7 @@ export default async function CareerOsPage() {
   const pipelineHealth = dailyWorkflow.pipelineHealth;
   const actionCenterCards = buildActionCenterCards(status);
   const pendingActionCards = actionCenterCards.filter((card) => card.variant !== 'terminal');
-  const submittedCards = actionCenterCards.filter((card) => card.variant === 'terminal');
+  const submittedCards = actionCenterCards.filter((card) => ['Confirmed', 'Submitted', 'Duplicate Locked'].includes(card.statusLabel));
   const resumePerformance = buildResumePerformance(artifacts, applications, status);
   const activitySnapshot = buildActivitySnapshot(status.evidence.workflowEvents, applications);
   const candidateSummary = buildCandidateSummary(status);
@@ -441,13 +441,13 @@ function buildTodayPriorities(status: CareerStatus, actionCenterCards: ActionCen
     });
   }
 
-  for (const card of actionCenterCards.slice(0, 2)) {
+  for (const card of actionCenterCards.filter((item) => item.variant !== 'technical').slice(0, 2)) {
     priorities.push({
       actionLabel: card.primaryLabel,
       estimatedTime: card.estimatedTime,
       href: `/career-os#${applicationAnchorId(card.application)}`,
       key: `action-${card.application.id}`,
-      reason: card.reason,
+      reason: priorityReasonForActionCard(card),
       subtitle: card.employer,
       title: card.role,
       type: 'Action Center',
@@ -492,6 +492,16 @@ function buildTodayPriorities(status: CareerStatus, actionCenterCards: ActionCen
   }
 
   return priorities.slice(0, 5);
+}
+
+function priorityReasonForActionCard(card: ActionCenterCard) {
+  if (card.variant === 'employment') return 'This employer needs your saved Verizon employment details before the application can continue.';
+  if (card.variant === 'account') return 'This employer needs you to finish a sign-in or account step before Career OS can continue.';
+  if (card.variant === 'legal') return 'This employer needs your approval of the exact legal text before the application can continue.';
+  if (card.variant === 'captcha') return 'This employer needs you to complete a visible verification step before the application can continue.';
+  if (card.variant === 'missing_fact') return 'This employer needs one saved answer before the application can continue.';
+  if (card.variant === 'technical') return 'Career OS is waiting to retry this application after a system issue is fixed.';
+  return card.reason;
 }
 
 function buildRecentActivity(status: CareerStatus, submittedCards: ActionCenterCard[]) {
