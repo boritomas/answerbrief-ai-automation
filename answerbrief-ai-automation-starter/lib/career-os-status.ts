@@ -1381,13 +1381,13 @@ function compensationSummary(record: JsonRecord) {
 
   const minUsd = numberValue(record.compensation_min_usd);
   const maxUsd = numberValue(record.compensation_max_usd);
-  if (minUsd && maxUsd) return `${formatUsd(minUsd)}-${formatUsd(maxUsd)}`;
-  if (maxUsd) return `Up to ${formatUsd(maxUsd)}`;
-  if (minUsd) return `From ${formatUsd(minUsd)}`;
+  if (minUsd && maxUsd) return `${formatReviewUsd(minUsd)}-${formatReviewUsd(maxUsd)}`;
+  if (maxUsd) return `Up to ${formatReviewUsd(maxUsd)}`;
+  if (minUsd) return `From ${formatReviewUsd(minUsd)}`;
   return '';
 }
 
-function formatUsd(value: number) {
+function formatReviewUsd(value: number) {
   return `$${Math.round(value).toLocaleString('en-US')}`;
 }
 
