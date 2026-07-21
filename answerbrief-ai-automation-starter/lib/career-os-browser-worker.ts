@@ -383,6 +383,11 @@ function isBrowserWorkerEligible(application: QueueApplication, companionId: str
   if (application.confirmation_number || application.submission_evidence) return false;
   const raw = asRecord(application.raw_record);
   const browserWorker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
+  const lastReportStatus = cleanEnv(lastReport.status);
+  if ((lastReportStatus === 'waiting_on_tomas' || lastReportStatus === 'blocked_technical') && !isExplicitlyResumedApplication(application)) {
+    return false;
+  }
   const claimedBy = cleanEnv(browserWorker.companion_id);
   const status = cleanEnv(browserWorker.status);
   if (status === 'running' && claimedBy && companionId && claimedBy !== companionId) return false;

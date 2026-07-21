@@ -351,6 +351,10 @@ export async function recordCareerOsAction(input: ActionRequest) {
   }
 
   if (input.action === 'resume_application') {
+    if (metadata.state === 'blocked_technical') {
+      await appendWorkflowEvent(application, 'resume_blocked_technical', metadata.state, 'Technical defects cannot be cleared with a Tomas completion button.', now, actionRunId);
+      return { ok: false, status: 'blocked', message: 'This checkpoint is technically blocked. Career OS must repair the defect before the application can resume.' };
+    }
     if (metadata.actionKind === 'enter_compensation' || metadata.actionKind === 'review_legal' || metadata.actionKind === 'answer_question') {
       await appendWorkflowEvent(application, 'resume_blocked_missing_answer', metadata.state, `Cannot resume ${application.employer} until Tomas supplies the required decision.`, now, actionRunId);
       return { ok: false, status: 'blocked', message: 'This blocker needs an explicit Tomas answer or approval before automation can resume.' };
@@ -394,8 +398,17 @@ export function adminCookieValue(password: string) {
 }
 
 export function canonicalQueueState(application: JsonRecord): QueueState {
+  const lifecycleStage = stringValue(application.lifecycle_stage).toLowerCase();
+  const raw = asRecord(application.raw_record);
+  const browserWorker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
   const text = applicationText(application);
   if (application.confirmation_number || application.submission_evidence) return 'confirmed';
+  if (hasManualSubmissionAttestation(application)) return 'submitted';
+  if (lifecycleStage === 'duplicate_locked' || raw.duplicate_locked === true) return 'duplicate';
+  if (lifecycleStage === 'waiting_on_tomas_browser_worker' || stringValue(lastReport.status).toLowerCase() === 'waiting_on_tomas') return 'waiting_on_tomas';
+  if (lifecycleStage === 'browser_worker_blocked_technical' || stringValue(lastReport.status).toLowerCase() === 'blocked_technical') return 'blocked_technical';
+  if (lifecycleStage === 'browser_worker_running' || stringValue(browserWorker.status).toLowerCase() === 'running') return 'running';
   if (hasAny(text, ['submitted'])) return 'submitted';
   if (hasAny(text, ['duplicate'])) return 'duplicate';
   if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable'])) return 'inactive';
@@ -440,7 +453,7 @@ function actionLabel(kind: QueueActionKind, text: string) {
   }
   if (kind === 'answer_question') return hasAny(text, ['employment']) ? 'Verify Employment History' : 'Answer Question';
   if (kind === 'create_or_open_account') return 'Create Workday Account';
-  if (kind === 'upload_resume') return 'Upload Resume';
+  if (kind === 'upload_resume') return 'View Resume Package';
   if (kind === 'open_security_step') {
     if (hasAny(text, ['captcha'])) return 'Complete CAPTCHA';
     if (hasAny(text, ['mfa', 'security code'])) return 'Complete MFA';
@@ -502,7 +515,7 @@ function tomasInstruction(kind: QueueActionKind, application: JsonRecord) {
   if (kind === 'review_legal') return humanOrTechnicalBlocker(application);
   if (kind === 'answer_question') return humanOrTechnicalBlocker(application);
   if (kind === 'create_or_open_account') return humanOrTechnicalBlocker(application);
-  if (kind === 'upload_resume') return 'Upload the exact validated resume shown in the checkpoint, then resume automation.';
+  if (kind === 'upload_resume') return 'View the exact validated resume package, upload that file in the employer checkpoint, then resume automation.';
   if (kind === 'open_security_step') return humanOrTechnicalBlocker(application);
   return 'Career OS will continue the saved application checkpoint and stop only for a verified human/security/browser gate.';
 }
@@ -713,7 +726,21 @@ function externalApplicationHref(application: JsonRecord) {
 
 function applicationText(application: JsonRecord) {
   const raw = asRecord(application.raw_record);
-  return `${application.lifecycle_stage || ''} ${application.next_action || ''} ${raw.blocker_type || ''} ${raw.execution_status || ''} ${raw.reason_not_submitted || ''} ${JSON.stringify(application.application_answers || {})}`.toLowerCase();
+  const browserWorker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
+  return [
+    application.lifecycle_stage || '',
+    application.next_action || '',
+    raw.blocker_type || '',
+    raw.execution_status || '',
+    raw.reason_not_submitted || '',
+    raw.platform || '',
+    raw.ats_platform || '',
+    browserWorker.status || '',
+    lastReport.status || '',
+    lastReport.evidence_text || '',
+    JSON.stringify(application.application_answers || {}),
+  ].join(' ').toLowerCase();
 }
 
 function hasAny(text: string, terms: string[]) {
@@ -735,6 +762,15 @@ function stringValue(value: unknown) {
 
 function cleanEnv(value: unknown) {
   return cleanSupabaseEnv(value);
+}
+
+function hasManualSubmissionAttestation(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const lifecycleStage = stringValue(application.lifecycle_stage).toLowerCase();
+  return lifecycleStage === 'externally_submitted'
+    || raw.externally_submitted === true
+    || raw.manual_submission_attested === true
+    || hasAny(`${application.next_action || ''} ${raw.submission_source || ''}`, ['manual tomas attestation', 'manual_submission_reconciled']);
 }
 
 function deterministicUuid(input: string) {

@@ -3,7 +3,7 @@ import {
   DAILY_CRON_PATH,
   type DailyOperatingCycleStatus,
 } from './career-os-daily-cycle';
-import { careerOsActionMetadata } from './career-os-queue';
+import { canonicalQueueState, careerOsActionMetadata } from './career-os-queue';
 import {
   careerOsSelectRows,
   cleanSupabaseEnv,
@@ -1075,7 +1075,10 @@ function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence, preferredMinim
     })[0];
     const sourceOpportunityIds = new Set<string>(records.flatMap((record: NormalizedOpportunity) => [record.sourceId, record.opportunityId]).filter((value): value is string => Boolean(value)));
     const applications = evidence.applications.filter((application) => applicationMatchesCanonical(application, preferred, sourceOpportunityIds));
-    const submitted = applications.some((application) => Boolean(application.confirmation_number || application.submission_evidence));
+    const submitted = applications.some((application) => {
+      const state = canonicalQueueState(application);
+      return state === 'confirmed' || state === 'submitted' || state === 'duplicate';
+    });
     const packageAssets = evidence.artifacts.filter((artifact) => {
       if (!['targeted_resume', 'application_package'].includes(String(artifact.artifact_type))) return false;
       const artifactOpportunityId = String(artifact.opportunity_id || '');
@@ -1090,7 +1093,7 @@ function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence, preferredMinim
       className,
       key,
       packageAssets,
-      releaseState: classifyReleaseState(preferred, className, submitted, preferredMinimumBaseSalaryUsd),
+      releaseState: classifyReleaseState(preferred, className, applications, preferredMinimumBaseSalaryUsd),
       sourceOpportunityIds,
       submitted,
     });
@@ -1184,14 +1187,21 @@ function classifyOpportunity(item: NormalizedOpportunity, preferredMinimumBaseSa
   return activePosting && item.score >= 70 ? 'active_qualified' : 'not_qualified';
 }
 
-function classifyReleaseState(item: NormalizedOpportunity, className: CanonicalOpportunity['className'], submitted: boolean, preferredMinimumBaseSalaryUsd?: number): CanonicalOpportunity['releaseState'] {
-  if (submitted) return 'submitted';
+function classifyReleaseState(
+  item: NormalizedOpportunity,
+  className: CanonicalOpportunity['className'],
+  applications: JsonRecord[],
+  preferredMinimumBaseSalaryUsd?: number,
+): CanonicalOpportunity['releaseState'] {
+  const applicationStates = applications.map((application) => canonicalQueueState(application));
+  if (applicationStates.some((state) => state === 'confirmed' || state === 'submitted' || state === 'duplicate')) return 'submitted';
+  if (applicationStates.some((state) => state === 'waiting_on_tomas')) return 'waiting_on_tomas';
+  if (applicationStates.some((state) => state === 'blocked_technical' || state === 'running' || state === 'retry_scheduled' || state === 'failed')) return 'in_progress';
+  if (applicationStates.some((state) => state === 'queued' || state === 'package_ready' || state === 'qualified')) return 'ready_for_automation';
   if (className === 'ineligible') return 'ineligible';
   if (className === 'inactive') return 'inactive';
   const status = item.status;
-  const compensationClass = compensationPolicyClass(item, preferredMinimumBaseSalaryUsd);
   if (hasAnyStatus(status, ['technical'])) return 'in_progress';
-  if (compensationClass === 'unknown' || compensationClass === 'total_compensation_exception') return 'waiting_on_tomas';
   if (hasAnyStatus(status, ['compensation', 'legal', 'privacy', 'human', 'account'])) return 'waiting_on_tomas';
   return 'ready_for_automation';
 }
@@ -1259,29 +1269,40 @@ function classifyApplicationExecution(application: JsonRecord, nextScheduledRun:
 }
 
 function canonicalExecutionStateForApplication(application: JsonRecord): CanonicalApplicationExecutionState {
-  const rawRecord = asRecord(application.raw_record);
-  const text = `${application.lifecycle_stage || ''} ${application.next_action || ''} ${rawRecord.blocker_type || ''} ${rawRecord.execution_status || ''} ${rawRecord.reason_not_submitted || ''}`.toLowerCase();
-
-  if (application.confirmation_number || application.submission_evidence) return 'confirmed';
-  if (hasAnyStatus(text, ['waiting_on_tomas_browser_worker'])) return 'waiting_on_tomas';
-  if (hasAnyStatus(text, ['queued_for_browser_worker', 'browser_worker_queued'])) return 'queued';
-  if (hasAnyStatus(text, ['browser_worker_running'])) return 'running';
-  if (hasAnyStatus(text, ['submitted'])) return 'submitted';
-  if (hasAnyStatus(text, ['duplicate'])) return 'duplicate';
-  if (hasAnyStatus(text, ['ineligible'])) return 'ineligible';
-  if (hasAnyStatus(text, ['inactive', 'closed', 'expired', 'unavailable'])) return 'inactive';
-  if (hasAnyStatus(text, ['permanent_fail', 'permanently failed', 'retry_exhausted'])) return 'failed';
-  if (hasAnyStatus(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
-  if (hasAnyStatus(text, ['failed', 'error'])) return 'failed';
-  if (hasAnyStatus(text, ['running'])) return 'running';
-  if (hasAnyStatus(text, ['technical', 'upload_gate', 'browser'])) return 'blocked_technical';
-  if (hasAnyStatus(text, ['compensation_unknown', 'compensation review', 'total_compensation', 'desired total compensation', 'compensation'])) return 'waiting_on_tomas';
-  if (hasAnyStatus(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) return 'waiting_on_tomas';
-  if (hasAnyStatus(text, ['queued', 'ready_for_automation', 'package_ready', 'qualified_pending_application', 'application_started', 'resumable'])) return 'queued';
-  if (hasAnyStatus(text, ['package_pending'])) return 'package_pending';
-  if (hasAnyStatus(text, ['qualified'])) return 'queued';
-  if (hasAnyStatus(text, ['discovered'])) return 'discovered';
-  return 'qualification_pending';
+  switch (canonicalQueueState(application)) {
+    case 'confirmed':
+      return 'confirmed';
+    case 'submitted':
+      return 'submitted';
+    case 'duplicate':
+      return 'duplicate';
+    case 'inactive':
+      return 'inactive';
+    case 'ineligible':
+      return 'ineligible';
+    case 'retry_scheduled':
+      return 'retry_scheduled';
+    case 'failed':
+      return 'failed';
+    case 'running':
+      return 'running';
+    case 'blocked_technical':
+      return 'blocked_technical';
+    case 'waiting_on_tomas':
+      return 'waiting_on_tomas';
+    case 'queued':
+      return 'queued';
+    case 'package_pending':
+      return 'package_pending';
+    case 'package_ready':
+      return 'package_ready';
+    case 'qualified':
+      return 'qualified';
+    case 'discovered':
+      return 'discovered';
+    default:
+      return 'qualification_pending';
+  }
 }
 
 function displayStatusForExecutionState(state: CanonicalApplicationExecutionState, text = ''): ApplicationExecutionItem['status'] {

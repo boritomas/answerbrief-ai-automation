@@ -206,9 +206,16 @@ export function ApplicationActionControl({
     : checkpointOpened
       ? 'Done - Resume Automation'
       : actionKind === 'upload_resume'
-        ? 'Open Resume Package'
-      : label;
+        ? 'View Resume Package'
+        : /^https?:\/\//.test(href || '')
+          ? label
+          : label.startsWith('View ')
+            ? label
+            : `View ${label.replace(/^(Open|Complete|Resume)\s+/i, '')}`;
   const primaryDisabled = isPending || (needsAnswer && !answer.trim());
+  const answerPlaceholder = label === 'Enter Total Compensation'
+    ? 'Enter desired total compensation'
+    : `Enter answer for ${label.toLowerCase()}`;
 
   return (
     <div className={`career-os-action-control ${state}`} aria-live="polite">
@@ -217,7 +224,7 @@ export function ApplicationActionControl({
           <input
             aria-label={`${label} answer`}
             onChange={(event) => setAnswer(event.target.value)}
-            placeholder="Enter Tomas answer or approval"
+            placeholder={answerPlaceholder}
             type="text"
             value={answer}
           />
