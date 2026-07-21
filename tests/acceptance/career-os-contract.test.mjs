@@ -376,7 +376,8 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
   assert.match(page, /New Jobs Discovered/);
   assert.match(page, /Submitted Today/);
   assert.match(page, /Ready for Automation/);
-  assert.match(page, /Waiting on Tomas/);
+  assert.match(page, /Waiting on You/);
+  assert.match(page, /My Action Center/);
   assert.match(page, /Recruiter Activity and Follow-ups/);
   assert.match(page, /Resume Performance/);
   assert.match(page, /Employer Intelligence/);
@@ -388,7 +389,7 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
   assert.match(page, /Below-Target Jobs/);
   assert.match(page, /Daily Automation Health/);
   assert.match(page, /Immediate queue processor/);
-  assert.match(page, /Exact next action/);
+  assert.match(page, /My Action Center/);
   assert.match(page, /Complete Market Search Coverage/);
   assert.match(page, /Employers Searched/);
   assert.match(page, /Career Sites Checked/);
@@ -400,7 +401,8 @@ test('Career OS dashboard exposes v2 operating sections without replacing the ex
   assert.match(page, /Total raw records ever discovered/);
   assert.match(page, /Current batch progress/);
   assert.match(page, /Historical backlog progress/);
-  assert.match(page, /Canonical state:/);
+  assert.match(page, /Why Career OS Paused/);
+  assert.match(page, /What Happens Next/);
   assert.match(page, /applicationExecutionCta/);
   assert.doesNotMatch(page, /hard-coded production metrics/i);
 });
@@ -653,9 +655,9 @@ test('Career OS waiting-on-Tomas CTAs expose one action, resume explicitly, and 
   const worker = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-browser-worker.ts'), 'utf8');
 
   assert.equal(controls.includes('const [checkpointOpened, setCheckpointOpened]'), true);
-  assert.match(controls, /primaryAction/);
+  assert.match(controls, /function submit/);
   assert.match(controls, /primaryLabel/);
-  assert.match(controls, /Done - Resume Automation/);
+  assert.match(controls, /Check Again/);
   assert.match(controls, /window\.open\('about:blank', '_blank'\)/);
   assert.match(controls, /checkpointWindow\.location\.href = result\.openUrl/);
   assert.equal(controls.includes('router.refresh()'), true);
@@ -692,7 +694,7 @@ test('Career OS dashboard metrics and daily action queue are actionable controls
   const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
 
   assert.equal(page.includes('href="/career-os#applications" label="Applications Remaining"'), true);
-  assert.equal(page.includes('href="/career-os#applications" label="Waiting on Tomas"'), true);
+  assert.equal(page.includes('href="/career-os#applications" label="Waiting on You"'), true);
   assert.match(page, /actionQueueApplication/);
   assert.equal(page.includes('queueItems.slice(0, 8).map'), true);
   assert.match(page, /ApplicationActionControl/);

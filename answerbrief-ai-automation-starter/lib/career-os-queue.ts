@@ -69,6 +69,28 @@ type ActionRequest = {
   ownerEmail: string;
 };
 
+type StructuredActionAnswer =
+  | {
+      employer?: string;
+      jobTitle?: string;
+      type: 'employment_details';
+      values: Record<string, string>;
+    }
+  | {
+      label?: string;
+      question?: string;
+      type: 'missing_fact';
+      values: Record<string, string>;
+    }
+  | {
+      approved: true;
+      fingerprint: string;
+      sourceUrl?: string;
+      text: string;
+      title?: string;
+      type: 'legal_approval';
+    };
+
 type ActionTokenInput = {
   action: string;
   expiresAt: string;
@@ -349,7 +371,11 @@ export async function recordCareerOsAction(input: ActionRequest) {
     if (!input.answer?.trim()) {
       return { ok: false, status: 'error', message: 'Enter the required Tomas answer before resuming automation.' };
     }
-    const updated = mergeApplicationAnswer(application, input.answer.trim(), now, actionRunId);
+    const parsedAnswer = parseStructuredActionAnswer(input.answer.trim());
+    if (parsedAnswer) {
+      await persistStructuredActionAnswer(input.ownerEmail, application, parsedAnswer, now);
+    }
+    const updated = mergeApplicationAnswer(application, summarizeStructuredAnswer(parsedAnswer, input.answer.trim()), now, actionRunId);
     await patchApplication(application.id, updated);
     await appendWorkflowEvent(application, 'tomas_answer_saved', 'queued', `Tomas answer saved for ${metadata.label}; application returned to the autonomous queue.`, now, actionRunId);
     const queueResult = await processCareerOsQueue({ allowPausedForApplication: true, applicationId: application.id, ownerEmail: input.ownerEmail, trigger: 'blocker_resolution' });
@@ -729,6 +755,11 @@ async function selectApplication(ownerEmail: string, applicationId: string): Pro
   return rows[0];
 }
 
+async function selectProfile(ownerEmail: string): Promise<JsonRecord | undefined> {
+  const rows = await selectAll('career_os_profiles', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&limit=1`);
+  return rows[0];
+}
+
 async function patchApplication(id: string, patch: JsonRecord) {
   await careerOsPatchRowById('career_os_applications', id, patch);
 }
@@ -793,6 +824,119 @@ function hasManualSubmissionAttestation(application: JsonRecord) {
     || raw.externally_submitted === true
     || raw.manual_submission_attested === true
     || hasAny(`${application.next_action || ''} ${raw.submission_source || ''}`, ['manual tomas attestation', 'manual tomas completion', 'manual_submission_reconciled']);
+}
+
+function parseStructuredActionAnswer(answer: string): StructuredActionAnswer | null {
+  try {
+    const parsed = JSON.parse(answer);
+    return parsed && typeof parsed === 'object' && typeof parsed.type === 'string'
+      ? parsed as StructuredActionAnswer
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function summarizeStructuredAnswer(parsed: StructuredActionAnswer | null, fallback: string) {
+  if (!parsed) return fallback;
+  if (parsed.type === 'employment_details') {
+    const values = parsed.values || {};
+    return `Employment details saved for ${values.employer || parsed.employer || 'employer'}: ${values.startMonth || ''} ${values.startYear || ''} to ${values.endMonth || 'present'} ${values.endYear || ''}`.trim();
+  }
+  if (parsed.type === 'missing_fact') {
+    return `${parsed.label || 'Required answer'} saved.`;
+  }
+  return `Approved exact text fingerprint ${parsed.fingerprint}.`;
+}
+
+async function persistStructuredActionAnswer(
+  ownerEmail: string,
+  application: QueueApplication,
+  parsed: StructuredActionAnswer,
+  now: string,
+) {
+  const profile = await selectProfile(ownerEmail);
+  if (!profile) return;
+  const verifiedProfile = asRecord(profile.verified_profile);
+
+  if (parsed.type === 'employment_details') {
+    const values = parsed.values || {};
+    const employmentHistory = arrayValue(verifiedProfile.employment_history).map((row) => asRecord(row));
+    const employer = stringValue(values.employer || parsed.employer);
+    const jobTitle = stringValue(values.jobTitle || parsed.jobTitle);
+    const matchIndex = employmentHistory.findIndex((row) => (
+      compactKey(row.employer || row.company) === compactKey(employer)
+        || compactKey(row.title || row.job_title || row.position) === compactKey(jobTitle)
+    ));
+    const updatedRow = {
+      ...(matchIndex >= 0 ? employmentHistory[matchIndex] : {}),
+      employer,
+      title: jobTitle,
+      start_month: stringValue(values.startMonth),
+      start_year: stringValue(values.startYear),
+      end_month: stringValue(values.endMonth),
+      end_year: stringValue(values.endYear),
+      current_employer: stringValue(values.currentEmployer).toLowerCase() === 'yes',
+      source: 'my_action_center_employment_details',
+      verification_state: 'tomas_verified',
+      verified_at: now,
+    };
+    if (matchIndex >= 0) employmentHistory[matchIndex] = updatedRow;
+    else employmentHistory.unshift(updatedRow);
+
+    await careerOsPatchRowById('career_os_profiles', String(profile.id), {
+      updated_at: now,
+      verified_profile: {
+        ...verifiedProfile,
+        employment_history: employmentHistory,
+      },
+    });
+    return;
+  }
+
+  if (parsed.type === 'missing_fact') {
+    const reusableAnswers = asRecord(verifiedProfile.reusable_application_answers);
+    const values = parsed.values || {};
+    const nextReusableAnswers: JsonRecord = {
+      ...reusableAnswers,
+      desired_total_compensation: values.desiredCompensation || reusableAnswers.desired_total_compensation,
+      action_center_last_saved_at: now,
+      verification_state: 'tomas_verified',
+    };
+    if (values.answer) nextReusableAnswers.action_center_answer = values.answer;
+
+    await careerOsPatchRowById('career_os_profiles', String(profile.id), {
+      updated_at: now,
+      verified_profile: {
+        ...verifiedProfile,
+        reusable_application_answers: nextReusableAnswers,
+      },
+    });
+    return;
+  }
+
+  const legalApprovals = arrayValue(verifiedProfile.reusable_legal_approvals).map((row) => asRecord(row));
+  legalApprovals.unshift({
+    approved_at: now,
+    application_id: application.id,
+    employer: application.employer,
+    fingerprint: parsed.fingerprint,
+    source_url: parsed.sourceUrl || externalApplicationHref(application),
+    text: parsed.text,
+    title: parsed.title || '',
+  });
+
+  await careerOsPatchRowById('career_os_profiles', String(profile.id), {
+    updated_at: now,
+    verified_profile: {
+      ...verifiedProfile,
+      reusable_legal_approvals: legalApprovals.slice(0, 50),
+    },
+  });
+}
+
+function compactKey(value: unknown) {
+  return stringValue(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
 function deterministicUuid(input: string) {

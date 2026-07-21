@@ -1169,6 +1169,69 @@ a.career-os-metric:focus-visible {
   max-width: 520px;
 }
 
+.career-os-action-center {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.career-os-action-card {
+  background: #fbfcfe;
+  border: 1px solid #d9e0e8;
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(15, 39, 72, .05);
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  scroll-margin-top: 104px;
+}
+
+.career-os-status-pill {
+  background: #e8eefc;
+  border-radius: 999px;
+  color: #1d4ed8;
+  display: inline-flex;
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  padding: 7px 12px;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.career-os-card-label {
+  color: #3654d4;
+  font-size: .77rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.career-os-action-card h3 {
+  font-size: 1.1rem;
+  margin: 0 0 6px;
+}
+
+.career-os-action-card p {
+  color: #42556d;
+  margin: 0;
+}
+
+.career-os-bullets {
+  color: #42556d;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.career-os-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .career-os-action-control .cta-row {
   margin: 0;
 }
@@ -1204,6 +1267,45 @@ a.career-os-metric:focus-visible {
   padding: 10px 12px;
 }
 
+.career-os-structured-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+}
+
+.career-os-structured-field {
+  display: grid;
+  gap: 6px;
+}
+
+.career-os-structured-field span {
+  color: #344256;
+  font-size: .84rem;
+  font-weight: 700;
+}
+
+.career-os-structured-field input,
+.career-os-structured-field select {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: inherit;
+  min-height: 44px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.career-os-checkbox {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+}
+
+.career-os-checkbox span {
+  color: #344256;
+  font-size: .92rem;
+}
+
 @media (max-width: 980px) {
   .hero-grid,
   .career-os-home,
@@ -1225,6 +1327,10 @@ a.career-os-metric:focus-visible {
   .score-card,
   .recommendation-card {
     grid-column: auto;
+  }
+
+  .career-os-structured-fields {
+    grid-template-columns: 1fr;
   }
 
   .sample-grid {
