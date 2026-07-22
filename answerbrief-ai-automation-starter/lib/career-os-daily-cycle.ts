@@ -16,6 +16,8 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
+const AUTO_APPLY_PROMOTION_THRESHOLD = 85;
+
 export type CanonicalApplicationExecutionState =
   | 'discovered'
   | 'qualification_pending'
@@ -484,6 +486,13 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
   if (postingsToPersist.length) {
     await persistRows('career_os_job_postings', postingsToPersist);
   }
+  const promoted = buildAutoApplyPromotionRows(ownerEmail, qualifiedPostings, evidence, executedAt);
+  if (promoted.opportunities.length) {
+    await persistRows('career_os_opportunities', promoted.opportunities);
+  }
+  if (promoted.applications.length) {
+    await persistRows('career_os_applications', promoted.applications);
+  }
 
   return {
     errors,
@@ -492,6 +501,151 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
     postingsReviewed: reviewed,
     sourceRun,
   };
+}
+
+function buildAutoApplyPromotionRows(
+  ownerEmail: string,
+  qualifiedPostings: JsonRecord[],
+  evidence: Partial<DailyCycleEvidence> | undefined,
+  now: string,
+) {
+  const opportunities = evidence?.seededOpportunities || [];
+  const applications = evidence?.applications || [];
+  const artifacts = evidence?.artifacts || [];
+  const nextOpportunities: JsonRecord[] = [];
+  const nextApplications: JsonRecord[] = [];
+
+  for (const posting of qualifiedPostings) {
+    if (numberValue(posting.fit_score) < AUTO_APPLY_PROMOTION_THRESHOLD) continue;
+    const existingOpportunity = findExistingOpportunityForPosting(posting, opportunities);
+    const opportunityId = stringValue(existingOpportunity?.id) || stringValue(posting.id);
+    const existingApplication = findExistingApplicationForOpportunity(opportunityId, posting, applications);
+    if (existingApplication) continue;
+
+    const approvedArtifacts = approvedAutomationArtifactsForOpportunity(opportunityId, posting, artifacts);
+    if (!approvedArtifacts.resume || !approvedArtifacts.packageArtifact) continue;
+
+    const applicationId = stringValue(approvedArtifacts.resume.application_id)
+      || stringValue(approvedArtifacts.packageArtifact.application_id)
+      || `app-auto-${stringValue(posting.id)}`;
+
+    if (!existingOpportunity) {
+      nextOpportunities.push({
+        id: opportunityId,
+        owner_email: ownerEmail,
+        employer: stringValue(posting.company) || 'Employer',
+        position: stringValue(posting.title) || 'Role',
+        requisition: stringValue(posting.external_requisition_id) || null,
+        source: inferredPostingPlatform(posting),
+        job_url: stringValue(posting.canonical_url) || null,
+        match_score: numberValue(posting.fit_score) || null,
+        recommendation: 'Prepared for immediate autonomous execution using approved package artifacts.',
+        status: 'approved_pending_application',
+        next_action: 'Standing auto-apply policy promoted this packaged discovery into the autonomous queue.',
+        discovered_at: stringValue(posting.created_at) || now,
+        updated_at: now,
+        raw_record: {
+          canonical_job_posting_id: stringValue(posting.id),
+          execution_status: 'qualified',
+          package_promoted_at: now,
+          promotion_source: 'standing_auto_apply_policy',
+          review_source: 'standing_auto_apply_policy',
+        },
+      });
+    }
+
+    nextApplications.push({
+      id: applicationId,
+      owner_email: ownerEmail,
+      opportunity_id: opportunityId,
+      employer: stringValue(posting.company) || 'Employer',
+      position: stringValue(posting.title) || 'Role',
+      exact_resume: stringValue(approvedArtifacts.resume.local_path) || null,
+      cover_letter: null,
+      application_answers: {},
+      lifecycle_stage: 'qualified_pending_application',
+      confirmation_number: null,
+      submission_evidence: null,
+      next_action: 'Standing auto-apply policy promoted this packaged discovery into the autonomous queue.',
+      audit_timeline: [{
+        at: now,
+        event: 'auto_apply_discovery_promoted',
+        evidence: 'Qualified posting already had approved automation artifacts and was promoted into the queue.',
+      }],
+      raw_record: {
+        ats_platform: inferredPostingPlatform(posting).toLowerCase(),
+        canonical_job_posting_id: stringValue(posting.id),
+        canonical_url: stringValue(posting.canonical_url),
+        application_url: stringValue(posting.canonical_url),
+        external_requisition_id: stringValue(posting.external_requisition_id),
+        execution_status: 'qualified',
+        package_status: stringValue(approvedArtifacts.packageArtifact.approval_status) || 'approved_for_automation',
+        package_validation_status: stringValue(approvedArtifacts.packageArtifact.validation_status),
+        package_promoted_at: now,
+        queue_eligible: true,
+        resume_path: stringValue(approvedArtifacts.resume.local_path),
+        review_source: 'standing_auto_apply_policy',
+      },
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
+  return { applications: nextApplications, opportunities: nextOpportunities };
+}
+
+function findExistingOpportunityForPosting(posting: JsonRecord, opportunities: JsonRecord[]) {
+  const postingId = stringValue(posting.id);
+  const requisition = stringValue(posting.external_requisition_id);
+  const canonicalUrl = stringValue(posting.canonical_url);
+  return opportunities.find((opportunity) => {
+    const raw = asRecord(opportunity.raw_record);
+    return stringValue(opportunity.id) === postingId
+      || stringValue(opportunity.requisition) === requisition
+      || stringValue(opportunity.job_url) === canonicalUrl
+      || stringValue(raw.canonical_job_posting_id) === postingId;
+  });
+}
+
+function findExistingApplicationForOpportunity(opportunityId: string, posting: JsonRecord, applications: JsonRecord[]) {
+  const postingId = stringValue(posting.id);
+  const requisition = stringValue(posting.external_requisition_id);
+  const canonicalUrl = stringValue(posting.canonical_url);
+  return applications.find((application) => {
+    const raw = asRecord(application.raw_record);
+    return stringValue(application.opportunity_id) === opportunityId
+      || stringValue(application.opportunity_id) === postingId
+      || stringValue(raw.canonical_job_posting_id) === postingId
+      || stringValue(raw.external_requisition_id) === requisition
+      || stringValue(raw.canonical_url) === canonicalUrl;
+  });
+}
+
+function approvedAutomationArtifactsForOpportunity(opportunityId: string, posting: JsonRecord, artifacts: JsonRecord[]) {
+  const postingId = stringValue(posting.id);
+  const canonicalUrl = stringValue(posting.canonical_url);
+  const relevant = artifacts.filter((artifact) => {
+    const artifactOpportunityId = stringValue(artifact.opportunity_id);
+    const metadata = asRecord(artifact.metadata);
+    return artifactOpportunityId === opportunityId
+      || artifactOpportunityId === postingId
+      || stringValue(metadata.canonical_job_posting_id) === postingId
+      || stringValue(metadata.canonical_url) === canonicalUrl;
+  });
+  const approved = relevant.filter((artifact) => {
+    const approval = stringValue(artifact.approval_status);
+    const validation = stringValue(artifact.validation_status);
+    return approval.includes('approved') && !['failed', 'rejected'].includes(validation);
+  });
+  return {
+    packageArtifact: approved.find((artifact) => stringValue(artifact.artifact_type) === 'application_package'),
+    resume: approved.find((artifact) => stringValue(artifact.artifact_type) === 'targeted_resume'),
+  };
+}
+
+function inferredPostingPlatform(posting: JsonRecord) {
+  const raw = asRecord(posting.raw_record);
+  return stringValue(raw.ats_platform || raw.ats || posting.source_name || posting.platform || 'greenhouse') || 'greenhouse';
 }
 
 export async function persistDailyCycleReport(
