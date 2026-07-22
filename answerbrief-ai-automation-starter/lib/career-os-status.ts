@@ -79,6 +79,7 @@ export type CareerOsStatus = {
   employmentModel: EmploymentModelStatus;
   atsEmploymentMapper: AtsEmploymentMapperStatus;
   authoritativeLedger: AuthoritativeLedgerStatus;
+  discoveryTruth: DiscoveryTruthStatus;
   operationalTrust: OperationalTrustStatus;
   productionEvidenceReady: boolean;
   blocker?: string;
@@ -140,6 +141,22 @@ export type AuthoritativeLedgerStatus = {
   technicalBlocker: number;
   unsupportedAts: number;
   waitingOnTomas: number;
+};
+
+export type DiscoveryTruthStatus = {
+  authoritativeRunId?: string;
+  certified: boolean;
+  currentRunMetricsOnly: boolean;
+  currentRunQualifiedOpportunities: number;
+  currentRunQualifiedOpportunitiesLinked: number;
+  currentRunQualifiedOpportunityIds: string[];
+  executedAt?: string;
+  historicalContaminationDetected: boolean;
+  postingsAccepted: number;
+  postingsReviewed: number;
+  qualifiedOpportunitiesLinkedToAuthoritativeRun: boolean;
+  reasons: string[];
+  sourceRunStatus?: string;
 };
 
 export type QualificationTierPolicy = {
@@ -702,6 +719,12 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   const duplicateSafety = evaluateDuplicateApplicationSafety(evidence.applications);
   const trustedAutoApplyPolicy = buildTrustedAutoApplyPolicy();
   const reviewQueue = buildReviewQueueStatus(evidence, compensationPreference.preferredMinimumBaseSalaryUsd);
+  const discoveryTruth = buildDiscoveryTruthStatus(
+    evidence,
+    authoritativeLedger,
+    canonicalRelease,
+    compensationPreference.preferredMinimumBaseSalaryUsd,
+  );
   const globalLifecycle = buildGlobalLifecycleStatus(
     evidence,
     canonicalRelease,
@@ -771,6 +794,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     employmentModel,
     atsEmploymentMapper,
     authoritativeLedger,
+    discoveryTruth,
     operationalTrust,
     productionEvidenceReady: supabaseConnected,
     blocker: !supabaseConnected
@@ -1452,7 +1476,13 @@ function buildGlobalLifecycleStatus(
   };
   const processed = Object.values(outcomes).reduce((sum, value) => sum + value, 0);
   const currentRunTotal = numberValue(evidence.latestSourceRun?.number_reviewed) || numberValue(evidence.latestSourceRun?.number_accepted);
-  const currentRunProcessed = Math.min(currentRunTotal || processed, processed || currentRunTotal);
+  const latestRunStatus = stringValue(evidence.latestSourceRun?.status).toLowerCase();
+  const currentRunTerminal = ['succeeded', 'success', 'completed', 'error', 'failed'].includes(latestRunStatus);
+  const currentRunProcessed = currentRunTotal
+    ? currentRunTerminal
+      ? currentRunTotal
+      : Math.min(currentRunTotal, processed || currentRunTotal)
+    : processed;
   const latestSearchConfig = asRecord(evidence.latestSourceRun?.search_config);
   const latestCheckpoint = stringValue(latestSearchConfig.last_processed_cursor || latestSearchConfig.checkpoint || evidence.latestSourceRun?.id)
     || 'no checkpoint recorded';
@@ -1481,7 +1511,9 @@ function buildGlobalLifecycleStatus(
     currentBatchProgress: {
       checkpoint: latestCheckpoint,
       processed: currentRunProcessed,
-      remaining: Math.max((currentRunTotal || currentRunProcessed) - currentRunProcessed, 0),
+      remaining: currentRunTotal && currentRunTerminal
+        ? 0
+        : Math.max((currentRunTotal || currentRunProcessed) - currentRunProcessed, 0),
       total: currentRunTotal || currentRunProcessed,
       percentage: percentage(currentRunProcessed, currentRunTotal || currentRunProcessed),
     },
@@ -1528,7 +1560,6 @@ type CanonicalSubmittedApplication = {
 
 function buildAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): AuthoritativeLedgerStatus {
   const canonical = buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd);
-  const currentRunId = stringValue(evidence.latestSourceRun?.id) || undefined;
   const profileReady = missingFactsConsolidated(evidence);
   const canonicalSubmittedApplications = selectCanonicalSubmittedApplications(evidence);
   const canonicalSubmittedApplicationIds = new Set(
@@ -1545,7 +1576,6 @@ function buildAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBa
     .map((item) => authoritativeLedgerRowForCanonical(
       item,
       evidence,
-      currentRunId,
       profileReady,
       canonicalSubmittedApplicationIds,
       confirmedApplicationIds,
@@ -1606,7 +1636,6 @@ function includeCanonicalOpportunityInLedger(item: CanonicalOpportunity) {
 function authoritativeLedgerRowForCanonical(
   item: CanonicalOpportunity,
   evidence: CareerOsEvidence,
-  currentRunId: string | undefined,
   profileReady: boolean,
   canonicalSubmittedApplicationIds: Set<string>,
   confirmedApplicationIds: Set<string>,
@@ -1626,6 +1655,7 @@ function authoritativeLedgerRowForCanonical(
   const duplicateLock = queueStates.includes('duplicate') || item.applications.some((application) => asRecord(application.raw_record).duplicate_locked === true);
   const submissionEvidence = item.applications.some((application) => canonicalSubmittedApplicationIds.has(stringValue(application.id)));
   const confirmationEvidence = item.applications.some((application) => confirmedApplicationIds.has(stringValue(application.id)));
+  const currentRunId = canonicalOpportunitySourceRunId(item, evidence);
   const reviewDecision = normalizedReviewDecision(asRecord(item.preferredRecord.raw.raw_record).review_decision);
   const needsTomas = relatedTasks.length > 0 || queueStates.includes('waiting_on_tomas') || item.releaseState === 'waiting_on_tomas' || item.releaseState === 'tomas_review';
   const technicalBlocked = queueStates.some((state) => ['blocked_technical', 'running', 'retry_scheduled', 'failed'].includes(state));
@@ -1668,6 +1698,83 @@ function authoritativeLedgerRowForCanonical(
     submissionEvidence,
     technicalBlockerStatus: technicalBlocked ? 'blocked' : 'none',
     tomasTaskStatus: needsTomas ? 'needs_tomas' : 'none',
+  };
+}
+
+function canonicalOpportunitySourceRunId(item: CanonicalOpportunity, evidence: CareerOsEvidence) {
+  const preferredRunId = stringValue((item.preferredRecord.raw as JsonRecord).source_run_id)
+    || stringValue(asRecord(item.preferredRecord.raw.raw_record).source_run_id);
+  if (preferredRunId) return preferredRunId;
+
+  for (const sourceId of item.sourceOpportunityIds) {
+    const posting = evidence.jobPostings.find((job) => stringValue(job.id) === sourceId);
+    const postingRunId = stringValue(posting?.source_run_id) || stringValue(asRecord(posting?.raw_record).source_run_id);
+    if (postingRunId) return postingRunId;
+  }
+
+  for (const application of item.applications) {
+    const raw = asRecord(application.raw_record);
+    const applicationRunId = stringValue(raw.source_run_id);
+    if (applicationRunId) return applicationRunId;
+    const postingId = stringValue(application.opportunity_id || raw.canonical_job_posting_id);
+    if (!postingId) continue;
+    const posting = evidence.jobPostings.find((job) => stringValue(job.id) === postingId);
+    const postingRunId = stringValue(posting?.source_run_id) || stringValue(asRecord(posting?.raw_record).source_run_id);
+    if (postingRunId) return postingRunId;
+  }
+
+  return undefined;
+}
+
+function buildDiscoveryTruthStatus(
+  evidence: CareerOsEvidence,
+  authoritativeLedger: AuthoritativeLedgerStatus,
+  canonicalRelease: ReturnType<typeof buildCanonicalReleaseMetrics>,
+  preferredMinimumBaseSalaryUsd?: number,
+): DiscoveryTruthStatus {
+  const authoritativeRunId = stringValue(evidence.latestSourceRun?.id) || undefined;
+  const postingsReviewed = numberValue(evidence.latestSourceRun?.number_reviewed);
+  const postingsAccepted = numberValue(evidence.latestSourceRun?.number_accepted);
+  const sourceRunStatus = stringValue(evidence.latestSourceRun?.status) || undefined;
+  const currentRunQualifiedRows = authoritativeLedger.rows.filter((row) => row.currentRunId === authoritativeRunId);
+  const currentRunQualifiedOpportunityIds = currentRunQualifiedRows.map((row) => row.canonicalOpportunityId);
+  const currentRunQualifiedOpportunitiesLinked = currentRunQualifiedRows.filter((row) => Boolean(row.currentRunId)).length;
+  const currentRunMetricsOnly = Boolean(
+    authoritativeRunId
+    && postingsReviewed > 0
+    && currentRunQualifiedRows.length === postingsAccepted
+  );
+  const historicalContaminationDetected = Boolean(
+    authoritativeRunId
+    && postingsAccepted > 0
+    && currentRunQualifiedRows.length !== postingsAccepted
+  );
+  const reasons: string[] = [];
+
+  void canonicalRelease;
+  void preferredMinimumBaseSalaryUsd;
+
+  if (!authoritativeRunId) reasons.push('missing_authoritative_run_id');
+  if (postingsReviewed <= 0) reasons.push('latest_run_review_count_missing');
+  if (postingsAccepted <= 0) reasons.push('latest_run_accept_count_missing');
+  if (!currentRunQualifiedRows.length) reasons.push('no_qualified_opportunities_linked_to_latest_run');
+  if (currentRunQualifiedRows.length !== postingsAccepted) reasons.push('qualified_opportunity_count_does_not_match_latest_run_accept_count');
+  if (currentRunQualifiedOpportunitiesLinked !== currentRunQualifiedRows.length) reasons.push('one_or_more_current_run_qualified_opportunities_missing_source_run_link');
+
+  return {
+    authoritativeRunId,
+    certified: reasons.length === 0,
+    currentRunMetricsOnly,
+    currentRunQualifiedOpportunities: currentRunQualifiedRows.length,
+    currentRunQualifiedOpportunitiesLinked,
+    currentRunQualifiedOpportunityIds,
+    executedAt: stringValue(evidence.latestSourceRun?.executed_at) || undefined,
+    historicalContaminationDetected,
+    postingsAccepted,
+    postingsReviewed,
+    qualifiedOpportunitiesLinkedToAuthoritativeRun: currentRunQualifiedRows.length > 0 && currentRunQualifiedOpportunitiesLinked === currentRunQualifiedRows.length,
+    reasons,
+    sourceRunStatus,
   };
 }
 
