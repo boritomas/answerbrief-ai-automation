@@ -738,6 +738,8 @@ function buildInlinePackageArtifacts({
   const platform = inferredPostingPlatform(posting).toLowerCase();
   const fitScore = numberValue(posting.fit_score);
   const profileVersion = stringValue(verifiedProfile.profile_version) || 'career-os-approved-profile';
+  const promptVersion = 'career-os-inline-package-2026-07-22-v1';
+  const modelVersion = 'gpt-5-codex';
   const resumeContent = buildInlineTargetedResume(profile, posting);
   const packagePayload = {
     environment: 'production',
@@ -796,7 +798,7 @@ function buildInlinePackageArtifacts({
     },
   };
   const packageContent = JSON.stringify(packagePayload, null, 2);
-  const packageFingerprint = simpleHash(`${canonicalUrl}:${fitScore}:${profileVersion}:${resumeContent}`);
+  const packageFingerprint = sha256(`${canonicalUrl}:${fitScore}:${profileVersion}:${resumeContent}`);
   const baseMetadata = {
     canonical_job_posting_id: stringValue(posting.id),
     canonical_url: canonicalUrl,
@@ -818,10 +820,16 @@ function buildInlinePackageArtifacts({
       application_id: applicationId,
       artifact_type: 'application_package',
       filename: `${safeFileStem(employer, title, requisition || stringValue(posting.id))}_application_package.json`,
+      content_type: 'application/json',
+      storage_url: null,
       local_path: null,
+      drive_url: null,
       approval_status: 'approved_for_automation',
       validation_status: 'passed_schema_review',
       input_hash: packageFingerprint,
+      profile_version: profileVersion,
+      prompt_version: promptVersion,
+      model_version: modelVersion,
       created_at: now,
       updated_at: now,
       metadata: {
@@ -840,10 +848,16 @@ function buildInlinePackageArtifacts({
       application_id: applicationId,
       artifact_type: 'targeted_resume',
       filename: `${safeFileStem(employer, title, 'Tomas_Nieves')}.txt`,
+      content_type: 'text/plain',
+      storage_url: null,
       local_path: null,
+      drive_url: null,
       approval_status: 'approved_for_automation',
       validation_status: 'passed_text_review',
-      input_hash: simpleHash(`${packageFingerprint}:resume`),
+      input_hash: sha256(`${packageFingerprint}:resume`),
+      profile_version: profileVersion,
+      prompt_version: promptVersion,
+      model_version: modelVersion,
       created_at: now,
       updated_at: now,
       metadata: {
@@ -2407,4 +2421,8 @@ function simpleHash(value: unknown) {
     hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
   }
   return String(hash);
+}
+
+function sha256(value: unknown) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
 }
