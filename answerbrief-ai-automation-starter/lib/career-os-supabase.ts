@@ -13,7 +13,50 @@ type SupabaseConfiguration = {
   supabaseUrl: string;
 };
 
+export type CareerOsTransportStatus =
+  | 'pg_healthy'
+  | 'rest_fallback_active'
+  | 'degraded_snapshot'
+  | 'database_unavailable'
+  | 'configuration_error';
+
+export type CareerOsCircuitState = 'closed' | 'open' | 'half_open';
+
+type CareerOsIncidentRecord = {
+  classification: string;
+  component: 'database_transport';
+  detectedAt: string;
+  evidence: string;
+  id: string;
+  recoveryResult: 'fallback_active' | 'manual_recovery_required' | 'resolved';
+  resolvedAt?: string;
+  transport: 'pg' | 'rest';
+};
+
+type CareerOsTransportHealth = {
+  consecutivePgFailures: number;
+  incidents: CareerOsIncidentRecord[];
+  lastFailureAt?: string;
+  lastFailureMessage?: string;
+  lastHealthyAt?: string;
+  lastProbeAt?: string;
+  lastRestSuccessAt?: string;
+  lastSuccessTransport?: 'pg' | 'rest';
+  probeEligibleAt?: string;
+  state: CareerOsCircuitState;
+  status: CareerOsTransportStatus;
+};
+
 let pool: Pool | null = null;
+const PG_FAILURE_THRESHOLD = 2;
+const HALF_OPEN_PROBE_INTERVAL_MS = 5 * 60 * 1000;
+const incidentLog: CareerOsIncidentRecord[] = [];
+const transportHealth: CareerOsTransportHealth = {
+  consecutivePgFailures: 0,
+  incidents: incidentLog,
+  state: 'closed',
+  status: 'configuration_error',
+};
 
 export function cleanSupabaseEnv(value: unknown) {
   return String(value || '').trim().replace(/^"|"$/g, '');
@@ -35,45 +78,90 @@ export function careerOsSupabaseConfigured() {
   );
 }
 
+export function getCareerOsTransportHealth() {
+  return {
+    ...transportHealth,
+    incidents: [...incidentLog],
+  };
+}
+
 export async function careerOsSelectRows(table: string, query: string, options: SelectOptions = {}): Promise<JsonRecord[]> {
   const configuration = getCareerOsSupabaseConfiguration();
-  if (configuration.databaseUrl) {
+  primeTransportStatus(configuration);
+  if (configuration.databaseUrl && shouldAttemptPg()) {
     try {
-      return await pgSelectRows(configuration.databaseUrl, table, query, options);
+      const rows = await pgSelectRows(configuration.databaseUrl, table, query, options);
+      markPgSuccess();
+      return rows;
     } catch (error) {
       resetPool();
-      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) throw error;
+      markPgFailure(error);
+      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) {
+        markTransportUnavailable(error, 'pg');
+        throw error;
+      }
     }
   }
-  return await restSelectRows(configuration, table, query, options);
+  try {
+    const rows = await restSelectRows(configuration, table, query, options);
+    markRestSuccess(configuration);
+    return rows;
+  } catch (error) {
+    markTransportUnavailable(error, 'rest');
+    throw error;
+  }
 }
 
 export async function careerOsPatchRowById(table: string, id: string, patch: JsonRecord) {
   const configuration = getCareerOsSupabaseConfiguration();
-  if (configuration.databaseUrl) {
+  primeTransportStatus(configuration);
+  if (configuration.databaseUrl && shouldAttemptPg()) {
     try {
       await pgPatchRowById(configuration.databaseUrl, table, id, patch);
+      markPgSuccess();
       return;
     } catch (error) {
       resetPool();
-      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) throw error;
+      markPgFailure(error);
+      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) {
+        markTransportUnavailable(error, 'pg');
+        throw error;
+      }
     }
   }
-  await restPatchRowById(configuration, table, id, patch);
+  try {
+    await restPatchRowById(configuration, table, id, patch);
+    markRestSuccess(configuration);
+  } catch (error) {
+    markTransportUnavailable(error, 'rest');
+    throw error;
+  }
 }
 
 export async function careerOsUpsertRows(table: string, rows: JsonRecord | JsonRecord[]) {
   const configuration = getCareerOsSupabaseConfiguration();
-  if (configuration.databaseUrl) {
+  primeTransportStatus(configuration);
+  if (configuration.databaseUrl && shouldAttemptPg()) {
     try {
       await pgUpsertRows(configuration.databaseUrl, table, rows);
+      markPgSuccess();
       return;
     } catch (error) {
       resetPool();
-      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) throw error;
+      markPgFailure(error);
+      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) {
+        markTransportUnavailable(error, 'pg');
+        throw error;
+      }
     }
   }
-  await restUpsertRows(configuration, table, rows);
+  try {
+    await restUpsertRows(configuration, table, rows);
+    markRestSuccess(configuration);
+  } catch (error) {
+    markTransportUnavailable(error, 'rest');
+    throw error;
+  }
 }
 
 async function restSelectRows(configuration: SupabaseConfiguration, table: string, query: string, options: SelectOptions) {
@@ -161,6 +249,111 @@ function shouldFallbackToRest(error: unknown) {
     'connection to database not available',
     'connect etimedout',
   ].some((needle) => message.includes(needle));
+}
+
+function primeTransportStatus(configuration: SupabaseConfiguration) {
+  if (configuration.databaseUrl) {
+    transportHealth.status = transportHealth.state === 'open' ? 'rest_fallback_active' : 'pg_healthy';
+    return;
+  }
+  if (canFallbackToRest(configuration)) {
+    transportHealth.status = 'rest_fallback_active';
+    transportHealth.state = 'closed';
+    return;
+  }
+  transportHealth.status = 'configuration_error';
+  transportHealth.state = 'closed';
+}
+
+function shouldAttemptPg() {
+  if (transportHealth.state === 'closed') return true;
+  const now = Date.now();
+  if (!transportHealth.probeEligibleAt) return true;
+  if (now >= Date.parse(transportHealth.probeEligibleAt)) {
+    transportHealth.state = 'half_open';
+    transportHealth.lastProbeAt = new Date(now).toISOString();
+    return true;
+  }
+  transportHealth.status = 'rest_fallback_active';
+  return false;
+}
+
+function markPgSuccess() {
+  const now = new Date().toISOString();
+  transportHealth.consecutivePgFailures = 0;
+  transportHealth.lastFailureMessage = undefined;
+  transportHealth.lastHealthyAt = now;
+  transportHealth.lastSuccessTransport = 'pg';
+  transportHealth.state = 'closed';
+  transportHealth.status = 'pg_healthy';
+  resolveOpenIncident('pg');
+}
+
+function markPgFailure(error: unknown) {
+  const message = String(error instanceof Error ? error.message : error || 'pg read failed');
+  const now = new Date().toISOString();
+  transportHealth.consecutivePgFailures += 1;
+  transportHealth.lastFailureAt = now;
+  transportHealth.lastFailureMessage = message;
+  if (transportHealth.consecutivePgFailures >= PG_FAILURE_THRESHOLD) {
+    transportHealth.state = 'open';
+    transportHealth.status = 'rest_fallback_active';
+    transportHealth.probeEligibleAt = new Date(Date.now() + HALF_OPEN_PROBE_INTERVAL_MS).toISOString();
+    recordIncident(message, 'pg', 'fallback_active');
+    return;
+  }
+  transportHealth.state = 'half_open';
+}
+
+function markRestSuccess(configuration: SupabaseConfiguration) {
+  const now = new Date().toISOString();
+  transportHealth.lastRestSuccessAt = now;
+  transportHealth.lastSuccessTransport = 'rest';
+  if (configuration.databaseUrl && transportHealth.state !== 'closed') {
+    transportHealth.status = 'rest_fallback_active';
+    return;
+  }
+  transportHealth.status = canFallbackToRest(configuration) ? 'rest_fallback_active' : 'pg_healthy';
+}
+
+function markTransportUnavailable(error: unknown, transport: 'pg' | 'rest') {
+  const message = String(error instanceof Error ? error.message : error || 'database unavailable');
+  transportHealth.lastFailureAt = new Date().toISOString();
+  transportHealth.lastFailureMessage = message;
+  transportHealth.status = 'database_unavailable';
+  recordIncident(message, transport, 'manual_recovery_required');
+}
+
+function recordIncident(evidence: string, transport: 'pg' | 'rest', recoveryResult: CareerOsIncidentRecord['recoveryResult']) {
+  const classification = normalizeIncidentClassification(evidence);
+  const existing = incidentLog.find((incident) => !incident.resolvedAt && incident.classification === classification && incident.transport === transport);
+  if (existing) return;
+  incidentLog.unshift({
+    classification,
+    component: 'database_transport',
+    detectedAt: new Date().toISOString(),
+    evidence,
+    id: `incident-${transport}-${Date.now()}`,
+    recoveryResult,
+    transport,
+  });
+  incidentLog.splice(20);
+}
+
+function resolveOpenIncident(transport: 'pg' | 'rest') {
+  const openIncident = incidentLog.find((incident) => !incident.resolvedAt && incident.transport === transport);
+  if (!openIncident) return;
+  openIncident.resolvedAt = new Date().toISOString();
+  openIncident.recoveryResult = 'resolved';
+}
+
+function normalizeIncidentClassification(message: string) {
+  const lowered = message.toLowerCase();
+  if (lowered.includes('password authentication failed')) return 'authentication_failed';
+  if (lowered.includes('timeout')) return 'timeout';
+  if (lowered.includes('connection terminated')) return 'connection_terminated';
+  if (lowered.includes('configuration')) return 'configuration_error';
+  return 'database_transport_failure';
 }
 
 async function pgSelectRows(databaseUrl: string, table: string, query: string, options: SelectOptions) {

@@ -369,12 +369,12 @@ test('Career OS default page is candidate-focused and moves operational detail i
   assert.match(page, /Pipeline/);
   assert.match(page, /My Review Queue/);
   assert.match(page, /Today&apos;s Tasks/);
-  assert.match(page, /Jobs Searched/);
-  assert.match(page, /New Qualified Opportunities/);
-  assert.match(page, /Applications Attempted/);
-  assert.match(page, /Applications Submitted/);
-  assert.match(page, /Waiting on Tomas/);
-  assert.match(page, /Technical Blockers/);
+  assert.match(page, /Raw Source Records/);
+  assert.match(page, /Unique Live Roles/);
+  assert.match(page, /Qualified Roles/);
+  assert.match(page, /Applications Attempted Today/);
+  assert.match(page, /Submitted Today/);
+  assert.match(page, /Total Submitted/);
   assert.match(page, /Applications Affected/);
   assert.match(page, /Verified Indicators/);
   assert.match(page, /Exact Action/);
@@ -790,12 +790,12 @@ test('Career OS dashboard metrics and daily action queue are actionable controls
   const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
   const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
 
-  assert.equal(page.includes('href="/career-os/admin#daily" label="Jobs Searched"'), true);
-  assert.equal(page.includes('href="/career-os#applications" label="Applications Attempted"'), true);
-  assert.equal(page.includes('href="/career-os#action-center" label="Waiting on Tomas"'), true);
-  assert.equal(page.includes('href="/career-os/admin#system-health" label="Technical Blockers"'), true);
+  assert.equal(page.includes('href="/career-os/admin#daily" label="Raw Source Records"'), true);
+  assert.equal(page.includes('href="/career-os/admin#daily" label="Unique Live Roles"'), true);
+  assert.equal(page.includes('href="/career-os#applications" label="Applications Attempted Today"'), true);
+  assert.equal(page.includes('href="/career-os#applications" label="Total Submitted"'), true);
   assert.equal(page.includes("Review My Tasks"), true);
-  assert.equal(page.includes('Career OS searched ${jobsSearched} roles'), true);
+  assert.equal(page.includes('Career OS evaluated ${uniqueLiveRoles} unique live roles'), true);
   assert.match(page, /ApplicationActionControl/);
   assert.match(page, /ReviewQueueActionControl/);
   assert.match(page, /buildTodayPriorities/);

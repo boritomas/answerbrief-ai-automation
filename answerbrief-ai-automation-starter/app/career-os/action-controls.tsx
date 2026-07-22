@@ -183,9 +183,9 @@ export function ApplicationActionControl({
   }, [fields]);
 
   const primaryLabel = useMemo(() => {
-    if (variant === 'employment') return 'Save Employment Details and Resume';
-    if (variant === 'legal') return 'Approve and Resume';
-    if (variant === 'missing_fact') return 'Save Answer and Resume';
+    if (variant === 'employment') return 'Save Employment Details';
+    if (variant === 'legal') return 'Save Approval';
+    if (variant === 'missing_fact') return 'Save Answer';
     if (variant === 'captcha') return checkpointOpened ? 'Check Again' : 'Open Verification Checkpoint';
     if (variant === 'technical') return 'View Technical Details';
     if (variant === 'terminal') return 'View Confirmation';

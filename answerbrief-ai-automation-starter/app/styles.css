@@ -1035,8 +1035,8 @@ th { background: #eef1f3; }
 }
 
 .career-os-briefing h1 {
-  font-size: clamp(2.1rem, 4vw, 4rem);
-  margin-bottom: 20px;
+  font-size: clamp(1.85rem, 3vw, 3rem);
+  margin-bottom: 16px;
 }
 
 .career-os-action h2,
@@ -1214,8 +1214,8 @@ a.career-os-metric:focus-visible {
   border-radius: 14px;
   box-shadow: 0 10px 24px rgba(15, 39, 72, .05);
   display: grid;
-  gap: 12px;
-  padding: 18px;
+  gap: 10px;
+  padding: 16px;
   scroll-margin-top: var(--career-os-anchor-offset);
 }
 
@@ -1228,13 +1228,13 @@ a.career-os-metric:focus-visible {
 
 .career-os-card-grid {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .career-os-card-grid section {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .career-os-status-pill {
@@ -1260,8 +1260,8 @@ a.career-os-metric:focus-visible {
 }
 
 .career-os-action-card h3 {
-  font-size: 1.1rem;
-  margin: 0 0 6px;
+  font-size: 1.02rem;
+  margin: 0 0 4px;
 }
 
 .career-os-action-card h4 {
@@ -1278,7 +1278,7 @@ a.career-os-metric:focus-visible {
 .career-os-bullets {
   color: #42556d;
   display: grid;
-  gap: 6px;
+  gap: 4px;
   margin: 0;
   padding-left: 18px;
 }

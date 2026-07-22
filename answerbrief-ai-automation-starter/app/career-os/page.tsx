@@ -146,15 +146,15 @@ export default async function CareerOsPage() {
         <div className="career-os-briefing">
           <p className="eyebrow">CAREER OS TODAY</p>
           <h1>{candidateSummary.primaryMessage}</h1>
-          <p className="subhead">Last successful run: {candidateSummary.lastSuccessfulRun}</p>
+          <p className="subhead">Career OS status: {candidateSummary.systemStatus} · Last successful run: {candidateSummary.lastSuccessfulRun} · Next scheduled run: {candidateSummary.nextScheduledRun}</p>
           {candidateSummary.dataUnavailable ? null : (
             <div className="career-os-metrics" aria-label="Career OS Today">
-              <Metric href="/career-os/admin#daily" label="Jobs Searched" value={candidateSummary.jobsSearched} />
-              <Metric href="/career-os#opportunities" label="New Qualified Opportunities" value={candidateSummary.newQualifiedOpportunities} />
-              <Metric href="/career-os#applications" label="Applications Attempted" value={candidateSummary.applicationsAttempted} />
-              <Metric href="/career-os#applications" label="Applications Submitted" value={candidateSummary.applicationsSubmitted} />
-              <Metric href="/career-os#action-center" label="Waiting on Tomas" value={candidateSummary.waitingOnTomas} />
-              <Metric href="/career-os/admin#system-health" label="Technical Blockers" value={candidateSummary.technicalBlockers} />
+              <Metric href="/career-os/admin#daily" label="Raw Source Records" value={candidateSummary.rawSourceRecords} />
+              <Metric href="/career-os/admin#daily" label="Unique Live Roles" value={candidateSummary.uniqueLiveRoles} />
+              <Metric href="/career-os#opportunities" label="Qualified Roles" value={candidateSummary.qualifiedRoles} />
+              <Metric href="/career-os#applications" label="Applications Attempted Today" value={candidateSummary.applicationsAttemptedToday} />
+              <Metric href="/career-os#applications" label="Submitted Today" value={candidateSummary.applicationsSubmittedToday} />
+              <Metric href="/career-os#applications" label="Total Submitted" value={candidateSummary.totalSubmittedApplications} />
             </div>
           )}
           <div className="career-os-summary">
@@ -193,24 +193,8 @@ export default async function CareerOsPage() {
       <section className="career-os-band">
         <div className="career-os-section-grid">
           <section className="career-os-panel">
-            <h2>Today&apos;s Priorities</h2>
-            <p>No more than five items are shown here. Review decisions appear first, then application steps, then interview or recruiter follow-up.</p>
-            <div className="career-os-list">
-              {priorities.map((item) => (
-                <article className="career-os-row" key={`${item.key}-summary`}>
-                  <div>
-                    <h3>{item.title}</h3>
-                    <p>{item.subtitle}</p>
-                    <p>{item.reason}</p>
-                  </div>
-                  <a className="text-link" href={item.href}>{item.actionLabel}</a>
-                </article>
-              ))}
-            </div>
-          </section>
-          <section className="career-os-panel">
             <h2>Recent Activity</h2>
-            <p>Plain-language updates from the live application pipeline.</p>
+            <p>Plain-language updates from the latest verified run and the live application pipeline.</p>
             <div className="career-os-list">
               {recentActivity.map((item) => (
                 <article className="career-os-row" key={item.label}>
@@ -397,8 +381,8 @@ export default async function CareerOsPage() {
       </section>
 
       <section id="ready-to-resume" className="career-os-band">
-        <h2>Ready to Resume</h2>
-        <p>Only checkpoints with explicit persisted resume evidence appear here.</p>
+        <h2>Verified Checkpoints</h2>
+        <p>Only persisted checkpoints with verified evidence appear here.</p>
         <div className="career-os-list compact">
           {trust.verifiedReadyToResumeRecords.length ? trust.verifiedReadyToResumeRecords.map((record) => (
             <DetailRow
@@ -407,7 +391,7 @@ export default async function CareerOsPage() {
               label={record.requisitionId || record.employer}
               value={record.currentStep || 'Ready'}
             />
-          )) : <DetailRow detail="No persisted resumable checkpoints are currently verified in production." label="Verified resumable checkpoints" value="0" />}
+          )) : <DetailRow detail="No persisted checkpoints are currently verified in production." label="Verified checkpoints" value="0" />}
         </div>
       </section>
 
@@ -513,48 +497,60 @@ export default async function CareerOsPage() {
 
 function buildCandidateSummary(status: CareerStatus) {
   const dataUnavailable = status.environment !== 'production' && !status.evidence.dailyReport;
-  const jobsSearched = status.dailyWorkflow.marketCoverage.rawJobsReviewed || status.dailyDiscoveries;
-  const newQualifiedOpportunities = status.dailyWorkflow.pipelineHealth.newOpportunitiesToday;
-  const applicationsAttempted = status.dailyWorkflow.immediateQueueProcessor.submittedThisRun
+  const rawSourceRecords = status.dailyWorkflow.marketCoverage.rawJobsReviewed || status.dailyDiscoveries;
+  const uniqueLiveRoles = status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified;
+  const qualifiedRoles = status.dailyWorkflow.marketCoverage.qualifiedMatches;
+  const newOpportunities = status.dailyWorkflow.dailyFunnel.qualificationToday.newlyUniqueOpportunities;
+  const applicationsAttemptedToday = status.dailyWorkflow.immediateQueueProcessor.submittedThisRun
     + status.dailyWorkflow.immediateQueueProcessor.runningNow
     + status.dailyWorkflow.immediateQueueProcessor.queuedImmediate;
-  const applicationsSubmitted = status.submittedApplications;
+  const applicationsSubmittedToday = status.dailyWorkflow.pipelineHealth.applicationsSubmittedToday;
+  const totalSubmittedApplications = status.submittedApplications;
   const waitingOnTomas = status.waitingOnTomas;
   const technicalBlockers = status.operationalTrust.verifiedCounts.systemIssues;
   const lastSuccessfulRun = status.dailyWorkflow.immediateQueueProcessor.lastExecutionTime
     || status.evidence.dailyReport?.generated_at
     || status.generatedAt;
+  const systemStatus = technicalBlockers > 0
+    ? 'Performance degraded'
+    : status.environment === 'production'
+      ? 'Healthy'
+      : 'Recovery required';
   const primaryMessage = dataUnavailable
     ? 'Career OS data is temporarily unavailable.'
-    : applicationsSubmitted > 0
-    ? `Career OS searched ${jobsSearched} roles, found ${newQualifiedOpportunities} new matches, and has submitted ${applicationsSubmitted} applications.`
-    : `Career OS searched ${jobsSearched} roles and found ${newQualifiedOpportunities} new matches.`;
+    : `Since the last run, Career OS evaluated ${uniqueLiveRoles} unique live roles, found ${qualifiedRoles} qualified matches, added ${newOpportunities} new opportunities, attempted ${applicationsAttemptedToday} applications, and submitted ${applicationsSubmittedToday}.`;
   const blockerMessage = technicalBlockers > 0
     ? `${technicalBlockers} system blocker${technicalBlockers === 1 ? ' is' : 's are'} still preventing supported automation from advancing.`
     : '';
 
   return {
-    applicationsAttempted,
-    applicationsSubmitted,
+    applicationsAttemptedToday,
+    applicationsSubmittedToday,
     dataUnavailable,
     detailLine: waitingOnTomas > 0
       ? `${waitingOnTomas} application${waitingOnTomas === 1 ? '' : 's'} are waiting on Tomas.${blockerMessage ? ` ${blockerMessage}` : ''}`
       : dataUnavailable
         ? 'No verified snapshot is currently readable, so Career OS is withholding operational counts until production data recovers.'
-        : blockerMessage || 'No Tomas action is blocking automation right now.',
-    jobsSearched,
+        : `${totalSubmittedApplications} total verified submitted application${totalSubmittedApplications === 1 ? '' : 's'} are recorded.${blockerMessage ? ` ${blockerMessage}` : ''}`,
     lastSuccessfulRun: formatDateTime(lastSuccessfulRun),
-    newQualifiedOpportunities,
+    nextScheduledRun: status.dailyWorkflow.immediateQueueProcessor.nextScheduledRun,
     nextLine: waitingOnTomas > 0
-      ? 'Review the open task list first so Career OS can resume paused applications safely.'
+      ? 'Review the open task list first so Career OS can prepare the affected applications for the next verified automation run.'
       : dataUnavailable
         ? 'Open system health for the live timeout details and recovery state.'
       : technicalBlockers > 0
-        ? 'Open the system issue list to inspect the live blockers before resuming automation.'
-        : 'Open applications to review the latest confirmed outcomes.',
+        ? 'Open the system issue list to inspect the live blockers before automation resumes.'
+        : qualifiedRoles > 0 || status.reviewQueue.total > 0
+          ? 'Open new opportunities to review the strongest current matches.'
+          : 'Open applications to review the latest confirmed outcomes.',
     primaryMessage,
+    qualifiedRoles,
+    rawSourceRecords,
     technicalBlockers,
+    totalSubmittedApplications,
+    uniqueLiveRoles,
     waitingOnTomas,
+    systemStatus,
   };
 }
 
@@ -563,7 +559,10 @@ function buildPrimaryAction(status: CareerStatus, taskGroups: TaskGroup[]) {
     return { href: '/career-os#action-center', label: 'Review My Tasks' };
   }
   if (status.operationalTrust.verifiedCounts.systemIssues > 0) {
-    return { href: '/career-os/admin#system-health', label: 'View System Issue' };
+    return { href: '/career-os/admin#system-health', label: 'View System Status' };
+  }
+  if (status.reviewQueue.total > 0 || status.dailyWorkflow.marketCoverage.qualifiedMatches > 0) {
+    return { href: '/career-os#opportunities-list', label: 'View New Opportunities' };
   }
   return { href: '/career-os#applications', label: 'View Applications' };
 }
@@ -630,7 +629,7 @@ function buildTodayPriorities(status: CareerStatus, taskGroups: TaskGroup[]) {
     });
   }
 
-  return priorities.slice(0, 5);
+  return priorities.slice(0, 3);
 }
 
 function buildTaskGroups(cards: ActionCenterCard[], trustRecords: CareerStatus['operationalTrust']['verifiedActionCenterRecords']): TaskGroup[] {
@@ -1212,10 +1211,10 @@ function estimatedTimeForVariant(variant: ActionCenterVariant) {
 }
 
 function primaryLabelForVariant(variant: ActionCenterVariant, execution: CareerStatus['applicationExecution']['exactStatuses'][number]) {
-  if (variant === 'employment') return 'Save Employment Details and Resume';
-  if (variant === 'legal') return 'Approve and Resume';
+  if (variant === 'employment') return 'Save Employment Details';
+  if (variant === 'legal') return 'Save Approval';
   if (variant === 'captcha') return 'Open Verification Checkpoint';
-  if (variant === 'missing_fact') return 'Save Answer and Resume';
+  if (variant === 'missing_fact') return 'Save Answer';
   if (variant === 'technical') return 'View Technical Details';
   if (variant === 'terminal') return 'View Confirmation';
   if (/geico/i.test(execution.employer)) return 'Open GEICO Workday';
@@ -1233,9 +1232,9 @@ function plainRequiredAction(
   variant: ActionCenterVariant,
   execution: CareerStatus['applicationExecution']['exactStatuses'][number],
 ) {
-  if (variant === 'employment') return 'Review the missing employment details below, save them, and let Career OS resume the saved Workday checkpoint.';
+  if (variant === 'employment') return 'Review the missing employment details below and save them so Career OS can prepare the next supported run.';
   if (variant === 'account') return execution.cta.whatTomasMustDo.replace(/^Tomas must\s*/i, '').replace(/\.$/, '') + '.';
-  if (variant === 'legal') return 'Review the exact employer text below, confirm that you approve it, and let Career OS resume the application.';
+  if (variant === 'legal') return 'Review the exact employer text below and confirm that you approve it.';
   if (variant === 'captcha') return 'Open the saved checkpoint, complete the visible verification step, then return so Career OS can check again.';
   if (variant === 'missing_fact') return execution.cta.whatTomasMustDo.replace(/^Tomas must\s*/i, '').replace(/\.$/, '') + '.';
   if (variant === 'technical') return 'No action is required from you right now. Career OS must repair the technical issue before retrying.';

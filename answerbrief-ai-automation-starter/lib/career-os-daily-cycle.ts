@@ -987,7 +987,7 @@ function buildPipelineHealth(
     + evidence.workflowEvents.filter((event) => hasAny(`${event.event_type || ''} ${event.status || ''}`, ['rejected'])).length;
   const offers = evidence.applications.filter((application) => hasAny(String(application.lifecycle_stage || ''), ['offer'])).length
     + evidence.workflowEvents.filter((event) => hasAny(`${event.event_type || ''} ${event.status || ''}`, ['offer'])).length;
-  const newOpportunitiesToday = dailyFunnel.rawActivityToday.rawRecordsDiscoveredOrRefreshed;
+  const newOpportunitiesToday = dailyFunnel.qualificationToday.newlyUniqueOpportunities;
   const averageHours = averageDiscoveryToSubmissionHours(evidence);
 
   return {

@@ -618,7 +618,7 @@ export function summarizeCareerOsStatus(status: CareerOsStatus) {
     postedCompensationRange: salary,
     qualifiedPostedCompensationRange: qualifiedSalary,
     compensationPreferenceLine: `Tomas preferred minimum base salary: ${preferredBase}; optional desired-compensation fields stay blank.`,
-    dailyWorkflowLine: `${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new job record${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? '' : 's'} today; ${status.dailyWorkflow.pipelineHealth.readyForAutomation} ready for automation; ${status.reviewQueue.total} waiting for Tomas review; ${status.dailyWorkflow.pipelineHealth.interviews} interview${status.dailyWorkflow.pipelineHealth.interviews === 1 ? '' : 's'}.`,
+    dailyWorkflowLine: `${status.dailyWorkflow.marketCoverage.rawJobsReviewed} raw source record${status.dailyWorkflow.marketCoverage.rawJobsReviewed === 1 ? '' : 's'} reviewed; ${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified} unique live role${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified === 1 ? '' : 's'} evaluated; ${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new opportunit${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? 'y' : 'ies'} added; ${status.dailyWorkflow.pipelineHealth.applicationsSubmittedToday} submitted today.`,
   };
 }
 

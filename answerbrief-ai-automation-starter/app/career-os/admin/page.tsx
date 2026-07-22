@@ -90,7 +90,7 @@ export default async function CareerOsAdminPage(
         <h2>Daily Automation Health</h2>
         <div className="career-os-metrics secondary">
           <Metric detail="All production history" label="Raw Records Ever" value={globalLifecycle.totalRawRecordsEverDiscovered} />
-          <Metric detail="This daily cycle" label="New Jobs Discovered Today" value={dailyWorkflow.pipelineHealth.newOpportunitiesToday} />
+          <Metric detail="This daily cycle" label="New Opportunities Today" value={dailyWorkflow.pipelineHealth.newOpportunitiesToday} />
           <Metric detail="This daily cycle" label="Submitted Today" value={dailyWorkflow.pipelineHealth.applicationsSubmittedToday} />
           <Metric detail="Confirmed live replies" label="Recruiter Responses" value={dailyWorkflow.pipelineHealth.recruiterResponses} />
         </div>
@@ -109,7 +109,7 @@ export default async function CareerOsAdminPage(
           <Metric detail="Candidate Mode selector" label="Opportunities" value={trust.verifiedCounts.opportunities} />
           <Metric detail="Candidate Mode selector" label="Review Queue" value={trust.verifiedCounts.reviewQueue} />
           <Metric detail="Candidate Mode selector" label="Action Center" value={trust.verifiedCounts.actionCenter} />
-          <Metric detail="Candidate Mode selector" label="Ready to Resume" value={trust.verifiedCounts.readyToResume} />
+          <Metric detail="Candidate Mode selector" label="Verified Checkpoints" value={trust.verifiedCounts.readyToResume} />
           <Metric detail="Candidate Mode selector" label="Applying" value={trust.verifiedCounts.applying} />
           <Metric detail="Candidate Mode selector" label="Submitted" value={trust.verifiedCounts.submitted} />
           <Metric detail="Candidate Mode selector" label="Interviews" value={trust.verifiedCounts.interviews} />

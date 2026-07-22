@@ -494,7 +494,7 @@ function actionLabel(kind: QueueActionKind, text: string) {
     if (hasAny(text, ['mfa', 'security code'])) return 'Complete MFA';
     return 'Open Identity Step';
   }
-  return 'Resume Application';
+  return 'Open Saved Checkpoint';
 }
 
 function isQueueEligible(application: QueueApplication) {
