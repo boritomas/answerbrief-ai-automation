@@ -22,9 +22,10 @@ export async function GET() {
   ]);
   const totalDurationMs = Date.now() - startedAt;
   const transport = getCareerOsTransportHealth();
+  const queueEnabled = clean(process.env.CAREER_OS_QUEUE_ENABLED) === '1';
   const healthState = determineHealthState(readCheck.ok, transport.status, totalDurationMs);
   const healthy = healthState === 'healthy';
-  const candidateMessage = candidateMessageForState(healthState);
+  const candidateMessage = candidateMessageForState(healthState, queueEnabled, worker);
 
   return NextResponse.json({
     ok: healthy,
@@ -126,10 +127,23 @@ function determineHealthState(readOk: boolean, transportStatus: CareerOsTranspor
   return 'healthy';
 }
 
-function candidateMessageForState(state: string) {
-  if (state === 'healthy') return 'Career OS is healthy. Automation remains paused until explicit restart approval.';
-  if (state === 'performance_degraded') return 'Career OS is operational, but response time is above the preferred target. Automation remains paused.';
-  if (state === 'database_fallback') return 'Career OS is operating on the verified REST fallback. Automation remains paused until recovery checks pass.';
+function candidateMessageForState(
+  state: string,
+  queueEnabled: boolean,
+  worker: { configured?: boolean; eligible?: number; running?: number },
+) {
+  const queueStatus = queueEnabled
+    ? worker.configured
+      ? worker.running
+        ? `Automation is active with ${worker.running} browser-worker execution${worker.running === 1 ? '' : 's'} running.`
+        : worker.eligible
+          ? `Automation is enabled and ${worker.eligible} eligible application${worker.eligible === 1 ? '' : 's'} can be claimed by the paired browser worker.`
+          : 'Automation is enabled, but no browser-worker eligible applications are available right now.'
+      : 'Automation is enabled, but the paired browser worker is not configured.'
+    : 'Automation is paused because the global queue is disabled.';
+  if (state === 'healthy') return `Career OS is healthy. ${queueStatus}`;
+  if (state === 'performance_degraded') return `Career OS is operational, but response time is above the preferred target. ${queueStatus}`;
+  if (state === 'database_fallback') return `Career OS is operating on the verified REST transport while pg recovery is pending. ${queueStatus}`;
   if (state === 'maintenance') return 'Career OS configuration is incomplete. Automation is paused.';
   return 'System temporarily unavailable. Automation is paused to protect your applications.';
 }

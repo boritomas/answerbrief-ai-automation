@@ -190,6 +190,7 @@ export function verifyCareerOsActionToken(input: ActionTokenInput & { token?: st
   const candidates = [
     createCareerOsActionToken(input),
     createCareerOsActionToken({ ...input, action: 'career_os_page' }),
+    createCareerOsActionToken({ ...input, action: 'career_os_admin_page' }),
   ].filter(Boolean);
   return candidates.some((expected) => crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected)));
 }
