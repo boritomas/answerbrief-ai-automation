@@ -1706,7 +1706,7 @@ function canonicalOpportunitySourceRunId(item: CanonicalOpportunity, evidence: C
     || stringValue(asRecord(item.preferredRecord.raw.raw_record).source_run_id);
   if (preferredRunId) return preferredRunId;
 
-  for (const sourceId of item.sourceOpportunityIds) {
+  for (const sourceId of Array.from(item.sourceOpportunityIds)) {
     const posting = evidence.jobPostings.find((job) => stringValue(job.id) === sourceId);
     const postingRunId = stringValue(posting?.source_run_id) || stringValue(asRecord(posting?.raw_record).source_run_id);
     if (postingRunId) return postingRunId;
