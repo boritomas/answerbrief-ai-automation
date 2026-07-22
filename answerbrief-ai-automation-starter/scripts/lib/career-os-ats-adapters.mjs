@@ -101,6 +101,19 @@ async function bodyText(page) {
   return String(await page.textContent('body') || '');
 }
 
+async function resolveGreenhouseContext(page) {
+  const embedded = page.frames().find((frame) => /job-boards\.greenhouse\.io\/embed\/job_app/i.test(frame.url()) || frame.name() === 'grnhse_iframe');
+  return embedded || page;
+}
+
+function contextUrl(context, fallbackPage) {
+  try {
+    return typeof context?.url === 'function' ? clean(context.url()) : clean(fallbackPage?.url?.());
+  } catch {
+    return clean(fallbackPage?.url?.());
+  }
+}
+
 export function detectVisibleCaptchaEvidence(snapshot = {}) {
   const candidates = Array.isArray(snapshot.elements) ? snapshot.elements : [];
   for (const element of candidates) {
@@ -201,16 +214,17 @@ function greenhouseListingRedirected({ currentUrl = '', expectedUrl = '', pageTe
     && !/submit application|resume|cover letter|application questions/i.test(text);
 }
 
-async function captureConfirmation(page, task, runtime, adapterId) {
-  const text = await bodyText(page);
-  if (!greenhouseConfirmationDetected({ currentUrl: page.url(), pageText: text })) {
+async function captureConfirmation(context, page, task, runtime, adapterId) {
+  const text = await bodyText(context);
+  const currentUrl = contextUrl(context, page);
+  if (!greenhouseConfirmationDetected({ currentUrl, pageText: text })) {
     return false;
   }
   const screenshotPath = await runtime.takeShot(`${adapterId}-confirmed`);
   await runtime.report({
     status: 'confirmed',
-    currentUrl: page.url(),
-    evidenceUrl: page.url(),
+    currentUrl,
+    evidenceUrl: currentUrl,
     evidenceText: text.replace(/\s+/g, ' ').slice(0, 280).trim(),
     screenshotPath,
   });
@@ -218,32 +232,33 @@ async function captureConfirmation(page, task, runtime, adapterId) {
 }
 
 async function fillGreenhouseForm(page, task, runtime) {
-  await runtime.fillByLabel(/first name/i, task.candidate.firstName);
-  await runtime.fillByLabel(/last name/i, task.candidate.lastName);
-  await runtime.fillByLabel(/^email/i, task.candidate.email);
-  await runtime.fillByLabel(/^phone/i, task.candidate.phone);
-  await runtime.fillByLabel(/preferred name/i, task.candidate.preferredName);
-  await runtime.fillByLabel(/linkedin/i, task.candidate.linkedin);
-  await runtime.fillByLabel(/current company/i, task.candidate.currentCompany);
+  const context = await resolveGreenhouseContext(page);
+  await fillInputFromLabel(context, /first name/i, task.candidate.firstName);
+  await fillInputFromLabel(context, /last name/i, task.candidate.lastName);
+  await fillInputFromLabel(context, /^email/i, task.candidate.email);
+  await fillInputFromLabel(context, /^phone/i, task.candidate.phone);
+  await fillInputFromLabel(context, /preferred name/i, task.candidate.preferredName);
+  await fillInputFromLabel(context, /linkedin/i, task.candidate.linkedin);
+  await fillInputFromLabel(context, /current company/i, task.candidate.currentCompany);
 
   const resumePath = await runtime.ensureResumeFile();
-  const uploaded = await maybeUploadGreenhouseResume(page, resumePath, runtime);
+  const uploaded = await maybeUploadGreenhouseResume(context, resumePath, runtime);
   if (!uploaded) {
     throw new Error('Greenhouse resume upload field was not found.');
   }
 
-  await runtime.selectValue(/pronouns/i, task.candidate.pronouns);
-  await runtime.selectValue(/require immigration sponsorship.*united states/i, task.candidate.sponsorshipNow);
-  await runtime.selectValue(/require immigration sponsorship at any point in the future/i, task.candidate.sponsorshipFuture);
-  await runtime.selectValue(/state or canadian province/i, task.candidate.stateOrProvince);
-  await runtime.selectValue(/how did you first learn about/i, task.candidate.referralSourceAffirmFallback || task.candidate.referralSource);
-  await runtime.selectValue(/previously been employed at affirm/i, task.candidate.previouslyWorkedAtEmployer);
-  await runtime.selectValue(/visa \/ work permit/i, task.candidate.sponsorshipNow);
-  await runtime.selectValue(/worked at nice/i, 'No');
-  await runtime.selectValue(/first-degree relatives/i, 'No');
+  await selectFromLabel(context, /pronouns/i, task.candidate.pronouns);
+  await selectFromLabel(context, /require immigration sponsorship.*united states/i, task.candidate.sponsorshipNow);
+  await selectFromLabel(context, /require immigration sponsorship at any point in the future/i, task.candidate.sponsorshipFuture);
+  await selectFromLabel(context, /state or canadian province/i, task.candidate.stateOrProvince);
+  await selectFromLabel(context, /how did you first learn about/i, task.candidate.referralSourceAffirmFallback || task.candidate.referralSource);
+  await selectFromLabel(context, /previously been employed at affirm/i, task.candidate.previouslyWorkedAtEmployer);
+  await selectFromLabel(context, /visa \/ work permit/i, task.candidate.sponsorshipNow);
+  await selectFromLabel(context, /worked at nice/i, 'No');
+  await selectFromLabel(context, /first-degree relatives/i, 'No');
 }
 
-async function maybeUploadGreenhouseResume(page, resumePath, runtime) {
+async function maybeUploadGreenhouseResume(context, resumePath, runtime) {
   const directSelectors = [
     'input[type="file"][name*="resume" i]',
     'input[type="file"][id*="resume" i]',
@@ -256,7 +271,7 @@ async function maybeUploadGreenhouseResume(page, resumePath, runtime) {
     'input[type="file"]',
   ];
   for (const selector of directSelectors) {
-    const input = page.locator(selector).first();
+    const input = context.locator(selector).first();
     if (!await input.count()) continue;
     await input.setInputFiles(resumePath);
     await runtime.report({
@@ -273,11 +288,11 @@ async function maybeUploadGreenhouseResume(page, resumePath, runtime) {
     /\bcv\b/i,
   ];
   for (const pattern of triggerPatterns) {
-    const trigger = page.locator('label, button, a, div[role="button"], span').filter({ hasText: pattern }).first();
+    const trigger = context.locator('label, button, a, div[role="button"], span').filter({ hasText: pattern }).first();
     if (!await trigger.count()) continue;
     await trigger.click().catch(() => null);
-    await page.waitForTimeout(500);
-    const candidate = await selectPreferredGreenhouseFileInput(page);
+    await context.waitForTimeout(500);
+    const candidate = await selectPreferredGreenhouseFileInput(context);
     if (!candidate) continue;
     await candidate.setInputFiles(resumePath);
     await runtime.report({
@@ -290,8 +305,8 @@ async function maybeUploadGreenhouseResume(page, resumePath, runtime) {
   return false;
 }
 
-async function selectPreferredGreenhouseFileInput(page) {
-  const index = await page.locator('input[type="file"]').evaluateAll((nodes) => {
+async function selectPreferredGreenhouseFileInput(context) {
+  const index = await context.locator('input[type="file"]').evaluateAll((nodes) => {
     const normalize = (value) => String(value || '').trim().toLowerCase();
     const score = (node) => {
       const attrs = [
@@ -324,16 +339,16 @@ async function selectPreferredGreenhouseFileInput(page) {
     return bestIndex;
   });
   if (!Number.isInteger(index) || index < 0) return null;
-  return page.locator('input[type="file"]').nth(index);
+  return context.locator('input[type="file"]').nth(index);
 }
 
-async function detectUnresolvedGreenhouseFields(page, task, runtime) {
-  const missing = await visibleRequiredFields(page);
+async function detectUnresolvedGreenhouseFields(context, page, task, runtime) {
+  const missing = await visibleRequiredFields(context);
   if (!missing.length) return false;
   const unresolved = missing.join('; ');
   await runtime.report({
     status: 'waiting_on_tomas',
-    currentUrl: page.url(),
+    currentUrl: contextUrl(context, page),
     evidenceText: `Greenhouse requires additional verified answers before continuing: ${unresolved}.`,
     screenshotPath: await runtime.safeShot('greenhouse-missing-required'),
     details: {
@@ -344,8 +359,8 @@ async function detectUnresolvedGreenhouseFields(page, task, runtime) {
   return true;
 }
 
-async function visibleRequiredFields(page) {
-  return page.evaluate(() => {
+async function visibleRequiredFields(context) {
+  return context.evaluate(() => {
     const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
     const visible = (element) => {
       const style = window.getComputedStyle(element);
@@ -781,11 +796,12 @@ const greenhouseAdapter = {
     await runtime.takeShot('greenhouse-opened');
 
     if (await runtime.detectCommonHumanGate()) return true;
-    const openedText = await bodyText(page);
-    if (greenhouseListingRedirected({ currentUrl: page.url(), expectedUrl: task.applicationUrl, pageText: openedText })) {
+    const context = await resolveGreenhouseContext(page);
+    const openedText = await bodyText(context);
+    if (greenhouseListingRedirected({ currentUrl: contextUrl(context, page), expectedUrl: task.applicationUrl, pageText: openedText })) {
       await runtime.report({
         status: 'failed',
-        currentUrl: page.url(),
+        currentUrl: contextUrl(context, page),
         evidenceText: 'Greenhouse posting is no longer available; employer redirected to a generic careers listing.',
         screenshotPath: await runtime.safeShot('greenhouse-unavailable-redirect'),
       });
@@ -796,9 +812,10 @@ const greenhouseAdapter = {
     await runtime.takeShot('greenhouse-filled');
 
     if (await runtime.detectCommonHumanGate()) return true;
-    if (await detectUnresolvedGreenhouseFields(page, task, runtime)) return true;
+    const refreshedContext = await resolveGreenhouseContext(page);
+    if (await detectUnresolvedGreenhouseFields(refreshedContext, page, task, runtime)) return true;
 
-    const submit = page.locator('button[type="submit"], input[type="submit"]').filter({ hasText: /submit application|submit/i }).first();
+    const submit = refreshedContext.locator('button[type="submit"], input[type="submit"]').filter({ hasText: /submit application|submit/i }).first();
     if (await submit.count()) {
       await runtime.assertSafeToSubmit();
       await runtime.report({ status: 'running', evidenceText: 'Submitting the employer application.' });
@@ -809,7 +826,8 @@ const greenhouseAdapter = {
       await page.waitForTimeout(3000);
     }
 
-    if (await captureConfirmation(page, task, runtime, 'greenhouse')) return true;
+    const confirmedContext = await resolveGreenhouseContext(page);
+    if (await captureConfirmation(confirmedContext, page, task, runtime, 'greenhouse')) return true;
 
     await runtime.report({
       status: 'waiting_on_tomas',
