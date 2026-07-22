@@ -103,6 +103,7 @@ export type AuthoritativeLedgerRow = {
   applicationStatus?: string;
   atsSupportState: 'supported' | 'unknown' | 'unsupported';
   canonicalOpportunityId: string;
+  confirmationEvidence: boolean;
   currentRunId?: string;
   duplicateLock: boolean;
   evidenceReferences: string[];
@@ -1529,14 +1530,26 @@ function buildAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBa
   const canonical = buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd);
   const currentRunId = stringValue(evidence.latestSourceRun?.id) || undefined;
   const profileReady = missingFactsConsolidated(evidence);
+  const canonicalSubmittedApplications = selectCanonicalSubmittedApplications(evidence);
+  const canonicalSubmittedApplicationIds = new Set(
+    canonicalSubmittedApplications.map((item) => stringValue(item.application.id)).filter(Boolean),
+  );
   const confirmedApplicationIds = new Set(
-    selectCanonicalSubmittedApplications(evidence)
+    canonicalSubmittedApplications
       .filter((item) => item.confirmationEvidence)
-      .map((item) => stringValue(item.application.id)),
+      .map((item) => stringValue(item.application.id))
+      .filter(Boolean),
   );
   const rows = canonical
     .filter((item) => includeCanonicalOpportunityInLedger(item))
-    .map((item) => authoritativeLedgerRowForCanonical(item, evidence, currentRunId, profileReady, confirmedApplicationIds));
+    .map((item) => authoritativeLedgerRowForCanonical(
+      item,
+      evidence,
+      currentRunId,
+      profileReady,
+      canonicalSubmittedApplicationIds,
+      confirmedApplicationIds,
+    ));
 
   const counts = {
     submitted: rows.filter((row) => row.outcome === 'submitted').length,
@@ -1564,7 +1577,7 @@ function buildAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBa
 
   return {
     activeQualifiedOpportunities: counts.ready + counts.waitingOnTomas + counts.unsupportedAts + counts.technicalBlocker + counts.packageMissing,
-    confirmed: rows.filter((row) => row.outcome === 'submitted' && row.submissionEvidence).length,
+    confirmed: rows.filter((row) => row.outcome === 'submitted' && row.confirmationEvidence).length,
     duplicate: counts.duplicate,
     inconsistent,
     packageMissing: counts.packageMissing,
@@ -1595,6 +1608,7 @@ function authoritativeLedgerRowForCanonical(
   evidence: CareerOsEvidence,
   currentRunId: string | undefined,
   profileReady: boolean,
+  canonicalSubmittedApplicationIds: Set<string>,
   confirmedApplicationIds: Set<string>,
 ): AuthoritativeLedgerRow {
   const latestApplication = item.applications
@@ -1610,7 +1624,8 @@ function authoritativeLedgerRowForCanonical(
   const atsSupportState = ledgerAtsSupportState(item, latestApplication);
   const postingLiveState = ledgerPostingLiveState(item, latestApplication);
   const duplicateLock = queueStates.includes('duplicate') || item.applications.some((application) => asRecord(application.raw_record).duplicate_locked === true);
-  const submissionEvidence = item.applications.some((application) => hasConfirmationEvidence(application) || hasManualSubmissionAttestation(application));
+  const submissionEvidence = item.applications.some((application) => canonicalSubmittedApplicationIds.has(stringValue(application.id)));
+  const confirmationEvidence = item.applications.some((application) => confirmedApplicationIds.has(stringValue(application.id)));
   const reviewDecision = normalizedReviewDecision(asRecord(item.preferredRecord.raw.raw_record).review_decision);
   const needsTomas = relatedTasks.length > 0 || queueStates.includes('waiting_on_tomas') || item.releaseState === 'waiting_on_tomas' || item.releaseState === 'tomas_review';
   const technicalBlocked = queueStates.some((state) => ['blocked_technical', 'running', 'retry_scheduled', 'failed'].includes(state));
@@ -1649,6 +1664,7 @@ function authoritativeLedgerRowForCanonical(
     requisition: item.preferredRecord.requisitionId,
     role: item.preferredRecord.position,
     sourcePostingId: item.preferredRecord.sourceId,
+    confirmationEvidence,
     submissionEvidence,
     technicalBlockerStatus: technicalBlocked ? 'blocked' : 'none',
     tomasTaskStatus: needsTomas ? 'needs_tomas' : 'none',
