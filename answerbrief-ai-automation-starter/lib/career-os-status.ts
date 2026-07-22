@@ -1733,12 +1733,17 @@ function buildOperationalTrustStatus(
       evidence.workflowEvents,
       stringValue(application.id),
       ['blocked_technical'],
-      ['queue_blocker_verified', 'cta_inspected', 'resume_blocked_technical'],
+      ['queue_blocker_verified', 'cta_inspected', 'resume_blocked_technical', 'browser_worker_blocked'],
     );
     if (!latestBlockedEvent) return [];
+    const blockedMetadata = asRecord(latestBlockedEvent.metadata);
+    const blockedClassification = stringValue(blockedMetadata.classification || blockedMetadata.failure_classification);
+    const blockedEvidence = [blockedClassification.replace(/_/g, ' '), stringValue(latestBlockedEvent.evidence_text)]
+      .filter(Boolean)
+      .join(': ');
     return [{
       applicationId: stringValue(application.id) || undefined,
-      blockerEvidence: stringValue(latestBlockedEvent.evidence_text) || undefined,
+      blockerEvidence: blockedEvidence || stringValue(latestBlockedEvent.evidence_text) || undefined,
       classification: 'verified' as const,
       currentUrl: stringValue(latestBlockedEvent.evidence_url || currentApplicationUrl(application)) || undefined,
       duplicateLock: false,

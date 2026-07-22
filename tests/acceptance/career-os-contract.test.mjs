@@ -369,12 +369,16 @@ test('Career OS default page is candidate-focused and moves operational detail i
   assert.match(page, /Pipeline/);
   assert.match(page, /My Review Queue/);
   assert.match(page, /Open My Review Queue/);
-  assert.match(page, /My Action Center/);
+  assert.match(page, /Today&apos;s Tasks/);
+  assert.match(page, /Open Today&apos;s Tasks/);
   assert.match(page, /Applications Submitted/);
   assert.match(page, /Opportunities to Review/);
   assert.match(page, /Actions Required/);
-  assert.match(page, /What We Need/);
-  assert.match(page, /What Happens Next/);
+  assert.match(page, /Applications Affected/);
+  assert.match(page, /Verified Indicators/);
+  assert.match(page, /Exact Action/);
+  assert.match(page, /Affected Roles/);
+  assert.match(page, /Evidence/);
   assert.match(page, /Compensation not posted/);
   assert.match(page, /Open Admin/);
   assert.doesNotMatch(page, /Daily Automation Health/);
@@ -398,12 +402,14 @@ test('Operational trust contract keeps unsupported and synthetic states out of C
   const adminPage = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'admin', 'page.tsx'), 'utf8');
   const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
 
-  assert.match(page, /trust\.verifiedCounts\.readyToResume/);
   assert.match(page, /trust\.verifiedCounts\.applying/);
   assert.match(page, /trust\.verifiedCounts\.systemIssues/);
   assert.match(page, /trust\.verifiedActionCenterRecords/);
   assert.match(page, /trust\.verifiedReadyToResumeRecords/);
   assert.match(page, /trust\.verifiedApplyingRecords/);
+  assert.match(page, /buildTaskGroups/);
+  assert.match(page, /taskGroupingKey/);
+  assert.match(page, /Employer Account or Sign-In/);
   assert.match(page, /Candidate Mode is suppressing unsupported or stale records/);
   assert.match(adminPage, /Unsupported Claims Removed/);
   assert.match(adminPage, /Synthetic Records/);
@@ -413,6 +419,7 @@ test('Operational trust contract keeps unsupported and synthetic states out of C
   assert.match(statusSource, /candidateModeUnsupportedClaimsRemoved/);
   assert.match(statusSource, /stateInspectorReady: true/);
   assert.match(statusSource, /consistencyChecksReady: true/);
+  assert.match(statusSource, /browser_worker_blocked/);
   assert.match(statusSource, /last-known-good/);
 });
 
@@ -785,7 +792,7 @@ test('Career OS dashboard metrics and daily action queue are actionable controls
 
   assert.equal(page.includes('href="/career-os#review-queue" label="Opportunities to Review"'), true);
   assert.equal(page.includes('href="/career-os#action-center" label="Actions Required"'), true);
-  assert.equal(page.includes('Open My Action Center'), true);
+  assert.equal(page.includes('Open Today&apos;s Tasks'), true);
   assert.equal(page.includes('Open My Review Queue'), true);
   assert.equal(page.includes('Career OS found ${newJobs} new job'), true);
   assert.match(page, /ApplicationActionControl/);

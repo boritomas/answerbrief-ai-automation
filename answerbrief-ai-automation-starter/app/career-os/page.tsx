@@ -40,6 +40,44 @@ type ActionCenterCard = {
   supportingLinks: Array<{ href: string; label: string }>;
   variant: ActionCenterVariant;
 };
+type TaskGroupType =
+  | 'Employment Details'
+  | 'Employer Account or Sign-In'
+  | 'Legal or Privacy Approval'
+  | 'Compensation Answer'
+  | 'Missing Candidate Information'
+  | 'Identity or MFA'
+  | 'Other Verified Human Action';
+type TaskGroup = {
+  actionLabel: string;
+  affectedApplicationIds: string[];
+  affectedCanonicalOpportunityIds: string[];
+  cards: ActionCenterCard[];
+  currentStatus: string;
+  employerLabel: string;
+  employers: string[];
+  estimatedTime: string;
+  evidenceItems: Array<{
+    applicationId: string;
+    checkpointSaved: boolean;
+    currentUrl?: string;
+    gateId?: string;
+    lastValidatedAt?: string;
+    role: string;
+    screenshotHref?: string;
+  }>;
+  evidenceStatus: string;
+  expectedResult: string;
+  exactAction: string;
+  href: string;
+  id: string;
+  primaryCard: ActionCenterCard;
+  sortRank: number;
+  taskType: TaskGroupType;
+  title: string;
+  unlockCount: number;
+  verifiedIndicators: string[];
+ };
 
 export default async function CareerOsPage() {
   const status = await getCareerOsStatus();
@@ -53,11 +91,13 @@ export default async function CareerOsPage() {
   const verifiedSubmittedIds = new Set(trust.submittedRecords.filter((record) => record.classification === 'verified').map((record) => String(record.applicationId || '')));
   const actionCenterCards = allActionCenterCards.filter((card) => verifiedActionCenterIds.has(String(card.application.id)));
   const pendingActionCards = actionCenterCards.filter((card) => card.variant !== 'terminal');
+  const taskGroups = buildTaskGroups(pendingActionCards, trust.verifiedActionCenterRecords);
+  const taskSummary = summarizeTaskGroups(taskGroups);
   const submittedCards = allActionCenterCards.filter((card) => verifiedSubmittedIds.has(String(card.application.id)));
   const resumePerformance = buildResumePerformance(artifacts, applications, status);
   const activitySnapshot = buildActivitySnapshot(status.evidence.workflowEvents, applications);
   const candidateSummary = buildCandidateSummary(status);
-  const priorities = buildTodayPriorities(status, pendingActionCards);
+  const priorities = buildTodayPriorities(status, taskGroups);
   const recentActivity = buildRecentActivity(status, submittedCards);
   const candidatePipeline = buildCandidatePipeline(status);
   const systemNotice = buildSystemNotice(status);
@@ -66,7 +106,7 @@ export default async function CareerOsPage() {
     { href: '/career-os', label: 'Home' },
     { href: '/career-os#opportunities', label: 'Opportunities' },
     { href: '/career-os#review-queue', label: 'My Review Queue', count: trust.verifiedCounts.reviewQueue },
-    { href: '/career-os#action-center', label: 'My Action Center', count: trust.verifiedCounts.actionCenter },
+    { href: '/career-os#action-center', label: 'Today’s Tasks', count: taskGroups.length },
     { href: '/career-os#applications', label: 'Applications', count: trust.verifiedCounts.submitted },
     { href: '/career-os#interviews', label: 'Interviews', count: trust.verifiedCounts.interviews },
     { href: '/career-os#documents', label: 'Documents' },
@@ -118,7 +158,7 @@ export default async function CareerOsPage() {
           </div>
           <div className="cta-row">
             <a className="button secondary" href="/career-os#review-queue">Open My Review Queue</a>
-            <a className="button primary" href="/career-os#action-center">Open My Action Center</a>
+            <a className="button primary" href="/career-os#action-center">Open Today&apos;s Tasks</a>
             <a className="button secondary" href="/career-os/admin">Open Admin</a>
           </div>
         </div>
@@ -257,76 +297,94 @@ export default async function CareerOsPage() {
       </section>
 
       <section id="action-center" className="career-os-band">
-        <h2>My Action Center</h2>
-        <p>{trust.verifiedCounts.actionCenter} verified application step{trust.verifiedCounts.actionCenter === 1 ? '' : 's'} need your help before Career OS can continue.</p>
+        <h2>Today&apos;s Tasks</h2>
+        <p>{taskGroups.length} task{taskGroups.length === 1 ? '' : 's'} affect {taskSummary.affectedApplications} application{taskSummary.affectedApplications === 1 ? '' : 's'}. Completing them can unblock the affected applications for the next verified automation run.</p>
         <div className="career-os-metrics secondary" aria-label="Career OS action center status">
-          <Metric detail="Needs your help" href="/career-os#action-center-list" label="Action Center" value={trust.verifiedCounts.actionCenter} />
-          <Metric detail="Verified resumable checkpoints only" href="/career-os#ready-to-resume" label="Ready to Resume" value={trust.verifiedCounts.readyToResume} />
-          <Metric detail="Already submitted and locked" href="/career-os#applications" label="Submitted" value={trust.verifiedCounts.submitted} />
+          <Metric detail="Distinct verified human tasks" href="/career-os#action-center-list" label="Tasks" value={taskGroups.length} />
+          <Metric detail="Unique applications with unresolved verified human gates" href="/career-os#action-center-list" label="Applications Affected" value={taskSummary.affectedApplications} />
+          <Metric detail={taskSummary.estimatedLabel} href="/career-os#action-center-list" label="Estimated Minutes" value={taskSummary.displayMinutes} />
           <Metric detail="Only unresolved verified technical issues" href="/career-os#system-issues" label="System Issues" value={trust.verifiedCounts.systemIssues} />
         </div>
         <div className="career-os-action-center" id="action-center-list">
-          {pendingActionCards.map((card) => {
-            const cta = actionCenterCardToCta(card);
-            const trustRecord = trust.verifiedActionCenterRecords.find((record) => String(record.applicationId) === String(card.application.id));
+          {taskGroups.map((group) => {
+            const cta = actionCenterCardToCta(group.primaryCard);
             return (
-              <article className="career-os-action-card" id={applicationAnchorId(card.application)} key={String(card.application.id)}>
+              <article className="career-os-action-card" id={`task-group-${group.id}`} key={group.id}>
                 <div className="career-os-card-header">
                   <div>
-                    <p className="career-os-card-label">Employer and Role</p>
-                    <h3>{card.employer}</h3>
-                    <p>{card.role}</p>
+                    <p className="career-os-card-label">{group.taskType}</p>
+                    <h3>{group.title}</h3>
+                    <p>{group.employerLabel}</p>
                   </div>
-                  <div className="career-os-status-pill">{card.statusLabel}</div>
+                  <div className="career-os-status-pill">{group.cards.length === 1 ? group.primaryCard.statusLabel : `${group.cards.length} Applications`}</div>
                 </div>
                 <div className="career-os-card-grid">
                   <section>
-                    <p className="career-os-card-label">Status</p>
-                    <p>{card.statusLabel}</p>
-                    <p>{card.ats} · Requisition {card.requisitionId}</p>
+                    <p className="career-os-card-label">Exact Action</p>
+                    <p>{group.exactAction}</p>
+                    <p><strong>Estimated Time:</strong> {group.estimatedTime}</p>
                   </section>
                   <section>
-                    <p className="career-os-card-label">What We Need</p>
-                    <p>{card.requiredAction}</p>
-                  </section>
-                  <section>
-                    <p className="career-os-card-label">What Career OS Already Completed</p>
+                    <p className="career-os-card-label">Affected Roles</p>
                     <ul className="career-os-bullets">
-                      {card.completedSteps.map((step) => <li key={step}>{step}</li>)}
+                      {group.cards.map((card) => (
+                        <li key={`${group.id}-${card.application.id}`}>{card.employer} · {card.role}</li>
+                      ))}
                     </ul>
                   </section>
                   <section>
-                    <p className="career-os-card-label">What Happens Next</p>
-                    <p>{card.nextStep}</p>
-                    <p><strong>Estimated Time:</strong> {card.estimatedTime}</p>
+                    <p className="career-os-card-label">Verified Indicators</p>
+                    <ul className="career-os-bullets">
+                      {group.verifiedIndicators.map((step) => <li key={`${group.id}-${step}`}>{step}</li>)}
+                    </ul>
                   </section>
                   <section>
-                    <p className="career-os-card-label">Evidence</p>
-                    <p>Gate ID: {trustRecord?.gateId || 'not recorded'}</p>
-                    <p>Last validated: {trustRecord?.lastValidatedAt ? formatDateTime(trustRecord.lastValidatedAt) : 'not recorded'}</p>
-                    <p>Resume verified: {trustRecord?.checkpointId ? 'Yes' : 'No'}</p>
+                    <p className="career-os-card-label">Current Status</p>
+                    <p>{group.currentStatus}</p>
+                    <p>{group.expectedResult}</p>
+                  </section>
+                  <section>
+                    <p className="career-os-card-label">Impact</p>
+                    <p>{group.unlockCount} application{group.unlockCount === 1 ? '' : 's'} unlocked</p>
+                    <p>{group.evidenceStatus}</p>
                   </section>
                 </div>
                 <ApplicationActionControl
                   actionToken={pageActionToken}
                   actionTokenExpiresAt={actionTokenExpiresAt}
                   actionKind={cta.actionKind}
-                  applicationId={String(card.application.id)}
+                  applicationId={String(group.primaryCard.application.id)}
                   disabledReason={cta.disabledReason}
-                  fields={card.fields}
+                  fields={group.primaryCard.fields}
                   href={cta.href}
-                  intro={card.nextStep}
-                  label={card.primaryLabel}
-                  legalApprovalFingerprint={card.legalApprovalFingerprint}
-                  legalApprovalSourceUrl={card.legalApprovalSourceUrl}
-                  legalApprovalText={card.legalApprovalText}
-                  legalApprovalTitle={card.legalApprovalTitle}
-                  variant={card.variant}
-                  whatTomasMustDo={card.requiredAction}
+                  intro={group.expectedResult}
+                  label={group.actionLabel}
+                  legalApprovalFingerprint={group.primaryCard.legalApprovalFingerprint}
+                  legalApprovalSourceUrl={group.primaryCard.legalApprovalSourceUrl}
+                  legalApprovalText={group.primaryCard.legalApprovalText}
+                  legalApprovalTitle={group.primaryCard.legalApprovalTitle}
+                  variant={group.primaryCard.variant}
+                  whatTomasMustDo={group.exactAction}
                 />
+                <details>
+                  <summary>Evidence</summary>
+                  <div className="career-os-link-row">
+                    {group.evidenceItems.map((item) => (
+                      <div key={`${group.id}-${item.applicationId}`}>
+                        <p><strong>{item.role}</strong></p>
+                        <p>Application {item.applicationId}</p>
+                        <p>Gate ID: {item.gateId || 'not recorded'}</p>
+                        <p>Last validated: {item.lastValidatedAt ? formatDateTime(item.lastValidatedAt) : 'not recorded'}</p>
+                        <p>Checkpoint saved: {item.checkpointSaved ? 'Yes' : 'No'}</p>
+                        {item.currentUrl ? <p><a className="text-link" href={item.currentUrl}>Open employer page</a></p> : null}
+                        {item.screenshotHref ? <p><a className="text-link" href={item.screenshotHref}>Open screenshot evidence</a></p> : null}
+                      </div>
+                    ))}
+                  </div>
+                </details>
                 <div className="career-os-link-row">
-                  {card.supportingLinks.map((link) => (
-                    <a className="text-link" href={link.href} key={`${card.application.id}-${link.label}`}>{link.label}</a>
+                  {group.primaryCard.supportingLinks.map((link) => (
+                    <a className="text-link" href={link.href} key={`${group.primaryCard.application.id}-${link.label}`}>{link.label}</a>
                   ))}
                 </div>
               </article>
@@ -469,7 +527,7 @@ function buildCandidateSummary(status: CareerStatus) {
   };
 }
 
-function buildTodayPriorities(status: CareerStatus, actionCenterCards: ActionCenterCard[]) {
+function buildTodayPriorities(status: CareerStatus, taskGroups: TaskGroup[]) {
   const priorities: Array<{
     actionLabel: string;
     estimatedTime: string;
@@ -494,16 +552,16 @@ function buildTodayPriorities(status: CareerStatus, actionCenterCards: ActionCen
     });
   }
 
-  for (const card of actionCenterCards.filter((item) => item.variant !== 'technical').slice(0, 2)) {
+  for (const group of taskGroups.slice(0, 2)) {
     priorities.push({
-      actionLabel: card.primaryLabel,
-      estimatedTime: card.estimatedTime,
-      href: `/career-os#${applicationAnchorId(card.application)}`,
-      key: `action-${card.application.id}`,
-      reason: priorityReasonForActionCard(card),
-      subtitle: card.employer,
-      title: card.role,
-      type: 'Action Center',
+      actionLabel: group.actionLabel,
+      estimatedTime: group.estimatedTime,
+      href: `/career-os#task-group-${group.id}`,
+      key: `task-${group.id}`,
+      reason: priorityReasonForTaskGroup(group),
+      subtitle: group.employerLabel,
+      title: group.title,
+      type: 'Today’s Tasks',
     });
   }
 
@@ -534,14 +592,281 @@ function buildTodayPriorities(status: CareerStatus, actionCenterCards: ActionCen
   return priorities.slice(0, 5);
 }
 
-function priorityReasonForActionCard(card: ActionCenterCard) {
-  if (card.variant === 'employment') return 'This employer needs your saved Verizon employment details before the application can continue.';
-  if (card.variant === 'account') return 'This employer needs you to finish a sign-in or account step before Career OS can continue.';
-  if (card.variant === 'legal') return 'This employer needs your approval of the exact legal text before the application can continue.';
-  if (card.variant === 'captcha') return 'This employer needs you to complete a visible verification step before the application can continue.';
-  if (card.variant === 'missing_fact') return 'This employer needs one saved answer before the application can continue.';
-  if (card.variant === 'technical') return 'Career OS is waiting to retry this application after a system issue is fixed.';
-  return card.reason;
+function buildTaskGroups(cards: ActionCenterCard[], trustRecords: CareerStatus['operationalTrust']['verifiedActionCenterRecords']): TaskGroup[] {
+  const trustRecordByApplicationId = new Map(
+    trustRecords.map((record) => [String(record.applicationId || ''), record] as const),
+  );
+  const grouped = new Map<string, { cards: ActionCenterCard[]; primaryCard: ActionCenterCard }>();
+
+  for (const card of cards) {
+    const trustRecord = trustRecordByApplicationId.get(String(card.application.id));
+    const key = taskGroupingKey(card, trustRecord);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.cards.push(card);
+    } else {
+      grouped.set(key, { cards: [card], primaryCard: card });
+    }
+  }
+
+  return Array.from(grouped.entries())
+    .map(([id, group]) => buildTaskGroup(id, group.cards, group.primaryCard, trustRecordByApplicationId))
+    .sort((left, right) => left.sortRank - right.sortRank || left.title.localeCompare(right.title));
+}
+
+function buildTaskGroup(
+  id: string,
+  cards: ActionCenterCard[],
+  primaryCard: ActionCenterCard,
+  trustRecordByApplicationId: Map<string, CareerStatus['operationalTrust']['verifiedActionCenterRecords'][number]>,
+): TaskGroup {
+  const uniqueApplicationIds = Array.from(new Set(cards.map((card) => String(card.application.id))));
+  const uniqueOpportunityIds = Array.from(new Set(cards.map((card) => String(card.application.opportunity_id || '')).filter(Boolean)));
+  const taskType = taskGroupType(primaryCard);
+  const effort = cards
+    .map((card) => parseEstimatedTime(card.estimatedTime))
+    .reduce((acc, item) => ({
+      max: acc.max + item.max,
+      min: acc.min + item.min,
+    }), { min: 0, max: 0 });
+  const unlockCount = Math.max(
+    uniqueApplicationIds.length,
+    ...cards.map((card) => applicationUnlockCount(card)),
+  );
+  const employers = Array.from(new Set(cards.map((card) => card.employer)));
+  const employerLabel = employers.length === 1 ? employers[0] : employers.join(', ');
+  const indicators = buildVerifiedIndicators(cards, trustRecordByApplicationId);
+  const evidenceItems = cards.map((card) => {
+    const trustRecord = trustRecordByApplicationId.get(String(card.application.id));
+    const screenshotHref = card.supportingLinks.find((link) => /checkpoint|screenshot/i.test(link.label))?.href;
+    return {
+      applicationId: String(card.application.id),
+      checkpointSaved: Boolean(trustRecord?.checkpointId && trustRecord?.checkpointStorageLocation),
+      currentUrl: trustRecord?.currentUrl,
+      gateId: trustRecord?.gateId,
+      lastValidatedAt: trustRecord?.lastValidatedAt,
+      role: card.role,
+      screenshotHref,
+    };
+  });
+  return {
+    actionLabel: primaryCard.primaryLabel,
+    affectedApplicationIds: uniqueApplicationIds,
+    affectedCanonicalOpportunityIds: uniqueOpportunityIds,
+    cards,
+    currentStatus: taskCurrentStatus(primaryCard, cards, trustRecordByApplicationId),
+    employerLabel,
+    employers,
+    estimatedTime: formatMinuteRange(effort.min, effort.max),
+    evidenceItems,
+    evidenceStatus: evidenceStatusText(cards, trustRecordByApplicationId),
+    exactAction: sharedExactAction(cards),
+    expectedResult: taskExpectedResult(primaryCard, cards, trustRecordByApplicationId),
+    href: primaryCard.supportingLinks[0]?.href || `/career-os#${applicationAnchorId(primaryCard.application)}`,
+    id,
+    primaryCard,
+    sortRank: taskSortRank(primaryCard, unlockCount, effort.max, trustRecordByApplicationId),
+    taskType,
+    title: taskTitle(primaryCard, cards, unlockCount),
+    unlockCount,
+    verifiedIndicators: indicators,
+  };
+}
+
+function summarizeTaskGroups(taskGroups: TaskGroup[]) {
+  const uniqueApplications = new Set(taskGroups.flatMap((group) => group.affectedApplicationIds));
+  const totals = taskGroups.reduce((acc, group) => {
+    const [min, max] = parseMinuteRange(group.estimatedTime);
+    return { min: acc.min + min, max: acc.max + max };
+  }, { min: 0, max: 0 });
+  const displayMinutes = Math.max(1, totals.max);
+  return {
+    affectedApplications: uniqueApplications.size,
+    displayMinutes,
+    estimatedLabel: formatMinuteRange(totals.min, totals.max),
+  };
+}
+
+function taskGroupingKey(
+  card: ActionCenterCard,
+  trustRecord?: CareerStatus['operationalTrust']['verifiedActionCenterRecords'][number],
+) {
+  const type = taskGroupType(card);
+  const action = normalizeKey(sharedExactAction([card]));
+  const domain = normalizeKey(urlDomain(trustRecord?.currentUrl || card.supportingLinks[0]?.href || ''));
+  const employer = normalizeKey(card.employer);
+  const legalFingerprint = normalizeKey(card.legalApprovalFingerprint || '');
+  const appId = normalizeKey(String(card.application.id));
+
+  if (card.variant === 'account' || card.variant === 'captcha') {
+    return [type, employer, domain || 'no-domain', action].join(':');
+  }
+  if (card.variant === 'legal' && legalFingerprint) {
+    return [type, employer, legalFingerprint].join(':');
+  }
+  return [type, appId].join(':');
+}
+
+function taskGroupType(card: ActionCenterCard): TaskGroupType {
+  if (card.variant === 'employment') return 'Employment Details';
+  if (card.variant === 'account') return 'Employer Account or Sign-In';
+  if (card.variant === 'legal') return 'Legal or Privacy Approval';
+  if (card.variant === 'captcha') return /mfa|identity|security/i.test(card.requiredAction) ? 'Identity or MFA' : 'Other Verified Human Action';
+  if (card.variant === 'missing_fact' && /compensation/i.test(`${card.primaryLabel} ${card.requiredAction}`)) return 'Compensation Answer';
+  if (card.variant === 'missing_fact') return 'Missing Candidate Information';
+  return 'Other Verified Human Action';
+}
+
+function taskTitle(primaryCard: ActionCenterCard, cards: ActionCenterCard[], unlockCount: number) {
+  if (cards.length > 1 && taskGroupType(primaryCard) === 'Employer Account or Sign-In') {
+    return `${primaryCard.employer} Account`;
+  }
+  if (taskGroupType(primaryCard) === 'Compensation Answer') return 'Compensation Approval';
+  if (taskGroupType(primaryCard) === 'Employment Details') return 'Employment History Verification';
+  if (unlockCount > 1 && taskGroupType(primaryCard) === 'Missing Candidate Information') return 'Reusable Candidate Answer';
+  return primaryCard.primaryLabel;
+}
+
+function sharedExactAction(cards: ActionCenterCard[]) {
+  const unique = Array.from(new Set(cards.map((card) => plainRequiredAction(card.variant, {
+    canonicalExecutionState: 'waiting_on_tomas',
+    cta: { actionKind: 'continue_application', whatTomasMustDo: card.requiredAction, label: card.primaryLabel } as never,
+    employer: card.employer,
+    reason: card.reason,
+    role: card.role,
+  } as never))));
+  return unique.length === 1 ? unique[0] : cards[0].requiredAction;
+}
+
+function buildVerifiedIndicators(
+  cards: ActionCenterCard[],
+  trustRecordByApplicationId: Map<string, CareerStatus['operationalTrust']['verifiedActionCenterRecords'][number]>,
+) {
+  const indicators = new Set<string>();
+  indicators.add('Resume prepared');
+  if (cards.every((card) => Boolean(card.supportingLinks[0]?.href))) indicators.add('Application opened');
+  if (cards.some((card) => {
+    const record = trustRecordByApplicationId.get(String(card.application.id));
+    return Boolean(record?.checkpointId && record?.checkpointStorageLocation);
+  })) {
+    indicators.add('Checkpoint saved');
+  }
+  if (cards.some((card) => {
+    const raw = asRecord(card.application.raw_record);
+    return Boolean(asRecord(raw.browser_worker_last_report).screenshot_path || asRecord(raw.browser_worker).last_screenshot_path);
+  })) {
+    indicators.add('Screenshot evidence captured');
+  }
+  return Array.from(indicators);
+}
+
+function taskExpectedResult(
+  primaryCard: ActionCenterCard,
+  cards: ActionCenterCard[],
+  trustRecordByApplicationId: Map<string, CareerStatus['operationalTrust']['verifiedActionCenterRecords'][number]>,
+) {
+  const everyCardHasCheckpoint = cards.every((card) => {
+    const trustRecord = trustRecordByApplicationId.get(String(card.application.id));
+    return Boolean(trustRecord?.checkpointId && trustRecord?.checkpointStorageLocation);
+  });
+  if (everyCardHasCheckpoint && primaryCard.variant === 'account') return 'Automation resumes after the employer account step is verified on the saved checkpoint.';
+  if (everyCardHasCheckpoint && primaryCard.variant === 'captcha') return 'Automation resumes after the visible security step clears on the saved checkpoint.';
+  if (primaryCard.variant === 'employment' || primaryCard.variant === 'missing_fact' || primaryCard.variant === 'legal') {
+    return 'Answer saved. Application queued for a fresh supported run; automation continuation is not yet verified.';
+  }
+  return primaryCard.nextStep;
+}
+
+function evidenceStatusText(
+  cards: ActionCenterCard[],
+  trustRecordByApplicationId: Map<string, CareerStatus['operationalTrust']['verifiedActionCenterRecords'][number]>,
+) {
+  const checkpoints = cards.filter((card) => {
+    const trustRecord = trustRecordByApplicationId.get(String(card.application.id));
+    return Boolean(trustRecord?.checkpointId && trustRecord?.checkpointStorageLocation);
+  }).length;
+  if (checkpoints === cards.length) return 'Every affected application has verified checkpoint evidence.';
+  if (checkpoints > 0) return `${checkpoints} of ${cards.length} affected applications have verified checkpoint evidence.`;
+  return 'No verified resumable checkpoint is currently recorded for this task.';
+}
+
+function taskCurrentStatus(
+  primaryCard: ActionCenterCard,
+  cards: ActionCenterCard[],
+  trustRecordByApplicationId: Map<string, CareerStatus['operationalTrust']['verifiedActionCenterRecords'][number]>,
+) {
+  const oldestGate = cards
+    .map((card) => trustRecordByApplicationId.get(String(card.application.id))?.lastValidatedAt || '')
+    .filter(Boolean)
+    .sort()[0];
+  const unlocked = Math.max(cards.length, ...cards.map((card) => applicationUnlockCount(card)));
+  const validatedText = oldestGate ? `Oldest verified gate ${formatDateTime(oldestGate)}.` : 'Verified gate is active.';
+  if (unlocked > cards.length) return `${validatedText} One completion can unlock ${unlocked} applications.`;
+  if (primaryCard.variant === 'account' && cards.length > 1) return `${validatedText} One employer account step covers ${cards.length} applications.`;
+  return validatedText;
+}
+
+function taskSortRank(
+  primaryCard: ActionCenterCard,
+  unlockCount: number,
+  maxMinutes: number,
+  trustRecordByApplicationId: Map<string, CareerStatus['operationalTrust']['verifiedActionCenterRecords'][number]>,
+) {
+  const base = primaryCard.variant === 'missing_fact' ? 10
+    : primaryCard.variant === 'employment' ? 20
+      : primaryCard.variant === 'account' ? 30
+        : primaryCard.variant === 'legal' ? 40
+          : primaryCard.variant === 'captcha' ? 50
+            : 60;
+  const lastValidatedAt = trustRecordByApplicationId.get(String(primaryCard.application.id))?.lastValidatedAt;
+  const agePenalty = lastValidatedAt ? Math.floor((Date.now() - new Date(lastValidatedAt).getTime()) / (1000 * 60 * 60)) : 0;
+  return (base * 1000) + (maxMinutes * 100) - (unlockCount * 10) - Math.min(agePenalty, 99);
+}
+
+function applicationUnlockCount(card: ActionCenterCard) {
+  return /total compensation/i.test(`${card.primaryLabel} ${card.requiredAction}`) ? 4 : 1;
+}
+
+function parseEstimatedTime(text: string) {
+  if (/less than 1/i.test(text)) return { min: 1, max: 1 };
+  const numbers = Array.from(text.matchAll(/\d+/g)).map((match) => Number(match[0]));
+  if (numbers.length >= 2) return { min: numbers[0], max: numbers[1] };
+  if (numbers.length === 1) return { min: numbers[0], max: numbers[0] };
+  return { min: 1, max: 1 };
+}
+
+function parseMinuteRange(text: string) {
+  const numbers = Array.from(text.matchAll(/\d+/g)).map((match) => Number(match[0]));
+  if (numbers.length >= 2) return [numbers[0], numbers[1]] as const;
+  if (numbers.length === 1) return [numbers[0], numbers[0]] as const;
+  return [1, 1] as const;
+}
+
+function formatMinuteRange(min: number, max: number) {
+  if (min === max) return `Approximately ${min} minute${min === 1 ? '' : 's'}`;
+  return `Approximately ${min}-${max} minutes`;
+}
+
+function normalizeKey(value: string) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function urlDomain(value: string) {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function priorityReasonForTaskGroup(group: TaskGroup) {
+  if (group.taskType === 'Employment Details') return 'This employer needs verified employment facts before the next supported run can continue.';
+  if (group.taskType === 'Employer Account or Sign-In') return 'Finishing this employer sign-in or account step can unlock additional application progress.';
+  if (group.taskType === 'Legal or Privacy Approval') return 'Career OS needs your approval of the exact employer text before it can continue safely.';
+  if (group.taskType === 'Identity or MFA') return 'A visible security or identity step is blocking further automation on this employer workflow.';
+  if (group.taskType === 'Compensation Answer') return 'A reusable compensation answer can unblock multiple applications once it is saved.';
+  if (group.taskType === 'Missing Candidate Information') return 'One verified candidate answer is still missing before the application can continue.';
+  return group.currentStatus;
 }
 
 function buildRecentActivity(status: CareerStatus, submittedCards: ActionCenterCard[]) {
@@ -828,11 +1153,11 @@ function legalApprovalTextForCard(execution: CareerStatus['applicationExecution'
 }
 
 function whatHappensNext(variant: ActionCenterVariant) {
-  if (variant === 'employment') return 'Career OS will resume the saved Workday checkpoint, enter the saved employment details, and verify that the employer form accepts them.';
-  if (variant === 'account') return 'Career OS will detect that the employer account step advanced, reopen the saved checkpoint, and continue the application automatically.';
-  if (variant === 'legal') return 'Career OS will store this approval with an exact fingerprint, reopen the employer checkpoint, and continue only for matching text.';
-  if (variant === 'captcha') return 'Career OS will verify that the visible challenge is gone or the page advanced, then continue the application automatically.';
-  if (variant === 'missing_fact') return 'Career OS will save this verified answer, resume the exact application, and verify that the employer form accepts it.';
+  if (variant === 'employment') return 'Career OS will save the verified employment details and queue the application for the next supported run.';
+  if (variant === 'account') return 'Career OS will verify that the account step advanced and continue only when the employer page is safely accessible again.';
+  if (variant === 'legal') return 'Career OS will store this approval with an exact fingerprint and continue only when the same employer text is still present.';
+  if (variant === 'captcha') return 'Career OS will recheck the employer page after you complete the visible verification step.';
+  if (variant === 'missing_fact') return 'Career OS will save this verified answer and use it on the next supported run.';
   if (variant === 'technical') return 'Career OS will keep this out of your action queue until the technical defect is repaired and a safe retry is available.';
   return 'Career OS will keep this requisition locked and will not reopen or resubmit it.';
 }
