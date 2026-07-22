@@ -1236,6 +1236,9 @@ function buildSystemNotice(status: CareerStatus) {
   if (status.environment !== 'production') {
     return status.blocker || 'Career OS is showing the last verified production snapshot until the live database connection is restored.';
   }
+  if (status.authoritativeLedger.inconsistent) {
+    return 'Career OS is reconciling application status. Automation is paused.';
+  }
   if (status.operationalTrust.verifiedCounts.systemIssues > 0) {
     return `${status.operationalTrust.verifiedCounts.systemIssues} verified system issue${status.operationalTrust.verifiedCounts.systemIssues === 1 ? ' is' : 's are'} still affecting active automation.`;
   }
