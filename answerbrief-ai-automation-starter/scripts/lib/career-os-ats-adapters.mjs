@@ -178,6 +178,8 @@ export function detectVisibleCaptchaEvidence(snapshot = {}) {
     const src = clean(element.src);
     const className = clean(element.className);
     const text = clean(element.text);
+    const width = Number(element.width || 0);
+    const height = Number(element.height || 0);
     const visible = element.visible !== false;
     const haystack = `${selector} ${tagName} ${title} ${src} ${className} ${text}`.toLowerCase();
     if (!visible) continue;
@@ -191,6 +193,19 @@ export function detectVisibleCaptchaEvidence(snapshot = {}) {
           : /challenge|verify you are human|i am human|bot verification|security challenge/i.test(text || title)
             ? 'visible_challenge'
             : 'visible_captcha';
+    const passiveRecaptchaBadge = detectorType === 'visible_recaptcha'
+      && (
+        selector.includes('grecaptcha-badge')
+        || className.includes('grecaptcha-badge')
+        || (
+          width > 0
+          && width <= 260
+          && height > 0
+          && height <= 80
+          && !/verify you are human|i am human|challenge|checkbox|select all images|robot/i.test(`${text} ${title}`.toLowerCase())
+        )
+      );
+    if (passiveRecaptchaBadge) continue;
     return {
       detected: true,
       detectorType,

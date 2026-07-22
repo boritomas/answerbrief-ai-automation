@@ -217,6 +217,8 @@ async function detectHumanGate(page, task) {
           src: String(node.getAttribute('src') || ''),
           className: String(node.className || ''),
           text: String(node.textContent || '').replace(/\s+/g, ' ').trim(),
+          width: Math.round(node.getBoundingClientRect().width),
+          height: Math.round(node.getBoundingClientRect().height),
           visible: true,
         };
       })
