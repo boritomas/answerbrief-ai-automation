@@ -540,6 +540,21 @@ test('JPMorgan Oracle pilot uses the public Candidate Experience finder and pers
   assert.match(sourceRunner, /career_os_job_postings/);
 });
 
+test('Oracle browser execution path is supported and can stop at the employer verification gate', () => {
+  const adapterSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'scripts', 'lib', 'career-os-ats-adapters.mjs'), 'utf8');
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+  const queueSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
+
+  assert.match(adapterSource, /const oracleAdapter =/);
+  assert.match(adapterSource, /Oracle Recruiting requires employer-controlled hCaptcha verification/);
+  assert.match(adapterSource, /primary-email/);
+  assert.match(adapterSource, /h-captcha-response/);
+  assert.match(adapterSource, /email-authentication step/);
+  assert.match(statusSource, /platform\.includes\('oracle'\)\) return 'supported'/);
+  assert.match(queueSource, /does not yet have an ats adapter for platform/);
+  assert.match(queueSource, /package_ready' : 'qualified'/);
+});
+
 test('minimal employment history model maps only ATS employment fields and validates Cisco safely', () => {
   const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
   const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');

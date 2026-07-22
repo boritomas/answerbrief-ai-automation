@@ -69,6 +69,14 @@ type WorkerReport = {
   status: WorkerStatus;
 };
 
+const BROWSER_WORKER_SUPPORTED_PLATFORM_TOKENS = [
+  'greenhouse',
+  'workday',
+  'phenom',
+  'workday_via_phenom',
+  'oracle',
+];
+
 export type BrowserWorkerClaimRequest = {
   companionId: string;
   ownerEmail: string;
@@ -397,7 +405,11 @@ function isBrowserWorkerEligible(application: QueueApplication, companionId: str
   const browserWorker = asRecord(raw.browser_worker);
   const lastReport = asRecord(raw.browser_worker_last_report);
   const lastReportStatus = cleanEnv(lastReport.status);
-  if ((lastReportStatus === 'waiting_on_tomas' || lastReportStatus === 'blocked_technical') && !isExplicitlyResumedApplication(application)) {
+  if (
+    (lastReportStatus === 'waiting_on_tomas' || lastReportStatus === 'blocked_technical')
+    && !isExplicitlyResumedApplication(application)
+    && !recoverableLegacyAdapterState(application)
+  ) {
     return false;
   }
   const claimedBy = cleanEnv(browserWorker.companion_id);
@@ -415,6 +427,8 @@ function canonicalQueueState(application: JsonRecord): QueueState {
   const raw = asRecord(application.raw_record);
   const lifecycleStage = cleanEnv(application.lifecycle_stage).toLowerCase();
   const text = applicationText(application);
+  const recoveredState = recoverableLegacyAdapterState(application);
+  if (recoveredState) return recoveredState;
   if (
     lifecycleStage === 'queued_after_human_step'
     || lifecycleStage === 'queued_after_tomas_resolution'
@@ -719,4 +733,22 @@ function deterministicUuid(input: string) {
   hash[8] = (hash[8] & 0x3f) | 0x80;
   const hex = hash.subarray(0, 16).toString('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function recoverableLegacyAdapterState(application: JsonRecord): QueueState | null {
+  const text = applicationText(application);
+  if (!text.includes('does not yet have an ats adapter for platform')) return null;
+  const raw = asRecord(application.raw_record);
+  const platform = cleanEnv(raw.platform || raw.ats_platform).toLowerCase();
+  if (!browserWorkerPlatformSupported(platform)) return null;
+  return hasResumeOrPackage(application) ? 'package_ready' : 'qualified';
+}
+
+function browserWorkerPlatformSupported(platform: string) {
+  return BROWSER_WORKER_SUPPORTED_PLATFORM_TOKENS.some((token) => platform.includes(token));
+}
+
+function hasResumeOrPackage(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return Boolean(application.exact_resume || raw.resume_path || raw.package_status);
 }

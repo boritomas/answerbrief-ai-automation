@@ -153,6 +153,14 @@ const TECHNICAL_BLOCKER_TERMS = [
   'stale checkpoint',
 ];
 
+const BROWSER_WORKER_SUPPORTED_PLATFORM_TOKENS = [
+  'greenhouse',
+  'workday',
+  'phenom',
+  'workday_via_phenom',
+  'oracle',
+];
+
 export function careerOsActionMetadata(application: JsonRecord) {
   const state = canonicalQueueState(application);
   const text = applicationText(application);
@@ -438,6 +446,8 @@ export function canonicalQueueState(application: JsonRecord): QueueState {
   const text = applicationText(application);
   const terminalState = terminalQueueState(application);
   if (terminalState) return terminalState;
+  const recoveredState = recoverableLegacyAdapterState(application);
+  if (recoveredState) return recoveredState;
   if (
     lifecycleStage === 'queued_after_human_step'
     || lifecycleStage === 'queued_after_tomas_resolution'
@@ -530,6 +540,7 @@ function capturedConfirmationEvidence(application: QueueApplication) {
 }
 
 function humanOrTechnicalBlocker(application: JsonRecord) {
+  if (recoverableLegacyAdapterState(application)) return '';
   const text = applicationText(application);
   if (hasAny(text, TECHNICAL_BLOCKER_TERMS)) return 'Unsupported browser or ATS operation remains after verified fields/package steps.';
   if (hasAny(text, ['total_compensation', 'desired total compensation'])) return 'Tomas must approve a reusable desired total-compensation answer; base salary and total compensation are distinct.';
@@ -556,6 +567,24 @@ function hasResolvedLegalApproval(application: JsonRecord) {
     || stringValue(approval.approved_at)
     || raw.tomas_answer_saved === true
   );
+}
+
+function recoverableLegacyAdapterState(application: JsonRecord): QueueState | null {
+  const text = applicationText(application);
+  if (!text.includes('does not yet have an ats adapter for platform')) return null;
+  const raw = asRecord(application.raw_record);
+  const platform = stringValue(raw.platform || raw.ats_platform).toLowerCase();
+  if (!browserWorkerPlatformSupported(platform)) return null;
+  return hasResumeOrPackage(application) ? 'package_ready' : 'qualified';
+}
+
+function browserWorkerPlatformSupported(platform: string) {
+  return BROWSER_WORKER_SUPPORTED_PLATFORM_TOKENS.some((token) => platform.includes(token));
+}
+
+function hasResumeOrPackage(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return Boolean(application.exact_resume || raw.resume_path || raw.package_status);
 }
 
 function terminalQueueState(application: JsonRecord): QueueState | null {

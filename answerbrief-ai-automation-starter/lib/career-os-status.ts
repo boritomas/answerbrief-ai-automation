@@ -1871,8 +1871,7 @@ function ledgerAtsSupportState(item: CanonicalOpportunity, latestApplication?: J
     || asRecord(item.preferredRecord.raw.ats_analysis).platform
     || item.preferredRecord.raw.status,
   );
-  if (platform.includes('greenhouse') || platform.includes('workday')) return 'supported';
-  if (platform.includes('oracle')) return 'unsupported';
+  if (platform.includes('greenhouse') || platform.includes('workday') || platform.includes('oracle')) return 'supported';
   if (!platform) return 'unknown';
   return 'unsupported';
 }

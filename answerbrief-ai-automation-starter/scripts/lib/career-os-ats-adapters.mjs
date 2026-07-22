@@ -646,6 +646,102 @@ async function detectUnanswerableWorkdayFields(page, task, runtime) {
   return true;
 }
 
+async function clickOracleApplyNow(page) {
+  const clicked = await clickButton(page, [/^apply now$/i]);
+  if (clicked) {
+    await page.waitForTimeout(2500);
+  }
+  return clicked;
+}
+
+async function fillOracleAuthenticationStep(page, task, runtime) {
+  const email = task.candidate.email || 'tomas@nieves.com';
+  const emailFilled = await fillInputBySelectors(page, [
+    '#primary-email-0',
+    'input[name="primary-email"]',
+    'input[type="email"]',
+  ], email);
+
+  const consent = page.locator('#legal-disclaimer-checkbox').first();
+  if (await consent.count()) {
+    await consent.evaluate((element) => {
+      if (!(element instanceof HTMLInputElement)) return;
+      element.checked = true;
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+      element.dispatchEvent(new Event('click', { bubbles: true }));
+    });
+  }
+
+  await runtime.report({
+    status: 'heartbeat',
+    currentUrl: page.url(),
+    evidenceText: 'Filled Oracle Recruiting email-authentication step with Tomas’s verified career-search email and acknowledged the employer terms.',
+  });
+
+  return emailFilled;
+}
+
+async function detectOracleVerificationGate(page, task, runtime) {
+  const gate = await page.evaluate(() => {
+    const visible = (element) => {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const text = String(document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+    const hasHCaptcha = Boolean(
+      document.querySelector('#hCaptchaContainer')
+      || document.querySelector('textarea[name="h-captcha-response"]')
+      || document.querySelector('textarea[name="g-recaptcha-response"]')
+      || document.querySelector('[data-hcaptcha-widget-id]')
+      || Array.from(document.querySelectorAll('iframe')).some((frame) => /hcaptcha|recaptcha|captcha|challenge/i.test(String(frame.getAttribute('src') || frame.getAttribute('title') || ''))),
+    );
+    const visibleCaptcha = Array.from(document.querySelectorAll('iframe, [data-hcaptcha-widget-id], #hCaptchaContainer, .h-captcha, .g-recaptcha'))
+      .some((element) => element instanceof HTMLElement && visible(element));
+    return {
+      hasHCaptcha,
+      text,
+      visibleCaptcha,
+    };
+  });
+
+  if (!gate.hasHCaptcha) return false;
+
+  await runtime.report({
+    status: 'waiting_on_tomas',
+    currentUrl: page.url(),
+    evidenceText: gate.visibleCaptcha
+      ? 'Oracle Recruiting presented CAPTCHA or bot verification at the email-authentication step.'
+      : 'Oracle Recruiting requires employer-controlled hCaptcha verification at the email-authentication step before automation can continue.',
+    screenshotPath: await runtime.safeShot('oracle-auth-captcha'),
+    details: {
+      classification: 'captcha',
+      provider: 'hcaptcha',
+      step: 'email_authentication',
+      visibleCaptcha: gate.visibleCaptcha,
+    },
+  });
+  return true;
+}
+
+async function detectOracleAccountGate(page, task, runtime) {
+  const text = await bodyText(page);
+  if (!/sign in|create account|create an account|already have a profile|authentication screen/i.test(text)) return false;
+  if (/email address|this is how we'll communicate with you/i.test(text)) return false;
+  await runtime.report({
+    status: 'waiting_on_tomas',
+    currentUrl: page.url(),
+    evidenceText: 'Oracle Recruiting presented an account or sign-in gate before the application can continue.',
+    screenshotPath: await runtime.safeShot('oracle-account-gate'),
+    details: {
+      classification: 'account',
+      step: 'authentication',
+    },
+  });
+  return true;
+}
+
 const greenhouseAdapter = {
   id: 'greenhouse',
   matches(task) {
@@ -779,7 +875,84 @@ const workdayAdapter = {
   },
 };
 
-const adapters = [greenhouseAdapter, workdayAdapter];
+const oracleAdapter = {
+  id: 'oracle',
+  matches(task) {
+    return /oracle/i.test(`${task.platform || ''}`) || /oraclecloud|candidateexperience/i.test(`${task.applicationUrl || ''}`);
+  },
+  async execute(page, task, runtime) {
+    await runtime.report({ status: 'running', evidenceText: `Opening ${task.applicationUrl}` });
+    await page.goto(task.applicationUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await page.waitForTimeout(2500);
+    await runtime.takeShot('oracle-opened');
+
+    if (await runtime.detectCommonHumanGate()) return true;
+
+    if (/\/job\//i.test(page.url()) && !/\/apply\//i.test(page.url())) {
+      const openedText = await bodyText(page);
+      if (!/apply now/i.test(openedText)) {
+        await runtime.report({
+          status: 'failed',
+          currentUrl: page.url(),
+          evidenceText: 'Oracle job posting is no longer presenting an Apply Now path.',
+          screenshotPath: await runtime.safeShot('oracle-no-apply-now'),
+        });
+        return true;
+      }
+      const clicked = await clickOracleApplyNow(page);
+      if (!clicked) {
+        await runtime.report({
+          status: 'blocked_technical',
+          currentUrl: page.url(),
+          evidenceText: 'Oracle adapter could not open the employer apply flow from the public job page.',
+          screenshotPath: await runtime.safeShot('oracle-apply-button-missing'),
+        });
+        return true;
+      }
+    }
+
+    await runtime.takeShot('oracle-apply-opened');
+
+    if (await runtime.detectCommonHumanGate()) return true;
+    if (await detectOracleAccountGate(page, task, runtime)) return true;
+
+    const onEmailStep = /\/apply\/email/i.test(page.url()) || /enter your email address/i.test(await bodyText(page));
+    if (!onEmailStep) {
+      await runtime.report({
+        status: 'blocked_technical',
+        currentUrl: page.url(),
+        evidenceText: 'Oracle adapter reached an unrecognized application step before email verification.',
+        screenshotPath: await runtime.safeShot('oracle-unrecognized-step'),
+      });
+      return true;
+    }
+
+    await fillOracleAuthenticationStep(page, task, runtime);
+    await runtime.takeShot('oracle-email-filled');
+
+    if (await detectOracleVerificationGate(page, task, runtime)) return true;
+    if (await runtime.detectCommonHumanGate()) return true;
+
+    const next = page.locator('button[type="submit"]').filter({ hasText: /next/i }).first();
+    if (await next.count()) {
+      await next.click().catch(() => null);
+      await page.waitForTimeout(4000);
+      if (await runtime.detectCommonHumanGate()) return true;
+      if (await detectOracleAccountGate(page, task, runtime)) return true;
+      if (await detectOracleVerificationGate(page, task, runtime)) return true;
+    }
+
+    await runtime.report({
+      status: 'blocked_technical',
+      currentUrl: page.url(),
+      evidenceText: 'Oracle adapter completed the email-authentication step but could not verify the next application transition safely.',
+      screenshotPath: await runtime.safeShot('oracle-after-email-step'),
+    });
+    return true;
+  },
+};
+
+const adapters = [greenhouseAdapter, workdayAdapter, oracleAdapter];
 
 export function getATSAdapter(task) {
   return adapters.find((adapter) => adapter.matches(task)) || null;
