@@ -490,6 +490,14 @@ test('global autonomous discovery supports complete result sets, checkpoints, an
   assert.match(marketUniverseSource, /towers, fiber infrastructure, and digital real estate/);
   assert.match(marketUniverseSource, /dynamic employer discovery/);
   assert.match(marketUniverseSource, /JPMorgan Chase/);
+  assert.match(marketUniverseSource, /Box/);
+  assert.match(marketUniverseSource, /Braze/);
+  assert.match(marketUniverseSource, /CoreWeave/);
+  assert.match(marketUniverseSource, /Scale AI/);
+  assert.match(marketUniverseSource, /Rubrik/);
+  assert.match(marketUniverseSource, /Verkada/);
+  assert.match(marketUniverseSource, /Motive/);
+  assert.match(marketUniverseSource, /Anduril Industries/);
   assert.match(marketUniverseSource, /oracle/);
   assert.match(marketUniverseSource, /unsupportedSourceCandidates/);
   assert.match(marketUniverseSource, /oracleSources/);
@@ -517,6 +525,12 @@ test('Career OS permanent role policy retains target product-management levels a
   assert.match(dailyCycleSource, /excluded_non_product_scope/);
   assert.match(sourceRunner, /excluded_executive_level/);
   assert.match(sourceRunner, /executiveExclusionTokens/);
+  assert.match(sourceRunner, /andurilindustries/);
+  assert.match(sourceRunner, /coreweave/);
+  assert.match(sourceRunner, /scaleai/);
+  assert.match(sourceRunner, /rubrik/);
+  assert.match(sourceRunner, /verkada/);
+  assert.match(sourceRunner, /gomotive/);
   assert.doesNotMatch(marketUniverseSource, /'Vice President'/);
   assert.doesNotMatch(marketUniverseSource, /'Head of Product'/);
 });

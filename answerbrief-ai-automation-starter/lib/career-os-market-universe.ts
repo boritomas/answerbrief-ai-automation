@@ -25,7 +25,7 @@ export type CareerOsDiscoveryPlan = {
   sourceRegistry: string[];
 };
 
-export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-management-market-2026-07-22-v3';
+export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-management-market-2026-07-22-v4';
 
 export const CAREER_OS_SOURCE_REGISTRY = [
   'Greenhouse official board API',
@@ -135,6 +135,7 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('CyrusOne', 'company_hosted', 'towers, fiber infrastructure, and digital real estate', 'data centers', 75),
   source('EdgeConneX', 'company_hosted', 'towers, fiber infrastructure, and digital real estate', 'edge data centers', 72),
   source('Twilio', 'greenhouse', 'cloud communications, contact center, and customer experience', 'cloud communications', 96, 'twilio'),
+  source('Braze', 'greenhouse', 'cloud communications, contact center, and customer experience', 'customer engagement and AI messaging platform', 90, 'braze'),
   source('RingCentral', 'greenhouse', 'cloud communications, contact center, and customer experience', 'cloud communications', 88, 'ringcentral'),
   source('Five9', 'greenhouse', 'cloud communications, contact center, and customer experience', 'contact center', 92, 'five9'),
   source('NICE', 'greenhouse', 'cloud communications, contact center, and customer experience', 'contact center', 90, 'nice'),
@@ -147,13 +148,18 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Sinch', 'company_hosted', 'cloud communications, contact center, and customer experience', 'cloud communications', 78),
   source('Talkdesk', 'greenhouse', 'cloud communications, contact center, and customer experience', 'contact center', 82, 'talkdesk'),
   source('ServiceNow', 'smartrecruiters', 'enterprise SaaS and digital transformation', 'enterprise workflow platform', 86),
+  source('Box', 'greenhouse', 'enterprise SaaS and digital transformation', 'enterprise content cloud and AI platform', 80, 'boxinc'),
   source('Salesforce', 'company_hosted', 'enterprise SaaS and digital transformation', 'CRM and AI platform', 84),
   source('Microsoft', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
   source('Google Cloud', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
   source('Amazon Web Services', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
+  source('CoreWeave', 'greenhouse', 'enterprise SaaS and digital transformation', 'AI infrastructure platform', 82, 'coreweave'),
   source('Databricks', 'greenhouse', 'enterprise SaaS and digital transformation', 'data and AI platform', 84, 'databricks'),
+  source('Elastic', 'greenhouse', 'enterprise SaaS and digital transformation', 'search, observability, and AI platform', 80, 'elastic'),
+  source('Fivetran', 'greenhouse', 'enterprise SaaS and digital transformation', 'data movement and platform automation', 79, 'fivetran'),
   source('Airtable', 'greenhouse', 'enterprise SaaS and digital transformation', 'collaboration and workflow platform', 78, 'airtable'),
   source('Asana', 'greenhouse', 'enterprise SaaS and digital transformation', 'work management platform', 78, 'asana'),
+  source('Scale AI', 'greenhouse', 'enterprise SaaS and digital transformation', 'AI model and workflow platform', 83, 'scaleai'),
   source('Samsara', 'greenhouse', 'enterprise SaaS and digital transformation', 'connected operations platform', 84, 'samsara'),
   source('Zscaler', 'greenhouse', 'enterprise SaaS and digital transformation', 'cloud security platform', 76, 'zscaler'),
   source('Glean', 'greenhouse', 'enterprise SaaS and digital transformation', 'enterprise AI search platform', 76, 'gleanwork'),
@@ -187,6 +193,8 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Okta', 'greenhouse', 'enterprise SaaS and digital transformation', 'identity platform', 72, 'okta'),
   source('Palo Alto Networks', 'company_hosted', 'enterprise SaaS and digital transformation', 'cybersecurity platform', 72),
   source('CrowdStrike', 'greenhouse', 'enterprise SaaS and digital transformation', 'cybersecurity platform', 72, 'crowdstrike'),
+  source('Rubrik', 'greenhouse', 'enterprise SaaS and digital transformation', 'cyber resilience and data security platform', 79, 'rubrik'),
+  source('Verkada', 'greenhouse', 'enterprise SaaS and digital transformation', 'physical security and enterprise networking platform', 77, 'verkada'),
   source('Adobe', 'company_hosted', 'enterprise SaaS and digital transformation', 'digital experience platform', 76),
   source('Walmart', 'company_hosted', 'retail and commerce platforms', 'retail platform', 72),
   source('Target', 'company_hosted', 'retail and commerce platforms', 'retail platform', 71),
@@ -202,6 +210,8 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Capgemini', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 71),
   source('Cognizant', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 71),
   source('Slalom', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 71),
+  source('Motive', 'greenhouse', 'transportation, logistics, and connected operations platforms', 'fleet, telematics, and AI operations platform', 80, 'gomotive'),
+  source('Anduril Industries', 'greenhouse', 'satellite, autonomy, defense, and next-generation connectivity', 'autonomy and mission systems platform', 78, 'andurilindustries'),
   source('Vodafone', 'company_hosted', 'global companies with U.S. opportunities', 'global telecom carrier', 70),
   source('Deutsche Telekom', 'company_hosted', 'global companies with U.S. opportunities', 'global telecom carrier', 70),
   source('Telefonica', 'company_hosted', 'global companies with U.S. opportunities', 'global telecom carrier', 70),
