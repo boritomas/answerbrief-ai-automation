@@ -438,13 +438,18 @@ export function canonicalQueueState(application: JsonRecord): QueueState {
   const text = applicationText(application);
   const terminalState = terminalQueueState(application);
   if (terminalState) return terminalState;
+  if (
+    lifecycleStage === 'queued_after_human_step'
+    || lifecycleStage === 'queued_after_tomas_resolution'
+    || stringValue(raw.execution_status).toLowerCase() === 'queued'
+  ) return 'queued';
   if (hasAny(text, TECHNICAL_BLOCKER_TERMS)) return 'blocked_technical';
   if (lifecycleStage === 'waiting_on_tomas_browser_worker' || stringValue(lastReport.status).toLowerCase() === 'waiting_on_tomas') return 'waiting_on_tomas';
   if (lifecycleStage === 'browser_worker_blocked_technical' || stringValue(lastReport.status).toLowerCase() === 'blocked_technical') return 'blocked_technical';
   if (lifecycleStage === 'browser_worker_running' || stringValue(browserWorker.status).toLowerCase() === 'running') return 'running';
   if (hasAny(text, ['submitted'])) return 'submitted';
   if (hasAny(text, ['duplicate'])) return 'duplicate';
-  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable'])) return 'inactive';
+  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable', 'no longer available', 'generic careers listing'])) return 'inactive';
   if (hasAny(text, ['ineligible'])) return 'ineligible';
   if (hasAny(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
   if (hasAny(text, ['failed', 'error'])) return 'failed';
@@ -587,6 +592,8 @@ function mergeApplicationAnswer(application: QueueApplication, answer: string, n
   const answers = asRecord(application.application_answers);
   const raw = asRecord(application.raw_record);
   const audit = arrayValue(application.audit_timeline);
+  const browserWorker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
   return {
     application_answers: {
       ...answers,
@@ -605,6 +612,17 @@ function mergeApplicationAnswer(application: QueueApplication, answer: string, n
     next_action: 'Tomas resolved the required decision; Career OS queued the application for autonomous processing.',
     raw_record: {
       ...raw,
+      browser_worker: {
+        ...browserWorker,
+        last_heartbeat_at: now,
+        status: 'queued',
+      },
+      browser_worker_last_report: {
+        ...lastReport,
+        evidence_text: 'Resume requested after Tomas resolved the required decision.',
+        status: 'queued',
+        timestamp: now,
+      },
       explicit_resume_requested_at: now,
       execution_status: 'queued',
       blocker_resolved_at: now,
@@ -617,6 +635,8 @@ function mergeApplicationAnswer(application: QueueApplication, answer: string, n
 function queueApplicationAfterHumanStep(application: QueueApplication, now: string, actionRunId: string) {
   const raw = asRecord(application.raw_record);
   const audit = arrayValue(application.audit_timeline);
+  const browserWorker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
   return {
     audit_timeline: audit.concat({
       at: now,
@@ -627,6 +647,17 @@ function queueApplicationAfterHumanStep(application: QueueApplication, now: stri
     next_action: 'Tomas marked the external step complete; Career OS queued the saved checkpoint for autonomous processing.',
     raw_record: {
       ...raw,
+      browser_worker: {
+        ...browserWorker,
+        last_heartbeat_at: now,
+        status: 'queued',
+      },
+      browser_worker_last_report: {
+        ...lastReport,
+        evidence_text: 'Resume requested after Tomas completed the required external step.',
+        status: 'queued',
+        timestamp: now,
+      },
       explicit_resume_requested_at: now,
       execution_status: 'queued',
       human_step_completed_at: now,

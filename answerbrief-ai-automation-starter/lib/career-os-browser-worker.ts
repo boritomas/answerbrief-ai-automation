@@ -412,11 +412,18 @@ function isExplicitlyResumedApplication(application: QueueApplication) {
 }
 
 function canonicalQueueState(application: JsonRecord): QueueState {
+  const raw = asRecord(application.raw_record);
+  const lifecycleStage = cleanEnv(application.lifecycle_stage).toLowerCase();
   const text = applicationText(application);
+  if (
+    lifecycleStage === 'queued_after_human_step'
+    || lifecycleStage === 'queued_after_tomas_resolution'
+    || cleanEnv(raw.execution_status).toLowerCase() === 'queued'
+  ) return 'queued';
   if (application.confirmation_number || application.submission_evidence) return 'confirmed';
   if (hasAny(text, ['submitted'])) return 'submitted';
   if (hasAny(text, ['duplicate'])) return 'duplicate';
-  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable'])) return 'inactive';
+  if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable', 'no longer available', 'generic careers listing'])) return 'inactive';
   if (hasAny(text, ['ineligible'])) return 'ineligible';
   if (hasAny(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
   if (hasAny(text, ['failed', 'error'])) return 'failed';
