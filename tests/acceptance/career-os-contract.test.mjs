@@ -546,6 +546,8 @@ test('Oracle browser execution path is supported and can stop at the employer ve
   const queueSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
 
   assert.match(adapterSource, /const oracleAdapter =/);
+  assert.match(adapterSource, /button\.apply-now-button/);
+  assert.match(adapterSource, /job-details__section-apply-button button/);
   assert.match(adapterSource, /Oracle Recruiting requires employer-controlled hCaptcha verification/);
   assert.match(adapterSource, /primary-email/);
   assert.match(adapterSource, /h-captcha-response/);

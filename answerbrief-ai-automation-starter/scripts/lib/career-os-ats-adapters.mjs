@@ -647,11 +647,38 @@ async function detectUnanswerableWorkdayFields(page, task, runtime) {
 }
 
 async function clickOracleApplyNow(page) {
-  const clicked = await clickButton(page, [/^apply now$/i]);
+  const directSelectors = [
+    'button.apply-now-button',
+    '.job-details__section-apply-button button',
+    'button:has-text("Apply Now")',
+  ];
+  for (const selector of directSelectors) {
+    const button = page.locator(selector).first();
+    if (!await button.count()) continue;
+    await button.click().catch(() => null);
+    await page.waitForTimeout(2500);
+    if (/\/apply\//i.test(page.url())) return true;
+  }
+
+  const clicked = await clickButton(page, [/apply now/i]);
   if (clicked) {
     await page.waitForTimeout(2500);
+    if (/\/apply\//i.test(page.url())) return true;
   }
-  return clicked;
+
+  const evaluatedClick = await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll('button, [role="button"]'));
+    const target = candidates.find((element) => /apply now/i.test(String(element.textContent || '')));
+    if (!(target instanceof HTMLElement)) return false;
+    target.click();
+    return true;
+  }).catch(() => false);
+  if (evaluatedClick) {
+    await page.waitForTimeout(2500);
+    if (/\/apply\//i.test(page.url())) return true;
+  }
+
+  return false;
 }
 
 async function fillOracleAuthenticationStep(page, task, runtime) {
