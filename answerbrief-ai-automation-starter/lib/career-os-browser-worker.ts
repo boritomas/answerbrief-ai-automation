@@ -615,13 +615,13 @@ function externalApplicationHref(application: JsonRecord) {
   const raw = asRecord(application.raw_record);
   const candidates = [
     raw.confirmation_url,
-    raw.application_url,
     raw.canonical_url,
     raw.job_url,
+    raw.application_url,
     application.evidence_url,
     application.application_url,
   ].map(cleanEnv).filter(Boolean);
-  return candidates.find((value) => isClaimableApplicationHref(value)) || '';
+  return preferredApplicationHref(candidates);
 }
 
 async function resolveApplicationHref(application: QueueApplication) {
@@ -637,11 +637,11 @@ async function resolveApplicationHref(application: QueueApplication) {
   const postingRaw = asRecord(posting.raw_record);
   const candidates = [
     posting.canonical_url,
-    postingRaw.application_url,
     postingRaw.canonical_url,
     postingRaw.job_url,
+    postingRaw.application_url,
   ].map(cleanEnv).filter(Boolean);
-  return candidates.find((value) => isClaimableApplicationHref(value)) || '';
+  return preferredApplicationHref(candidates);
 }
 
 function isClaimableApplicationHref(value: string) {
@@ -649,6 +649,22 @@ function isClaimableApplicationHref(value: string) {
   if (!href) return false;
   if (/\/embed\/job_board\b/i.test(href) && /(?:\?|&)error=true\b/i.test(href)) return false;
   return /^https?:\/\//i.test(href);
+}
+
+function preferredApplicationHref(candidates: string[]) {
+  return candidates
+    .filter((value) => isClaimableApplicationHref(value))
+    .sort((left, right) => scoreApplicationHref(right) - scoreApplicationHref(left))[0] || '';
+}
+
+function scoreApplicationHref(value: string) {
+  const href = cleanEnv(value).toLowerCase();
+  let score = 0;
+  if (/\/jobs\/\d+/.test(href) || /[?&](gh_jid|token|jobid|job_id|jobseqno)=/.test(href)) score += 5;
+  if (/greenhouse|workday|myworkdayjobs|oraclecloud/.test(href)) score += 3;
+  if (/\/company\/careers\/roles\/?$/.test(href) || /\/careers\/jobs\/?$/.test(href)) score -= 5;
+  if (/confirmation/.test(href)) score += 2;
+  return score;
 }
 
 function applicationText(application: JsonRecord) {
