@@ -615,21 +615,12 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     buildCanonicalOpportunityList(evidence, compensationPreference.preferredMinimumBaseSalaryUsd),
     reviewQueue,
     applicationExecution,
-    {
-      actionCenter: applications.filter((application) => {
-        const state = canonicalExecutionStateForApplication(application);
-        return !['confirmed', 'submitted', 'duplicate', 'inactive', 'ineligible'].includes(state);
-      }).length,
-      applying: canonicalRelease.inProgress,
-      interviews: dailyWorkflow.pipelineHealth.interviews,
-      opportunities: canonicalRelease.activeQualifiedOpportunities,
-      readyToResume: canonicalRelease.readyForAutomation,
-      reviewQueue: reviewQueue.total,
-      submitted: submittedApplications,
-      systemIssues: applicationExecution.queueStates.blocked_technical,
-    },
     new Date(),
   );
+  const readyToStart = applications.filter((application) => isReadyToStartApplication(application)).length;
+  const activeQualifiedOpportunities = operationalTrust.verifiedCounts.opportunities;
+  const waitingOnTomas = operationalTrust.verifiedCounts.actionCenter;
+  const inProgress = operationalTrust.verifiedCounts.applying;
 
   return {
     environment: supabaseConnected ? 'production' : 'unconfigured',
@@ -637,15 +628,15 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     greetingName: 'Tomas',
     dailyDiscoveries: sourceRunAccepted || canonicalRelease.totalUniqueOpportunities || activeJobPostings.length || activeSeeded.length,
     activeOpportunities: canonicalRelease.totalUniqueOpportunities || activeJobPostings.length || activeSeeded.length,
-    worthApplyingToday: canonicalRelease.activeQualifiedOpportunities,
+    worthApplyingToday: activeQualifiedOpportunities,
     totalUniqueOpportunities: canonicalRelease.totalUniqueOpportunities,
-    activeQualifiedOpportunities: canonicalRelease.activeQualifiedOpportunities,
+    activeQualifiedOpportunities,
     remainingQualifiedApplications: canonicalRelease.remainingQualifiedApplications,
-    waitingOnTomas: canonicalRelease.waitingOnTomas,
-    readyForAutomation: canonicalRelease.readyForAutomation,
+    waitingOnTomas,
+    readyForAutomation: readyToStart,
     reviewQueueCount: canonicalRelease.reviewQueueCount,
     archivedOpportunities: canonicalRelease.archivedOpportunities,
-    inProgress: canonicalRelease.inProgress,
+    inProgress,
     ineligible: canonicalRelease.ineligible,
     inactive: canonicalRelease.inactive,
     duplicateRecordsRemoved: canonicalRelease.duplicateRecordsRemoved,
@@ -1503,7 +1494,6 @@ function buildOperationalTrustStatus(
   canonicalOpportunities: CanonicalOpportunity[],
   reviewQueue: ReviewQueueStatus,
   applicationExecution: ApplicationExecutionStatus,
-  beforeCounts: OperationalTrustCounts,
   generatedAt: Date,
 ): OperationalTrustStatus {
   const isSyntheticId = (value: unknown) => stringValue(value).startsWith('last-known-good');
@@ -1516,6 +1506,7 @@ function buildOperationalTrustStatus(
     .filter((id) => id.startsWith('last-known-good'));
   const activeCanonicalOpportunities = canonicalOpportunities.filter((item) => item.className === 'active_retained');
   const verifiedOpportunityRecords = activeCanonicalOpportunities
+    .filter((item) => !item.submitted)
     .filter((item) => item.sourceOpportunityIds.size > 0)
     .filter((item) => !isSyntheticId(item.key) && !Array.from(item.sourceOpportunityIds).some((id) => isSyntheticId(id)))
     .map((item) => ({
@@ -1714,6 +1705,26 @@ function buildOperationalTrustStatus(
         }]
       : [];
   });
+  const readyToStartRecords = activeApplications.flatMap((application) => {
+    if (!isReadyToStartApplication(application)) return [];
+    return [{
+      applicationId: stringValue(application.id) || undefined,
+      classification: 'verified' as const,
+      currentStep: currentApplicationStep(application),
+      currentUrl: currentApplicationUrl(application) || undefined,
+      duplicateLock: false,
+      employer: stringValue(application.employer) || 'Employer',
+      executionId: stringValue(application.id) || undefined,
+      id: stringValue(application.id),
+      lastValidatedAt: stringValue(application.updated_at) || undefined,
+      missingEvidence: [],
+      opportunityId: stringValue(application.opportunity_id) || undefined,
+      reasoning: 'Application is eligible to start, but no resumable checkpoint or active worker execution exists yet.',
+      requisitionId: applicationRequisitionId(application),
+      role: stringValue(application.position) || 'Role',
+      stale: false,
+    }];
+  });
   const verifiedSystemIssueRecords = applicationExecution.exactStatuses.flatMap((execution) => {
     if (execution.canonicalExecutionState !== 'blocked_technical') return [];
     const application = evidence.applications.find((item) => stringValue(item.id) === execution.applicationId);
@@ -1752,25 +1763,25 @@ function buildOperationalTrustStatus(
   ];
   const unsupportedRecordIds = activeApplications
     .filter((application) => {
-      const state = canonicalExecutionStateForApplication(application);
-      return ['qualified', 'queued', 'running', 'package_ready', 'package_pending', 'qualification_pending'].includes(state)
+      return !readyToStartRecords.some((record) => record.applicationId === stringValue(application.id))
         && !verifiedReadyToResumeRecords.some((record) => record.applicationId === stringValue(application.id))
         && !verifiedApplyingRecords.some((record) => record.applicationId === stringValue(application.id))
-        && !verifiedActionCenterRecords.some((record) => record.applicationId === stringValue(application.id));
+        && !verifiedActionCenterRecords.some((record) => record.applicationId === stringValue(application.id))
+        && !verifiedSystemIssueRecords.some((record) => record.applicationId === stringValue(application.id));
     })
     .map((application) => stringValue(application.id));
   const completedGatesStillActive = evidence.tasks
     .filter((task) => stringValue(task.status) === 'open' && stringValue(task.related_application_id))
     .filter((task) => {
       const application = evidence.applications.find((item) => stringValue(item.id) === stringValue(task.related_application_id));
-      return !application || canonicalExecutionStateForApplication(application) !== 'waiting_on_tomas';
+      return hasCompletedHumanGateEvidence(task, application, evidence.workflowEvents);
     })
     .map((task) => stringValue(task.id));
   const applicationsWithoutCheckpoints = activeApplications
     .filter((application) => !explicitCheckpointId(application))
     .map((application) => stringValue(application.id));
   const checkpointsWithoutExecutions = evidence.applications
-    .filter((application) => checkpointStorageLocation(application))
+    .filter((application) => explicitCheckpointId(application) && checkpointStorageLocation(application))
     .filter((application) => {
       const state = canonicalExecutionStateForApplication(application);
       return !['queued', 'running', 'waiting_on_tomas', 'blocked_technical'].includes(state);
@@ -1780,7 +1791,7 @@ function buildOperationalTrustStatus(
     .filter((application) => {
       const state = canonicalExecutionStateForApplication(application);
       if (!['queued', 'running', 'waiting_on_tomas'].includes(state)) return false;
-      return !lastHeartbeatAt(application);
+      return hasExecutionFootprint(application) && !lastHeartbeatAt(application);
     })
     .map((application) => stringValue(application.id));
   const terminalApplicationsIncorrectlyActionable = activeApplications
@@ -1799,6 +1810,16 @@ function buildOperationalTrustStatus(
       return statuses.some((status) => ['queued', 'running', 'waiting_on_tomas', 'resumable'].includes(status));
     })
     .map((application) => stringValue(application.id));
+  const beforeCounts = {
+    actionCenter: verifiedActionCenterRecords.length,
+    applying: verifiedApplyingRecords.length,
+    interviews: dailyInterviewCount(evidence),
+    opportunities: verifiedOpportunityRecords.length,
+    readyToResume: verifiedReadyToResumeRecords.length,
+    reviewQueue: verifiedReviewRecords.length,
+    submitted: submittedRecords.length,
+    systemIssues: verifiedSystemIssueRecords.length,
+  };
   const verifiedCounts = {
     actionCenter: verifiedActionCenterRecords.length,
     applying: verifiedApplyingRecords.length,
@@ -1917,6 +1938,35 @@ function latestWorkflowEventForApplication(
     .filter((event) => !statuses.length || statuses.includes(stringValue(event.status)))
     .filter((event) => !eventTypes.length || eventTypes.includes(stringValue(event.event_type)))
     .sort((left, right) => isoMillis(right.occurred_at) - isoMillis(left.occurred_at))[0];
+}
+
+function hasExecutionFootprint(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const worker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
+  return Boolean(
+    explicitCheckpointId(application)
+      || stringValue(worker.status)
+      || stringValue(worker.companion_id)
+      || stringValue(lastReport.current_url),
+  );
+}
+
+function isReadyToStartApplication(application: JsonRecord) {
+  const state = canonicalExecutionStateForApplication(application);
+  if (state !== 'queued') return false;
+  if (explicitCheckpointId(application) || hasExecutionFootprint(application)) return false;
+  return !careerOsActionMetadata(application).disabledReason;
+}
+
+function hasCompletedHumanGateEvidence(task: JsonRecord, application: JsonRecord | undefined, workflowEvents: JsonRecord[]) {
+  const applicationId = stringValue(task.related_application_id);
+  if (!applicationId) return false;
+  if (!application) return false;
+  const raw = asRecord(application.raw_record);
+  if (stringValue(raw.human_step_completed_at) || stringValue(raw.blocker_resolved_at)) return true;
+  return workflowEvents.some((event) => stringValue(event.application_id) === applicationId
+    && ['tomas_answer_saved', 'human_step_completed_resume_requested'].includes(stringValue(event.event_type)));
 }
 
 function explicitCheckpointId(application: JsonRecord) {

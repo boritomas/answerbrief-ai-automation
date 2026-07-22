@@ -352,7 +352,7 @@ export default async function CareerOsPage() {
 
       <section id="opportunities-list" className="career-os-band">
         <h2>Opportunities</h2>
-        <p>{trust.verifiedCounts.opportunities} verified opportunities currently match your policy and role band.</p>
+        <p>{trust.verifiedCounts.opportunities} verified active opportunities currently match your policy and role band.</p>
         <div className="career-os-list" id="opportunity-list">
           {opportunitySnapshot.map((opportunity) => (
             <article className="career-os-row" key={String(opportunity.id)}>
@@ -465,7 +465,7 @@ function buildCandidateSummary(status: CareerStatus) {
       : actionCount
         ? 'Your next best move is to complete the open action-center steps so Career OS can resume the saved applications.'
         : 'No decision is blocking Career OS right now. The system will keep processing qualified roles automatically.',
-    summaryLine: `${qualifiedCount} verified qualified opportunit${qualifiedCount === 1 ? 'y is' : 'ies are'} live today.`,
+    summaryLine: `${qualifiedCount} verified active opportunit${qualifiedCount === 1 ? 'y is' : 'ies are'} live today.`,
   };
 }
 
@@ -528,19 +528,6 @@ function buildTodayPriorities(status: CareerStatus, actionCenterCards: ActionCen
       subtitle: `${status.dailyWorkflow.pipelineHealth.recruiterResponses} recruiter response${status.dailyWorkflow.pipelineHealth.recruiterResponses === 1 ? '' : 's'} recorded`,
       title: 'Recruiter Follow-Up',
       type: 'Follow-Up',
-    });
-  }
-
-  if (status.applicationExecution.queueStates.blocked_technical > 0) {
-    priorities.push({
-      actionLabel: 'Open Admin',
-      estimatedTime: '1 minute',
-      href: '/career-os/admin#system-health',
-      key: 'system-issue',
-      reason: 'A live system issue is affecting an active application.',
-      subtitle: `${status.applicationExecution.queueStates.blocked_technical} active issue${status.applicationExecution.queueStates.blocked_technical === 1 ? '' : 's'}`,
-      title: 'System Issue',
-      type: 'Notice',
     });
   }
 
