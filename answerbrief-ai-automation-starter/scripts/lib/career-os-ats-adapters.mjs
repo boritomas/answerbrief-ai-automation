@@ -106,6 +106,41 @@ async function resolveGreenhouseContext(page) {
   return embedded || page;
 }
 
+async function greenhouseFormVisible(context) {
+  const signals = [
+    'input[type="file"]',
+    'input[name*="first_name" i]',
+    'input[name*="last_name" i]',
+    'input[name*="email" i]',
+    'button[type="submit"]',
+  ];
+  for (const selector of signals) {
+    if (await context.locator(selector).first().count()) return true;
+  }
+  return false;
+}
+
+async function maybeOpenGreenhouseHostedApplication(page) {
+  const context = await resolveGreenhouseContext(page);
+  if (context !== page) return false;
+  if (await greenhouseFormVisible(page)) return false;
+  const trigger = page.locator('a, button, input[type="button"], input[type="submit"]').filter({
+    hasText: /apply now|apply for this job|submit application|start application/i,
+  }).first();
+  if (!await trigger.count()) return false;
+  await Promise.allSettled([
+    page.waitForLoadState('domcontentloaded', { timeout: 15000 }),
+    trigger.click(),
+  ]);
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    await page.waitForTimeout(500);
+    const refreshedContext = await resolveGreenhouseContext(page);
+    if (refreshedContext !== page) return true;
+    if (await greenhouseFormVisible(page)) return true;
+  }
+  return true;
+}
+
 function contextUrl(context, fallbackPage) {
   try {
     return typeof context?.url === 'function' ? clean(context.url()) : clean(fallbackPage?.url?.());
@@ -801,6 +836,7 @@ const greenhouseAdapter = {
     await runtime.report({ status: 'running', evidenceText: `Opening ${task.applicationUrl}` });
     await page.goto(task.applicationUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForTimeout(1500);
+    await maybeOpenGreenhouseHostedApplication(page);
     await runtime.takeShot('greenhouse-opened');
 
     if (await runtime.detectCommonHumanGate()) return true;
