@@ -580,9 +580,7 @@ function buildCandidateSummary(status: CareerStatus) {
   const uniqueLiveRoles = status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified;
   const qualifiedRoles = status.dailyWorkflow.marketCoverage.qualifiedMatches;
   const newOpportunities = status.dailyWorkflow.dailyFunnel.qualificationToday.newlyUniqueOpportunities;
-  const applicationsAttemptedToday = status.dailyWorkflow.immediateQueueProcessor.submittedThisRun
-    + status.dailyWorkflow.immediateQueueProcessor.runningNow
-    + status.dailyWorkflow.immediateQueueProcessor.queuedImmediate;
+  const applicationsAttemptedToday = status.applicationExecution.attemptedToday;
   const applicationsSubmittedToday = status.dailyWorkflow.pipelineHealth.applicationsSubmittedToday;
   const totalSubmittedApplications = status.submittedApplications;
   const waitingOnTomas = status.waitingOnTomas;

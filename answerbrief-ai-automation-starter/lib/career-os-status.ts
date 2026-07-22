@@ -531,6 +531,7 @@ export type ApplicationExecutionItem = {
 };
 
 export type ApplicationExecutionStatus = {
+  attemptedToday: number;
   applicationsProcessedToday: number;
   confirmationEvidenceStatus: string;
   confirmed: number;
@@ -1376,6 +1377,7 @@ function buildApplicationExecutionStatus(
   const nextScheduledRun = nextDailyRunText(generatedAt);
   const exactStatuses = evidence.applications.map((application) => classifyApplicationExecution(application, nextScheduledRun));
   const queueStates = countQueueStates(exactStatuses);
+  const attemptedToday = evidence.applications.filter((application) => applicationAttemptedOnDate(application, centralToday)).length;
   const submittedToday = evidence.applications.filter((application) => {
     if (!application.confirmation_number && !application.submission_evidence) return false;
     return centralDateKey(application.updated_at) === centralToday;
@@ -1385,7 +1387,8 @@ function buildApplicationExecutionStatus(
   const submitted = canonicalSubmittedApplications.length;
 
   return {
-    applicationsProcessedToday: exactStatuses.length,
+    applicationsProcessedToday: attemptedToday,
+    attemptedToday,
     confirmationEvidenceStatus: confirmed
       ? `${confirmed} confirmed application${confirmed === 1 ? '' : 's'} with captured evidence.`
       : 'No confirmation evidence is currently recorded.',
@@ -1404,6 +1407,30 @@ function buildApplicationExecutionStatus(
     technicallyBlocked: exactStatuses.filter((item) => item.status === 'Technically blocked').length,
     waitingOnTomas: exactStatuses.filter((item) => item.status === 'Waiting on Tomas' || item.status === 'Compensation review required').length,
   };
+}
+
+function applicationAttemptedOnDate(application: JsonRecord, centralToday: string) {
+  const state = canonicalExecutionStateForApplication(application);
+  if (['qualification_pending', 'discovered', 'qualified', 'package_pending', 'package_ready', 'inactive', 'ineligible', 'duplicate'].includes(state)) {
+    return false;
+  }
+
+  const raw = asRecord(application.raw_record);
+  const browserWorker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
+  const activityTimestamps = [
+    raw.queue_updated_at,
+    raw.human_step_completed_at,
+    browserWorker.claimed_at,
+    browserWorker.last_heartbeat_at,
+    lastReport.timestamp,
+  ];
+
+  if (activityTimestamps.some((value) => centralDateKey(value) === centralToday)) {
+    return true;
+  }
+
+  return centralDateKey(application.updated_at) === centralToday;
 }
 
 function buildTrustedAutoApplyPolicy(): TrustedAutoApplyPolicyStatus {
@@ -2158,6 +2185,15 @@ function buildOperationalTrustStatus(
     role: row.role,
     stale: row.outcome === 'stale',
   });
+  const uniqueOperationalTrustRecords = (records: OperationalTrustRecord[]) => {
+    const seen = new Set<string>();
+    return records.filter((record) => {
+      const key = record.applicationId || record.id || record.canonicalOpportunityId || record.opportunityId || '';
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
 
   const verifiedOpportunityRecords = rows
     .filter((row) => ['ready', 'waiting_on_tomas', 'package_missing'].includes(row.outcome))
@@ -2193,9 +2229,11 @@ function buildOperationalTrustStatus(
     .filter((row) => row.outcome === 'submitted' || row.outcome === 'duplicate')
     .map((row) => recordFromLedger(row, row.outcome === 'duplicate' ? 'duplicated' : 'verified'));
   const verifiedSubmittedRecords = submittedRecords.filter((record) => record.classification === 'verified');
-  const verifiedSystemIssueRecords = rows
-    .filter((row) => row.outcome === 'technical_blocker')
-    .map((row) => recordFromLedger(row, 'verified'));
+  const verifiedSystemIssueRecords = uniqueOperationalTrustRecords(
+    rows
+      .filter((row) => row.outcome === 'technical_blocker')
+      .map((row) => recordFromLedger(row, 'verified')),
+  );
   const staleRecordIds = rows.filter((row) => row.outcome === 'stale').map((row) => row.canonicalOpportunityId);
   const unsupportedRecordIds = rows.filter((row) => row.outcome === 'unsupported_ats').map((row) => row.canonicalOpportunityId);
   const applicationsWithoutCheckpoints = rows
@@ -2215,7 +2253,7 @@ function buildOperationalTrustStatus(
     readyToResume: authoritativeLedger.ready,
     reviewQueue: verifiedReviewRecords.length,
     submitted: authoritativeLedger.submitted,
-    systemIssues: authoritativeLedger.technicalBlocker,
+    systemIssues: verifiedSystemIssueRecords.length,
   };
   const verifiedCounts = { ...beforeCounts };
   const dashboardCountMismatches = authoritativeLedger.inconsistent

@@ -124,6 +124,7 @@ async function maybeOpenGreenhouseHostedApplication(page) {
   const context = await resolveGreenhouseContext(page);
   if (context !== page) return false;
   if (await greenhouseFormVisible(page)) return false;
+  if (await maybeOpenGreenhouseDirectEmbed(page)) return true;
   const trigger = page.locator('a, button, input[type="button"], input[type="submit"]').filter({
     hasText: /apply now|apply for this job|submit application|start application/i,
   }).first();
@@ -139,6 +140,25 @@ async function maybeOpenGreenhouseHostedApplication(page) {
     if (await greenhouseFormVisible(page)) return true;
   }
   return true;
+}
+
+async function maybeOpenGreenhouseDirectEmbed(page) {
+  const boardScript = page.locator('script[src*="boards.greenhouse.io/embed/job_board/js"]').first();
+  if (!await boardScript.count()) return false;
+  const boardSlug = clean(await boardScript.getAttribute('src')).match(/[?&]for=([^&]+)/i)?.[1] || '';
+  const token = greenhouseJobIdentity(page.url());
+  if (!boardSlug || !token) return false;
+  const directUrl = `https://job-boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(boardSlug)}&token=${encodeURIComponent(token)}`;
+  if (clean(page.url()) !== directUrl) {
+    await page.goto(directUrl, { waitUntil: 'domcontentloaded' });
+  }
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    await page.waitForTimeout(500);
+    const refreshedContext = await resolveGreenhouseContext(page);
+    if (refreshedContext !== page) return true;
+    if (await greenhouseFormVisible(page)) return true;
+  }
+  return false;
 }
 
 function contextUrl(context, fallbackPage) {
