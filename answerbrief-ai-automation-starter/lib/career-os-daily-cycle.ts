@@ -486,9 +486,14 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
   if (postingsToPersist.length) {
     await persistRows('career_os_job_postings', postingsToPersist);
   }
-  const generatedArtifacts = buildAutoApplyPackageArtifacts(ownerEmail, qualifiedPostings, evidence, executedAt);
-  const promoted = buildAutoApplyPromotionRows(ownerEmail, qualifiedPostings, {
+  const promotionPostingPool = dedupePromotionPostingPool([
+    ...(evidence?.jobPostings || []),
+    ...postingsToPersist,
+  ]);
+  const generatedArtifacts = buildAutoApplyPackageArtifacts(ownerEmail, promotionPostingPool, evidence, executedAt);
+  const promoted = buildAutoApplyPromotionRows(ownerEmail, promotionPostingPool, {
     ...evidence,
+    jobPostings: promotionPostingPool,
     artifacts: (evidence?.artifacts || []).concat(generatedArtifacts),
   }, executedAt);
   if (promoted.opportunities.length) {
@@ -508,6 +513,29 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
     postingsReviewed: reviewed,
     sourceRun,
   };
+}
+
+function dedupePromotionPostingPool(postings: JsonRecord[]) {
+  const seen = new Set<string>();
+  const deduped: JsonRecord[] = [];
+
+  for (const posting of postings) {
+    const key = promotionPostingKey(posting);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(posting);
+  }
+
+  return deduped;
+}
+
+function promotionPostingKey(posting: JsonRecord) {
+  const raw = asRecord(posting.raw_record);
+  return stringValue(posting.id)
+    || stringValue(posting.canonical_url)
+    || stringValue(raw.canonical_url)
+    || stringValue(posting.external_requisition_id)
+    || stringValue(raw.external_requisition_id);
 }
 
 function buildAutoApplyPromotionRows(
