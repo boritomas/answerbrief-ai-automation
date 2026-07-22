@@ -1550,7 +1550,7 @@ async function persistRows(table: string, rows: JsonRecord | JsonRecord[]) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for the Career OS daily cycle.');
   }
 
-  const payload = JSON.stringify(rows);
+  const payload = JSON.stringify(normalizeUpsertRows(rows));
   let lastError = '';
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -1579,6 +1579,18 @@ async function persistRows(table: string, rows: JsonRecord | JsonRecord[]) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeUpsertRows(rows: JsonRecord | JsonRecord[]) {
+  if (!Array.isArray(rows)) return rows;
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(asRecord(row)))));
+  return rows.map((row) => {
+    const record = asRecord(row);
+    return Object.fromEntries(columns.map((column) => [
+      column,
+      Object.prototype.hasOwnProperty.call(record, column) ? record[column] ?? null : null,
+    ]));
+  });
 }
 
 function scorePosting(job: JsonRecord, description: string) {
