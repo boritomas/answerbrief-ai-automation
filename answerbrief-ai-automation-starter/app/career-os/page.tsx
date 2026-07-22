@@ -102,6 +102,7 @@ export default async function CareerOsPage() {
   const candidatePipeline = buildCandidatePipeline(status);
   const systemNotice = buildSystemNotice(status);
   const opportunitySnapshot = buildCandidateOpportunitySnapshot(status);
+  const primaryAction = buildPrimaryAction(status, taskGroups);
   const navItems = [
     { href: '/career-os', label: 'Home' },
     { href: '/career-os#opportunities', label: 'Opportunities' },
@@ -136,30 +137,32 @@ export default async function CareerOsPage() {
 
       {status.environment !== 'production' ? (
         <section className="career-os-alert" role="status">
-          <strong>Live Career OS database is temporarily unavailable.</strong>
-          <span>{status.blocker || 'Showing the last verified production snapshot. Automation is blocked until live Supabase access is restored.'}</span>
+          <strong>System temporarily unavailable.</strong>
+          <span>{status.blocker || 'Automation is paused to protect your applications.'}</span>
         </section>
       ) : null}
 
       <section className="career-os-home">
         <div className="career-os-briefing">
-          <p className="eyebrow">Candidate Mode</p>
-          <h1>Good morning, Tomas.</h1>
-          <p className="subhead">{candidateSummary.summaryLine}</p>
-          <div className="career-os-metrics" aria-label="Morning Summary">
-            <Metric href="/career-os#applications" label="Applications Submitted" value={trust.verifiedCounts.submitted} />
-            <Metric href="/career-os#review-queue" label="Opportunities to Review" value={trust.verifiedCounts.reviewQueue} />
-            <Metric href="/career-os#action-center" label="Actions Required" value={trust.verifiedCounts.actionCenter} />
-            <Metric href="/career-os#interviews" label="Interviews" value={trust.verifiedCounts.interviews} />
-          </div>
+          <p className="eyebrow">CAREER OS TODAY</p>
+          <h1>{candidateSummary.primaryMessage}</h1>
+          <p className="subhead">Last successful run: {candidateSummary.lastSuccessfulRun}</p>
+          {candidateSummary.dataUnavailable ? null : (
+            <div className="career-os-metrics" aria-label="Career OS Today">
+              <Metric href="/career-os/admin#daily" label="Jobs Searched" value={candidateSummary.jobsSearched} />
+              <Metric href="/career-os#opportunities" label="New Qualified Opportunities" value={candidateSummary.newQualifiedOpportunities} />
+              <Metric href="/career-os#applications" label="Applications Attempted" value={candidateSummary.applicationsAttempted} />
+              <Metric href="/career-os#applications" label="Applications Submitted" value={candidateSummary.applicationsSubmitted} />
+              <Metric href="/career-os#action-center" label="Waiting on Tomas" value={candidateSummary.waitingOnTomas} />
+              <Metric href="/career-os/admin#system-health" label="Technical Blockers" value={candidateSummary.technicalBlockers} />
+            </div>
+          )}
           <div className="career-os-summary">
             <p>{candidateSummary.detailLine}</p>
             <p>{candidateSummary.nextLine}</p>
           </div>
           <div className="cta-row">
-            <a className="button secondary" href="/career-os#review-queue">Open My Review Queue</a>
-            <a className="button primary" href="/career-os#action-center">Open Today&apos;s Tasks</a>
-            <a className="button secondary" href="/career-os/admin">Open Admin</a>
+            <a className="button primary" href={primaryAction.href}>{primaryAction.label}</a>
           </div>
         </div>
 
@@ -509,22 +512,60 @@ export default async function CareerOsPage() {
 }
 
 function buildCandidateSummary(status: CareerStatus) {
-  const trust = status.operationalTrust;
-  const newJobs = status.dailyWorkflow.pipelineHealth.newOpportunitiesToday;
-  const submittedToday = status.dailyWorkflow.pipelineHealth.applicationsSubmittedToday;
-  const reviewCount = trust.verifiedCounts.reviewQueue;
-  const actionCount = trust.verifiedCounts.actionCenter;
-  const qualifiedCount = trust.verifiedCounts.opportunities;
+  const dataUnavailable = status.environment !== 'production' && !status.evidence.dailyReport;
+  const jobsSearched = status.dailyWorkflow.marketCoverage.rawJobsReviewed || status.dailyDiscoveries;
+  const newQualifiedOpportunities = status.dailyWorkflow.pipelineHealth.newOpportunitiesToday;
+  const applicationsAttempted = status.dailyWorkflow.immediateQueueProcessor.submittedThisRun
+    + status.dailyWorkflow.immediateQueueProcessor.runningNow
+    + status.dailyWorkflow.immediateQueueProcessor.queuedImmediate;
+  const applicationsSubmitted = status.submittedApplications;
+  const waitingOnTomas = status.waitingOnTomas;
+  const technicalBlockers = status.operationalTrust.verifiedCounts.systemIssues;
+  const lastSuccessfulRun = status.dailyWorkflow.immediateQueueProcessor.lastExecutionTime
+    || status.evidence.dailyReport?.generated_at
+    || status.generatedAt;
+  const primaryMessage = dataUnavailable
+    ? 'Career OS data is temporarily unavailable.'
+    : applicationsSubmitted > 0
+    ? `Career OS searched ${jobsSearched} roles, found ${newQualifiedOpportunities} new matches, and has submitted ${applicationsSubmitted} applications.`
+    : `Career OS searched ${jobsSearched} roles and found ${newQualifiedOpportunities} new matches.`;
+  const blockerMessage = technicalBlockers > 0
+    ? `${technicalBlockers} system blocker${technicalBlockers === 1 ? ' is' : 's are'} still preventing supported automation from advancing.`
+    : '';
 
   return {
-    detailLine: `Career OS found ${newJobs} new job${newJobs === 1 ? '' : 's'}, submitted ${submittedToday} application${submittedToday === 1 ? '' : 's'} today, and needs your input on ${reviewCount} opportunit${reviewCount === 1 ? 'y' : 'ies'} and ${actionCount} application step${actionCount === 1 ? '' : 's'}.`,
-    nextLine: reviewCount
-      ? 'Your next best move is to clear the review queue so strong matches can move into application processing.'
-      : actionCount
-        ? 'Your next best move is to complete the open action-center steps so Career OS can resume the saved applications.'
-        : 'No decision is blocking Career OS right now. The system will keep processing qualified roles automatically.',
-    summaryLine: `${qualifiedCount} verified active opportunit${qualifiedCount === 1 ? 'y is' : 'ies are'} live today.`,
+    applicationsAttempted,
+    applicationsSubmitted,
+    dataUnavailable,
+    detailLine: waitingOnTomas > 0
+      ? `${waitingOnTomas} application${waitingOnTomas === 1 ? '' : 's'} are waiting on Tomas.${blockerMessage ? ` ${blockerMessage}` : ''}`
+      : dataUnavailable
+        ? 'No verified snapshot is currently readable, so Career OS is withholding operational counts until production data recovers.'
+        : blockerMessage || 'No Tomas action is blocking automation right now.',
+    jobsSearched,
+    lastSuccessfulRun: formatDateTime(lastSuccessfulRun),
+    newQualifiedOpportunities,
+    nextLine: waitingOnTomas > 0
+      ? 'Review the open task list first so Career OS can resume paused applications safely.'
+      : dataUnavailable
+        ? 'Open system health for the live timeout details and recovery state.'
+      : technicalBlockers > 0
+        ? 'Open the system issue list to inspect the live blockers before resuming automation.'
+        : 'Open applications to review the latest confirmed outcomes.',
+    primaryMessage,
+    technicalBlockers,
+    waitingOnTomas,
   };
+}
+
+function buildPrimaryAction(status: CareerStatus, taskGroups: TaskGroup[]) {
+  if (taskGroups.length || status.waitingOnTomas > 0) {
+    return { href: '/career-os#action-center', label: 'Review My Tasks' };
+  }
+  if (status.operationalTrust.verifiedCounts.systemIssues > 0) {
+    return { href: '/career-os/admin#system-health', label: 'View System Issue' };
+  }
+  return { href: '/career-os#applications', label: 'View Applications' };
 }
 
 function buildTodayPriorities(status: CareerStatus, taskGroups: TaskGroup[]) {

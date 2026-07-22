@@ -22,7 +22,7 @@ const AUTO_APPLY_THRESHOLD = 85;
 const REVIEW_QUEUE_THRESHOLD = 60;
 
 export type CareerOsStatus = {
-  environment: 'production' | 'unconfigured';
+  environment: 'production' | 'snapshot' | 'unconfigured';
   generatedAt: string;
   greetingName: string;
   dailyDiscoveries: number;
@@ -488,23 +488,43 @@ export async function getCareerOsStatus(): Promise<CareerOsStatus> {
   }
 
   try {
-    const profiles = await supabaseSelect(configuration, 'career_os_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&limit=1`);
-    const sourceRuns = await safeSupabaseSelect(configuration, 'career_os_source_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=executed_at.desc&limit=20`, diagnostics);
-    const jobPostings = await supabaseSelectAll(configuration, 'career_os_job_postings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=fit_score.desc.nullslast,last_checked_at.desc`);
-    const seededOpportunities = await supabaseSelectAll(configuration, 'career_os_opportunities', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`);
-    const applications = await supabaseSelectAll(configuration, 'career_os_applications', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`);
-    const tasks = await safeSupabaseSelect(configuration, 'career_os_tasks', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
-    const artifacts = await safeSupabaseSelectAll(configuration, 'career_os_artifacts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=created_at.desc`, diagnostics);
-    const workflowEvents = await safeSupabaseSelectAll(configuration, 'career_os_employer_workflow_events', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=occurred_at.desc`, diagnostics);
-    const employers = await safeSupabaseSelect(configuration, 'career_os_employers', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
-    const platformProfiles = await safeSupabaseSelect(configuration, 'career_os_employer_platform_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
-    const applicationProcesses = await safeSupabaseSelect(configuration, 'career_os_employer_application_processes', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
-    const questionCatalog = await safeSupabaseSelect(configuration, 'career_os_employer_question_catalog', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`, diagnostics);
-    const questionMappings = await safeSupabaseSelect(configuration, 'career_os_question_mappings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`, diagnostics);
-    const employerAccounts = await safeSupabaseSelect(configuration, 'career_os_employer_accounts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
-    const sessionTemplates = await safeSupabaseSelect(configuration, 'career_os_application_session_templates', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics);
-    const dailyReports = await safeSupabaseSelect(configuration, 'career_os_daily_operating_reports', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=generated_at.desc&limit=1`, diagnostics);
-    const automationRuns = await safeSupabaseSelect(configuration, 'career_os_automation_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=started_at.desc&limit=5`, diagnostics);
+    const [
+      profiles,
+      sourceRuns,
+      jobPostings,
+      seededOpportunities,
+      applications,
+      tasks,
+      artifacts,
+      workflowEvents,
+      employers,
+      platformProfiles,
+      applicationProcesses,
+      questionCatalog,
+      questionMappings,
+      employerAccounts,
+      sessionTemplates,
+      dailyReports,
+      automationRuns,
+    ] = await Promise.all([
+      safeSupabaseSelect(configuration, 'career_os_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&limit=1`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_source_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=executed_at.desc&limit=20`, diagnostics),
+      safeSupabaseSelectAll(configuration, 'career_os_job_postings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=fit_score.desc.nullslast,last_checked_at.desc`, diagnostics),
+      safeSupabaseSelectAll(configuration, 'career_os_opportunities', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`, diagnostics),
+      safeSupabaseSelectAll(configuration, 'career_os_applications', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_tasks', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics),
+      safeSupabaseSelectAll(configuration, 'career_os_artifacts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=created_at.desc`, diagnostics),
+      safeSupabaseSelectAll(configuration, 'career_os_employer_workflow_events', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=occurred_at.desc`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_employers', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_employer_platform_profiles', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_employer_application_processes', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_employer_question_catalog', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_question_mappings', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=200`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_employer_accounts', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_application_session_templates', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=updated_at.desc&limit=20`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_daily_operating_reports', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=generated_at.desc&limit=1`, diagnostics),
+      safeSupabaseSelect(configuration, 'career_os_automation_runs', `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=started_at.desc&limit=5`, diagnostics),
+    ]);
 
     const evidence: CareerOsEvidence = {
       ownerEmail,
@@ -536,10 +556,36 @@ export async function getCareerOsStatus(): Promise<CareerOsStatus> {
       },
     };
 
+    const coreReadsFailed = diagnostics.some((message) => hasAnyStatus(message, [
+      'career_os_profiles',
+      'career_os_job_postings',
+      'career_os_opportunities',
+      'career_os_applications',
+      'connection timed out',
+      'status 522',
+      'timeout',
+    ]));
+    if (coreReadsFailed) {
+      const snapshotStatus = buildSnapshotStatus(ownerEmail, dailyReports[0], automationRuns[0], diagnostics);
+      if (snapshotStatus) return snapshotStatus;
+      return normalizeStatus({
+        ...evidence,
+        diagnostics: uniqueStrings([
+          ...diagnostics,
+          'No verified snapshot is currently readable. Career OS is pausing candidate-mode counts instead of presenting stale or synthetic data.',
+        ]),
+      }, false);
+    }
+
     return normalizeStatus(evidence, true);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown Career OS evidence service error.';
-    const evidence = lastKnownGoodEvidence(ownerEmail, message);
+    const diagnosticsWithError = [message];
+    const snapshotStatus = await loadSnapshotStatus(configuration, ownerEmail, diagnosticsWithError);
+    if (snapshotStatus) return snapshotStatus;
+    const evidence = emptyEvidence(ownerEmail, [
+      `${message} No verified snapshot is currently readable, so Career OS cannot safely display operational counts.`,
+    ]);
     return normalizeStatus(evidence, false);
   }
 }
@@ -672,6 +718,148 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     blocker: supabaseConnected ? undefined : evidence.diagnostics[0],
     evidence,
     verificationRows,
+  };
+}
+
+async function loadSnapshotStatus(
+  configuration: ReturnType<typeof getSupabaseConfiguration>,
+  ownerEmail: string,
+  diagnostics: string[],
+) {
+  const dailyReports = await safeSupabaseSelect(
+    configuration,
+    'career_os_daily_operating_reports',
+    `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=generated_at.desc&limit=1`,
+    diagnostics,
+  );
+  const automationRuns = await safeSupabaseSelect(
+    configuration,
+    'career_os_automation_runs',
+    `select=*&owner_email=eq.${encodeFilter(ownerEmail)}&order=started_at.desc&limit=1`,
+    diagnostics,
+  );
+  return buildSnapshotStatus(ownerEmail, dailyReports[0], automationRuns[0], diagnostics);
+}
+
+function buildSnapshotStatus(
+  ownerEmail: string,
+  dailyReport: JsonRecord | undefined,
+  automationRun: JsonRecord | undefined,
+  diagnostics: string[],
+): CareerOsStatus | null {
+  if (!dailyReport) return null;
+
+  const reportPayload = asRecord(dailyReport.payload);
+  const reportCycle = asRecord(reportPayload.daily_operating_cycle);
+  const reportRelease = asRecord(reportPayload.release_progress_20260719);
+  const discoveryResult = asRecord(reportPayload.discovery_result);
+  const snapshotGeneratedAt = stringValue(dailyReport.generated_at) || new Date().toISOString();
+  const activeQualifiedOpportunities = numberValue(reportRelease.active_qualified_opportunities);
+  const submittedApplications = firstPositiveNumber(
+    reportRelease.submitted_applications,
+    asRecord(reportCycle.pipelineHealth).totalSubmitted,
+  );
+  const waitingOnTomas = firstPositiveNumber(
+    reportRelease.waiting_on_tomas,
+    asRecord(reportCycle.pipelineHealth).waitingOnTomas,
+    dailyReport.prepared_for_review,
+  );
+  const readyForAutomation = firstPositiveNumber(
+    reportRelease.ready_for_automation,
+    asRecord(reportCycle.pipelineHealth).readyForAutomation,
+    dailyReport.auto_apply_eligible,
+  );
+  const totalUniqueOpportunities = firstPositiveNumber(
+    reportRelease.total_unique_opportunities,
+    activeQualifiedOpportunities,
+  );
+  const technicalBlockers = firstPositiveNumber(
+    asRecord(reportCycle.marketCoverage).technicalBlockers,
+    dailyReport.blocked,
+  );
+  const interviews = numberValue(asRecord(reportCycle.pipelineHealth).interviews);
+  const reviewQueueCount = Math.max(activeQualifiedOpportunities - submittedApplications - waitingOnTomas - readyForAutomation, 0);
+  const baseStatus = normalizeStatus(emptyEvidence(ownerEmail, diagnostics), false);
+  const snapshotWorkflow = hasKeys(reportCycle)
+    ? reportCycle as unknown as DailyOperatingCycleStatus
+    : buildDailyOperatingCycleStatus(baseStatus.evidence, {
+      activeQualifiedOpportunities,
+      duplicateRecordsRemoved: numberValue(reportRelease.duplicate_records_removed),
+      inactive: numberValue(reportRelease.inactive),
+      ineligible: numberValue(reportRelease.ineligible),
+      inProgress: 0,
+      readyForAutomation,
+      releaseCompletionPercentage: numberValue(reportRelease.release_completion_percentage),
+      submittedApplications,
+      totalPackages: numberValue(reportRelease.total_package_assets),
+      totalUniqueOpportunities,
+      waitingOnTomas,
+    }, new Date(snapshotGeneratedAt));
+
+  return {
+    ...baseStatus,
+    environment: 'snapshot',
+    generatedAt: snapshotGeneratedAt,
+    dailyDiscoveries: firstPositiveNumber(
+      discoveryResult.postings_reviewed,
+      dailyReport.opportunities_reviewed,
+      asRecord(snapshotWorkflow.marketCoverage).rawJobsReviewed,
+    ),
+    activeOpportunities: totalUniqueOpportunities,
+    worthApplyingToday: activeQualifiedOpportunities,
+    totalUniqueOpportunities,
+    activeQualifiedOpportunities,
+    remainingQualifiedApplications: Math.max(activeQualifiedOpportunities - submittedApplications, 0),
+    waitingOnTomas,
+    readyForAutomation,
+    reviewQueueCount,
+    archivedOpportunities: 0,
+    inProgress: 0,
+    ineligible: numberValue(reportRelease.ineligible),
+    inactive: numberValue(reportRelease.inactive),
+    duplicateRecordsRemoved: numberValue(reportRelease.duplicate_records_removed),
+    preparedPackages: numberValue(reportRelease.total_package_assets),
+    totalPackages: numberValue(reportRelease.total_package_assets),
+    packagesCoveringQualifiedJobs: 0,
+    packageAssetsOnQualifiedJobs: 0,
+    orphanedPackages: 0,
+    submittedApplications,
+    submittedApplicationIds: [],
+    humanOnlyGates: waitingOnTomas,
+    reviewQueue: {
+      ...baseStatus.reviewQueue,
+      total: reviewQueueCount,
+    },
+    dailyWorkflow: snapshotWorkflow,
+    blocker: `System temporarily unavailable. Last verified update: ${snapshotGeneratedAt}. Automation is paused to protect your applications.`,
+    evidence: {
+      ...baseStatus.evidence,
+      dailyReport,
+      automationRuns: automationRun ? [automationRun] : [],
+      diagnostics: uniqueStrings(diagnostics),
+    },
+    productionEvidenceReady: false,
+    operationalTrust: {
+      ...baseStatus.operationalTrust,
+      verifiedCounts: {
+        ...baseStatus.operationalTrust.verifiedCounts,
+        actionCenter: waitingOnTomas,
+        applying: 0,
+        interviews,
+        opportunities: activeQualifiedOpportunities,
+        readyToResume: readyForAutomation,
+        reviewQueue: reviewQueueCount,
+        submitted: submittedApplications,
+        systemIssues: technicalBlockers,
+      },
+      trustReport: {
+        ...baseStatus.operationalTrust.trustReport,
+        verifiedActionCenterItems: waitingOnTomas,
+        verifiedOpportunities: activeQualifiedOpportunities,
+        verifiedReviewQueueItems: reviewQueueCount,
+        verifiedSubmittedApplications: submittedApplications,
+      },
+    },
   };
 }
 
@@ -2668,6 +2856,14 @@ function percentage(numerator: number, denominator: number) {
   return denominator ? Math.round((numerator / denominator) * 1000) / 10 : 0;
 }
 
+function firstPositiveNumber(...values: unknown[]) {
+  for (const value of values) {
+    const number = numberValue(value);
+    if (number > 0) return number;
+  }
+  return 0;
+}
+
 function emptyEvidence(ownerEmail: string, diagnostics: string[]): CareerOsEvidence {
   return {
     ownerEmail,
@@ -2690,100 +2886,6 @@ function emptyEvidence(ownerEmail: string, diagnostics: string[]): CareerOsEvide
     automationRuns: [],
     diagnostics,
     deployment: {},
-  };
-}
-
-function lastKnownGoodEvidence(ownerEmail: string, diagnostic: string): CareerOsEvidence {
-  const now = new Date().toISOString();
-  const jobPostings = buildLastKnownGoodPostings(now);
-  const applications = buildLastKnownGoodApplications(now);
-
-  return {
-    ownerEmail,
-    profile: {
-      owner_email: ownerEmail,
-      verified_profile: {
-        application_policy: 'Autonomous applications are permitted only when facts are verified and no human-only gate remains.',
-        missing_reusable_facts: ['Career OS live database is temporarily unavailable. Resolve Supabase 522 before running automation.'],
-        reusable_application_answers: {
-          verification_state: 'tomas_verified',
-        },
-        sponsorship_requirement: 'Does not require employer sponsorship.',
-        work_authorization: 'Authorized to work in the United States.',
-      },
-    },
-    latestSourceRun: {
-      id: 'last-known-good-career-os-source-run',
-      executed_at: '2026-07-20T13:51:00.000Z',
-      number_accepted: 19,
-      number_reviewed: 38,
-      search_config: {
-        checkpoint: 'Last verified production snapshot; live Supabase REST currently returns 522.',
-      },
-    },
-    sourceRuns: [
-      {
-        id: 'last-known-good-career-os-source-run',
-        executed_at: '2026-07-20T13:51:00.000Z',
-        number_accepted: 19,
-        number_reviewed: 38,
-      },
-    ],
-    jobPostings,
-    seededOpportunities: [],
-    applications,
-    tasks: [],
-    artifacts: jobPostings.slice(0, 12).flatMap((job, index) => ([
-      {
-        application_id: applications[index]?.id,
-        artifact_type: 'targeted_resume',
-        created_at: now,
-        id: `last-known-good-resume-${index + 1}`,
-        opportunity_id: job.id,
-      },
-      {
-        application_id: applications[index]?.id,
-        artifact_type: 'application_package',
-        created_at: now,
-        id: `last-known-good-package-${index + 1}`,
-        opportunity_id: job.id,
-      },
-    ])),
-    workflowEvents: [
-      {
-        event_type: 'career_os_database_unavailable',
-        evidence_text: diagnostic,
-        occurred_at: now,
-        status: 'blocked',
-      },
-    ],
-    employerKnowledgeBase: {
-      employers: [
-        { canonical_name: 'Cisco', id: 'employer-cisco' },
-        { canonical_name: 'Affirm', id: 'employer-affirm' },
-        { canonical_name: 'ServiceNow', id: 'employer-servicenow' },
-        { canonical_name: 'MongoDB', id: 'employer-mongodb' },
-      ],
-      platformProfiles: [{ ats_platform: 'Greenhouse' }, { ats_platform: 'Workday' }],
-      applicationProcesses: [{ employer_id: 'employer-cisco', steps: ['profile', 'work history', 'review'] }],
-      questionCatalog: [{ question: 'Verified role-level employment dates' }],
-      questionMappings: [{ status: 'approved' }],
-      employerAccounts: [{ employer_id: 'employer-cisco', status: 'checkpoint_preserved' }],
-      sessionTemplates: [{ status: 'available' }],
-    },
-    dailyReport: {
-      generated_at: now,
-      status: 'blocked_live_database_unavailable',
-    },
-    automationRuns: [],
-    diagnostics: [
-      `${diagnostic} Career OS is showing the last verified production snapshot and blocking automation until live Supabase access is restored.`,
-    ],
-    deployment: {
-      commitSha: process.env.VERCEL_GIT_COMMIT_SHA || undefined,
-      deploymentUrl: process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : process.env.NEXT_PUBLIC_BASE_URL,
-      vercelEnv: process.env.VERCEL_ENV,
-    },
   };
 }
 
