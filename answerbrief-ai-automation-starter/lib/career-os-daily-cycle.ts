@@ -238,7 +238,7 @@ export const GLOBAL_DISCOVERY_BATCH_SIZE = 100;
 export const GLOBAL_DISCOVERY_MAX_CONCURRENCY = 4;
 export const GLOBAL_DISCOVERY_RETRY_LIMIT = 2;
 export const GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS = 5000;
-export const FOREGROUND_DISCOVERY_MAX_BOARDS = 3;
+export const FOREGROUND_DISCOVERY_MAX_BOARDS = 20;
 
 export const DAILY_DISCOVERY_BOARDS = buildCareerOsDiscoveryPlan().greenhouseBoards;
 const TARGET_ROLE_POLICY_VERSION = 'career-os-role-policy-2026-07-21';

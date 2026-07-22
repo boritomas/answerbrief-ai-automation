@@ -472,6 +472,7 @@ test('global autonomous discovery supports complete result sets, checkpoints, an
   assert.match(dailyCycleSource, /GLOBAL_DISCOVERY_BATCH_SIZE/);
   assert.match(dailyCycleSource, /GLOBAL_DISCOVERY_MAX_CONCURRENCY/);
   assert.match(dailyCycleSource, /GLOBAL_DISCOVERY_RETRY_LIMIT/);
+  assert.match(dailyCycleSource, /FOREGROUND_DISCOVERY_MAX_BOARDS = 20/);
   assert.match(dailyCycleSource, /buildCareerOsDiscoveryPlan/);
   assert.match(dailyCycleSource, /fetchGreenhouseSourceBatches/);
   assert.match(dailyCycleSource, /source_statuses/);
@@ -819,7 +820,7 @@ test('Career OS daily discovery is independent from submission queue processing'
   assert.match(dailyCycle, /fallbackPlan\.coverageSummary\.supportedOfficialSources/);
   assert.match(dailyCycle, /GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS/);
   assert.match(dailyCycle, /AbortSignal\.timeout\(GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS\)/);
-  assert.match(dailyCycle, /FOREGROUND_DISCOVERY_MAX_BOARDS = 3/);
+  assert.match(dailyCycle, /FOREGROUND_DISCOVERY_MAX_BOARDS = 20/);
   assert.match(dailyCycle, /foreground_batch_boards_processed/);
 });
 
