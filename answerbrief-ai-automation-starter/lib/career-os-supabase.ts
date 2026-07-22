@@ -9,12 +9,14 @@ type SelectOptions = {
 
 type SupabaseConfiguration = {
   databaseUrl: string;
+  pgTransportEnabled: boolean;
   serviceRoleKey: string;
   supabaseUrl: string;
 };
 
 export type CareerOsTransportStatus =
   | 'pg_healthy'
+  | 'rest_primary'
   | 'rest_fallback_active'
   | 'degraded_snapshot'
   | 'database_unavailable'
@@ -65,6 +67,7 @@ export function cleanSupabaseEnv(value: unknown) {
 export function getCareerOsSupabaseConfiguration(): SupabaseConfiguration {
   return {
     databaseUrl: cleanSupabaseEnv(process.env.DATABASE_URL || process.env.POSTGRES_URL),
+    pgTransportEnabled: cleanSupabaseEnv(process.env.CAREER_OS_PG_TRANSPORT_ENABLED) === '1',
     serviceRoleKey: cleanSupabaseEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
     supabaseUrl: cleanSupabaseEnv(process.env.SUPABASE_URL),
   };
@@ -73,7 +76,7 @@ export function getCareerOsSupabaseConfiguration(): SupabaseConfiguration {
 export function careerOsSupabaseConfigured() {
   const configuration = getCareerOsSupabaseConfiguration();
   return Boolean(
-    (configuration.databaseUrl || (configuration.supabaseUrl && configuration.serviceRoleKey))
+    ((configuration.pgTransportEnabled && configuration.databaseUrl) || (configuration.supabaseUrl && configuration.serviceRoleKey))
       && !configuration.serviceRoleKey.startsWith('['),
   );
 }
@@ -88,7 +91,7 @@ export function getCareerOsTransportHealth() {
 export async function careerOsSelectRows(table: string, query: string, options: SelectOptions = {}): Promise<JsonRecord[]> {
   const configuration = getCareerOsSupabaseConfiguration();
   primeTransportStatus(configuration);
-  if (configuration.databaseUrl && shouldAttemptPg()) {
+  if (shouldUsePgTransport(configuration) && shouldAttemptPg()) {
     try {
       const rows = await pgSelectRows(configuration.databaseUrl, table, query, options);
       markPgSuccess();
@@ -115,7 +118,7 @@ export async function careerOsSelectRows(table: string, query: string, options: 
 export async function careerOsPatchRowById(table: string, id: string, patch: JsonRecord) {
   const configuration = getCareerOsSupabaseConfiguration();
   primeTransportStatus(configuration);
-  if (configuration.databaseUrl && shouldAttemptPg()) {
+  if (shouldUsePgTransport(configuration) && shouldAttemptPg()) {
     try {
       await pgPatchRowById(configuration.databaseUrl, table, id, patch);
       markPgSuccess();
@@ -141,7 +144,7 @@ export async function careerOsPatchRowById(table: string, id: string, patch: Jso
 export async function careerOsPatchRows(table: string, query: string, patch: JsonRecord): Promise<JsonRecord[]> {
   const configuration = getCareerOsSupabaseConfiguration();
   primeTransportStatus(configuration);
-  if (configuration.databaseUrl && shouldAttemptPg()) {
+  if (shouldUsePgTransport(configuration) && shouldAttemptPg()) {
     try {
       const rows = await pgPatchRows(configuration.databaseUrl, table, query, patch);
       markPgSuccess();
@@ -168,7 +171,7 @@ export async function careerOsPatchRows(table: string, query: string, patch: Jso
 export async function careerOsUpsertRows(table: string, rows: JsonRecord | JsonRecord[]) {
   const configuration = getCareerOsSupabaseConfiguration();
   primeTransportStatus(configuration);
-  if (configuration.databaseUrl && shouldAttemptPg()) {
+  if (shouldUsePgTransport(configuration) && shouldAttemptPg()) {
     try {
       await pgUpsertRows(configuration.databaseUrl, table, rows);
       markPgSuccess();
@@ -281,6 +284,10 @@ function canFallbackToRest(configuration: SupabaseConfiguration) {
   return Boolean(configuration.supabaseUrl && configuration.serviceRoleKey && !configuration.serviceRoleKey.startsWith('['));
 }
 
+function shouldUsePgTransport(configuration: SupabaseConfiguration) {
+  return Boolean(configuration.pgTransportEnabled && configuration.databaseUrl);
+}
+
 function shouldFallbackToRest(error: unknown) {
   const message = String(error instanceof Error ? error.message : error || '').toLowerCase();
   return [
@@ -300,13 +307,14 @@ function shouldFallbackToRest(error: unknown) {
 }
 
 function primeTransportStatus(configuration: SupabaseConfiguration) {
-  if (configuration.databaseUrl) {
+  if (shouldUsePgTransport(configuration)) {
     transportHealth.status = transportHealth.state === 'open' ? 'rest_fallback_active' : 'pg_healthy';
     return;
   }
   if (canFallbackToRest(configuration)) {
-    transportHealth.status = 'rest_fallback_active';
+    transportHealth.status = 'rest_primary';
     transportHealth.state = 'closed';
+    transportHealth.probeEligibleAt = undefined;
     return;
   }
   transportHealth.status = 'configuration_error';
@@ -357,11 +365,19 @@ function markRestSuccess(configuration: SupabaseConfiguration) {
   const now = new Date().toISOString();
   transportHealth.lastRestSuccessAt = now;
   transportHealth.lastSuccessTransport = 'rest';
-  if (configuration.databaseUrl && transportHealth.state !== 'closed') {
+  if (shouldUsePgTransport(configuration) && transportHealth.state !== 'closed') {
     transportHealth.status = 'rest_fallback_active';
     return;
   }
-  transportHealth.status = canFallbackToRest(configuration) ? 'rest_fallback_active' : 'pg_healthy';
+  transportHealth.status = canFallbackToRest(configuration) ? 'rest_primary' : 'pg_healthy';
+  if (!shouldUsePgTransport(configuration)) {
+    transportHealth.consecutivePgFailures = 0;
+    transportHealth.lastFailureAt = undefined;
+    transportHealth.lastFailureMessage = undefined;
+    transportHealth.probeEligibleAt = undefined;
+    transportHealth.state = 'closed';
+    resolveOpenIncident('pg');
+  }
 }
 
 function markTransportUnavailable(error: unknown, transport: 'pg' | 'rest') {

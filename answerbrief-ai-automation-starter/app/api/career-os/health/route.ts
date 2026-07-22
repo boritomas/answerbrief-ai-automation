@@ -123,6 +123,7 @@ function determineHealthState(readOk: boolean, transportStatus: CareerOsTranspor
   if (transportStatus === 'configuration_error') return 'maintenance';
   if (!readOk || transportStatus === 'database_unavailable') return 'infrastructure_recovery_required';
   if (transportStatus === 'rest_fallback_active') return 'database_fallback';
+  if (transportStatus === 'rest_primary' && totalDurationMs > 2000) return 'performance_degraded';
   if (totalDurationMs > 2000) return 'performance_degraded';
   return 'healthy';
 }
