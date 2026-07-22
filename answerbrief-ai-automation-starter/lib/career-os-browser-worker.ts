@@ -7,6 +7,7 @@ import {
   type CareerOsLockApplication,
 } from './career-os-duplicate-lock';
 import {
+  careerOsPatchRows,
   careerOsPatchRowById,
   careerOsSelectRows,
   careerOsUpsertRows,
@@ -171,6 +172,8 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
     const now = new Date().toISOString();
     const runId = deterministicUuid(`career-os-browser-claim:${application.id}:${input.companionId}:${now}`);
     const raw = asRecord(application.raw_record);
+    const originalLifecycleStage = cleanEnv(application.lifecycle_stage);
+    const originalUpdatedAt = cleanEnv(application.updated_at);
     const patch = {
       lifecycle_stage: 'browser_worker_running',
       next_action: `Career OS local browser companion ${input.companionId} claimed the application for real employer-site execution.`,
@@ -179,6 +182,7 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
         browser_worker: {
           claimed_at: now,
           companion_id: input.companionId,
+          claim_token: runId,
           last_heartbeat_at: now,
           status: 'running',
         },
@@ -187,7 +191,15 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
       },
       updated_at: now,
     };
-    await patchApplication(application.id, patch);
+    const claimQuery = [
+      `select=*`,
+      `id=eq.${encodeURIComponent(application.id)}`,
+      originalUpdatedAt
+        ? `updated_at=eq.${encodeURIComponent(originalUpdatedAt)}`
+        : `lifecycle_stage=eq.${encodeURIComponent(originalLifecycleStage)}`,
+    ].join('&');
+    const claimedRows = await patchApplications(claimQuery, patch);
+    if (!claimedRows.length) continue;
     await appendWorkflowEvent(application, 'browser_worker_claimed', 'running', patch.next_action, now, runId, task.applicationUrl);
     return task;
   }
@@ -541,6 +553,10 @@ async function selectApplication(ownerEmail: string, applicationId: string): Pro
 
 async function patchApplication(id: string, patch: JsonRecord) {
   await careerOsPatchRowById('career_os_applications', id, patch);
+}
+
+async function patchApplications(query: string, patch: JsonRecord) {
+  return await careerOsPatchRows('career_os_applications', query, patch);
 }
 
 async function appendWorkflowEvent(

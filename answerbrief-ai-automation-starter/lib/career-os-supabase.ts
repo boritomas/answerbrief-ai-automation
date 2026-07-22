@@ -138,6 +138,33 @@ export async function careerOsPatchRowById(table: string, id: string, patch: Jso
   }
 }
 
+export async function careerOsPatchRows(table: string, query: string, patch: JsonRecord): Promise<JsonRecord[]> {
+  const configuration = getCareerOsSupabaseConfiguration();
+  primeTransportStatus(configuration);
+  if (configuration.databaseUrl && shouldAttemptPg()) {
+    try {
+      const rows = await pgPatchRows(configuration.databaseUrl, table, query, patch);
+      markPgSuccess();
+      return rows;
+    } catch (error) {
+      resetPool();
+      markPgFailure(error);
+      if (!canFallbackToRest(configuration) || !shouldFallbackToRest(error)) {
+        markTransportUnavailable(error, 'pg');
+        throw error;
+      }
+    }
+  }
+  try {
+    const rows = await restPatchRows(configuration, table, query, patch);
+    markRestSuccess(configuration);
+    return rows;
+  } catch (error) {
+    markTransportUnavailable(error, 'rest');
+    throw error;
+  }
+}
+
 export async function careerOsUpsertRows(table: string, rows: JsonRecord | JsonRecord[]) {
   const configuration = getCareerOsSupabaseConfiguration();
   primeTransportStatus(configuration);
@@ -203,6 +230,27 @@ async function restPatchRowById(configuration: SupabaseConfiguration, table: str
   if (!response.ok) {
     throw new Error(`Career OS ${table} update failed with ${response.status}: ${(await response.text()).slice(0, 240)}`);
   }
+}
+
+async function restPatchRows(configuration: SupabaseConfiguration, table: string, query: string, patch: JsonRecord) {
+  requireRestConfiguration(configuration);
+  const params = new URLSearchParams(query);
+  if (!params.has('select')) params.set('select', '*');
+  const response = await fetch(`${configuration.supabaseUrl}/rest/v1/${table}?${params.toString()}`, {
+    body: JSON.stringify(patch),
+    headers: {
+      apikey: configuration.serviceRoleKey,
+      Authorization: `Bearer ${configuration.serviceRoleKey}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    method: 'PATCH',
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!response.ok) {
+    throw new Error(`Career OS ${table} conditional update failed with ${response.status}: ${(await response.text()).slice(0, 240)}`);
+  }
+  return await response.json() as JsonRecord[];
 }
 
 async function restUpsertRows(configuration: SupabaseConfiguration, table: string, rows: JsonRecord | JsonRecord[]) {
@@ -403,6 +451,29 @@ async function pgPatchRowById(databaseUrl: string, table: string, id: string, pa
   values.push(id);
   const sql = `UPDATE ${quoteIdent(table)} SET ${setClauses.join(', ')} WHERE id = $${values.length}`;
   await getPool(databaseUrl).query(sql, values);
+}
+
+async function pgPatchRows(databaseUrl: string, table: string, query: string, patch: JsonRecord) {
+  const entries = Object.entries(patch);
+  if (!entries.length) return [];
+  const parsed = parseSupabaseQuery(query);
+  const values: unknown[] = [];
+  const setClauses = entries.map(([key, value]) => {
+    values.push(serializeValue(value));
+    const placeholder = value !== null && typeof value === 'object'
+      ? `$${values.length}::jsonb`
+      : `$${values.length}`;
+    return `${quoteIdent(key)} = ${placeholder}`;
+  });
+  const whereClauses = parsed.filters.map((filter) => {
+    values.push(filter.value);
+    return `${quoteIdent(filter.column)} = $${values.length}`;
+  });
+  let sql = `UPDATE ${quoteIdent(table)} SET ${setClauses.join(', ')}`;
+  if (whereClauses.length) sql += ` WHERE ${whereClauses.join(' AND ')}`;
+  sql += ' RETURNING *';
+  const result = await getPool(databaseUrl).query(sql, values);
+  return result.rows as JsonRecord[];
 }
 
 async function pgUpsertRows(databaseUrl: string, table: string, rows: JsonRecord | JsonRecord[]) {

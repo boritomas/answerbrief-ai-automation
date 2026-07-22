@@ -25,7 +25,7 @@ export type CareerOsDiscoveryPlan = {
   sourceRegistry: string[];
 };
 
-export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-management-market-2026-07-21';
+export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-management-market-2026-07-22-v2';
 
 export const CAREER_OS_SOURCE_REGISTRY = [
   'Greenhouse official board API',
@@ -151,6 +151,7 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Microsoft', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
   source('Google Cloud', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
   source('Amazon Web Services', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
+  source('Samsara', 'greenhouse', 'enterprise SaaS and digital transformation', 'connected operations platform', 84, 'samsara'),
   source('Stripe', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'payments platform', 76, 'stripe'),
   source('Block', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'commerce and payments platform', 76, 'block'),
   source('PayPal', 'workday', 'payments, digital commerce, and adjacent platforms', 'payments platform', 74),

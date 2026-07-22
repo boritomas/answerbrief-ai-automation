@@ -203,14 +203,8 @@ async function fillGreenhouseForm(page, task, runtime) {
   await runtime.fillByLabel(/current company/i, task.candidate.currentCompany);
 
   const resumePath = await runtime.ensureResumeFile();
-  const fileInput = page.locator('input[type="file"]').first();
-  if (await fileInput.count()) {
-    await fileInput.setInputFiles(resumePath);
-    await runtime.report({
-      status: 'heartbeat',
-      evidenceText: `Uploaded approved resume ${resumePath.split('/').pop()}.`,
-    });
-  } else {
+  const uploaded = await maybeUploadGreenhouseResume(page, resumePath, runtime);
+  if (!uploaded) {
     throw new Error('Greenhouse resume upload field was not found.');
   }
 
@@ -223,6 +217,90 @@ async function fillGreenhouseForm(page, task, runtime) {
   await runtime.selectValue(/visa \/ work permit/i, task.candidate.sponsorshipNow);
   await runtime.selectValue(/worked at nice/i, 'No');
   await runtime.selectValue(/first-degree relatives/i, 'No');
+}
+
+async function maybeUploadGreenhouseResume(page, resumePath, runtime) {
+  const directSelectors = [
+    'input[type="file"][name*="resume" i]',
+    'input[type="file"][id*="resume" i]',
+    'input[type="file"][aria-label*="resume" i]',
+    'input[type="file"][name*="cv" i]',
+    'input[type="file"][id*="cv" i]',
+    '[data-qa*="resume" i] input[type="file"]',
+    '[data-testid*="resume" i] input[type="file"]',
+    '[class*="resume" i] input[type="file"]',
+    'input[type="file"]',
+  ];
+  for (const selector of directSelectors) {
+    const input = page.locator(selector).first();
+    if (!await input.count()) continue;
+    await input.setInputFiles(resumePath);
+    await runtime.report({
+      status: 'heartbeat',
+      evidenceText: `Uploaded approved resume ${resumePath.split('/').pop()}.`,
+    });
+    return true;
+  }
+
+  const triggerPatterns = [
+    /attach resume/i,
+    /upload resume/i,
+    /resume/i,
+    /\bcv\b/i,
+  ];
+  for (const pattern of triggerPatterns) {
+    const trigger = page.locator('label, button, a, div[role="button"], span').filter({ hasText: pattern }).first();
+    if (!await trigger.count()) continue;
+    await trigger.click().catch(() => null);
+    await page.waitForTimeout(500);
+    const candidate = await selectPreferredGreenhouseFileInput(page);
+    if (!candidate) continue;
+    await candidate.setInputFiles(resumePath);
+    await runtime.report({
+      status: 'heartbeat',
+      evidenceText: `Uploaded approved resume ${resumePath.split('/').pop()}.`,
+    });
+    return true;
+  }
+
+  return false;
+}
+
+async function selectPreferredGreenhouseFileInput(page) {
+  const index = await page.locator('input[type="file"]').evaluateAll((nodes) => {
+    const normalize = (value) => String(value || '').trim().toLowerCase();
+    const score = (node) => {
+      const attrs = [
+        node.getAttribute('name'),
+        node.getAttribute('id'),
+        node.getAttribute('aria-label'),
+        node.getAttribute('data-qa'),
+        node.getAttribute('data-testid'),
+        node.className,
+        node.parentElement?.textContent,
+        node.closest('section, fieldset, div, label')?.textContent,
+      ].map(normalize).join(' ');
+      if (/cover letter/.test(attrs)) return -100;
+      let points = 0;
+      if (/resume/.test(attrs)) points += 5;
+      if (/\bcv\b/.test(attrs)) points += 3;
+      if (/attach|upload/.test(attrs)) points += 1;
+      return points;
+    };
+    let bestIndex = -1;
+    let bestScore = -101;
+    nodes.forEach((node, currentIndex) => {
+      if (!(node instanceof HTMLInputElement) || node.type !== 'file') return;
+      const points = score(node);
+      if (points > bestScore) {
+        bestIndex = currentIndex;
+        bestScore = points;
+      }
+    });
+    return bestIndex;
+  });
+  if (!Number.isInteger(index) || index < 0) return null;
+  return page.locator('input[type="file"]').nth(index);
 }
 
 async function detectUnresolvedGreenhouseFields(page, task, runtime) {
