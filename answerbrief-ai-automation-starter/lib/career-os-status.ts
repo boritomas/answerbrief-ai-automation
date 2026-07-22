@@ -6,6 +6,11 @@ import {
 import { canonicalQueueState, careerOsActionMetadata } from './career-os-queue';
 import { duplicateLockKeys } from './career-os-duplicate-lock';
 import {
+  applicationMatchesCanonicalOpportunity,
+  canonicalOpportunityIdentity,
+  mergeCanonicalSourceSightings,
+} from './career-os-canonical-opportunity';
+import {
   careerOsSelectRows,
   cleanSupabaseEnv,
   getCareerOsSupabaseConfiguration,
@@ -1136,6 +1141,7 @@ type CanonicalOpportunity = {
   qualificationTier: QualificationTier;
   releaseState: 'submitted' | 'tomas_review' | 'waiting_on_tomas' | 'ready_for_automation' | 'in_progress' | 'ineligible' | 'inactive';
   sourceOpportunityIds: Set<string>;
+  sourceSightings: ReturnType<typeof mergeCanonicalSourceSightings>;
   submitted: boolean;
 };
 
@@ -1194,24 +1200,16 @@ function buildCanonicalReleaseMetrics(evidence: CareerOsEvidence, preferredMinim
 }
 
 function normalizeOpportunityIdentity(record: JsonRecord, sourceType: 'posting' | 'opportunity') {
-  const employer = String(sourceType === 'posting' ? record.company || '' : record.employer || '').trim();
-  const position = String(sourceType === 'posting' ? record.title || '' : record.position || '').trim();
-  const requisitionId = String(sourceType === 'posting' ? record.external_requisition_id || '' : record.requisition || '').trim();
-  const url = String(sourceType === 'posting' ? record.canonical_url || '' : record.job_url || '').trim();
+  const canonical = canonicalOpportunityIdentity(record, sourceType);
+  const employer = canonical.employer;
+  const position = canonical.title;
+  const requisitionId = canonical.primaryRequisitionId || String(sourceType === 'posting' ? record.external_requisition_id || '' : record.requisition || '').trim();
+  const url = canonical.canonicalUrl || String(sourceType === 'posting' ? record.canonical_url || '' : record.job_url || '').trim();
   const sourceId = String(record.id || '');
-  const description = String(record.normalized_description || record.job_description || record.evidence || record.raw_record || '');
-  const descriptionFingerprint = simpleHash(description);
-  const employerKey = compactKey(employer);
-  const titleKey = normalizeTitle(position);
-  const normalizedUrl = normalizeUrl(url);
-  const atsId = atsIdFromUrl(url);
-  const key = [
-    atsId ? `${employerKey}:ats:${atsId}` : '',
-    requisitionId ? `${employerKey}:req:${requisitionId.toLowerCase()}` : '',
-    normalizedUrl ? `url:${normalizedUrl}` : '',
-    employerKey && titleKey ? `${employerKey}:title:${titleKey}:desc:${descriptionFingerprint}` : '',
-    sourceId,
-  ].find(Boolean) || sourceId;
+  const descriptionFingerprint = canonical.descriptionFingerprint;
+  const employerKey = canonical.employerKey;
+  const titleKey = canonical.titleKey;
+  const key = canonical.canonicalOpportunityId || sourceId;
 
   return {
     employer,
@@ -1240,11 +1238,7 @@ function normalizeOpportunityIdentity(record: JsonRecord, sourceType: 'posting' 
 }
 
 function applicationMatchesCanonical(application: JsonRecord, canonical: NormalizedOpportunity, sourceIds: Set<string>) {
-  const opportunityId = String(application.opportunity_id || '');
-  if (sourceIds.has(opportunityId)) return true;
-
-  return compactKey(application.employer) === compactKey(canonical.employer)
-    && normalizeTitle(application.position) === canonical.titleKey;
+  return applicationMatchesCanonicalOpportunity(application, canonicalOpportunityIdentity(canonical.raw, canonical.sourceType), sourceIds);
 }
 
 function qualificationTierForOpportunity(item: NormalizedOpportunity, preferredMinimumBaseSalaryUsd?: number): QualificationTier {
@@ -1330,8 +1324,22 @@ function buildCanonicalOpportunityList(evidence: CareerOsEvidence, preferredMini
       if (a.sourceType !== b.sourceType) return a.sourceType === 'posting' ? -1 : 1;
       return b.updatedAt - a.updatedAt;
     })[0];
+    const groupReviewDecision = canonicalGroupReviewDecision(records);
+    const preferredRawRecord = asRecord(preferred.raw.raw_record);
+    const preferredForClassification = groupReviewDecision !== 'none' && normalizedReviewDecision(preferredRawRecord.review_decision) === 'none'
+      ? {
+          ...preferred,
+          raw: {
+            ...preferred.raw,
+            raw_record: {
+              ...preferredRawRecord,
+              review_decision: groupReviewDecision,
+            },
+          },
+        }
+      : preferred;
     const sourceOpportunityIds = new Set<string>(records.flatMap((record: NormalizedOpportunity) => [record.sourceId, record.opportunityId]).filter((value): value is string => Boolean(value)));
-    const applications = evidence.applications.filter((application) => applicationMatchesCanonical(application, preferred, sourceOpportunityIds));
+    const applications = evidence.applications.filter((application) => applicationMatchesCanonical(application, preferredForClassification, sourceOpportunityIds));
     const submitted = applications.some((application) => {
       const state = canonicalQueueState(application);
       return state === 'confirmed' || state === 'submitted' || state === 'duplicate';
@@ -1343,21 +1351,33 @@ function buildCanonicalOpportunityList(evidence: CareerOsEvidence, preferredMini
       return sourceOpportunityIds.has(artifactOpportunityId)
         || applications.some((application) => String(application.id) === artifactApplicationId);
     }).length;
-    const qualificationTier = qualificationTierForOpportunity(preferred, preferredMinimumBaseSalaryUsd);
-    const className = classifyOpportunity(preferred, qualificationTier);
+    const qualificationTier = qualificationTierForOpportunity(preferredForClassification, preferredMinimumBaseSalaryUsd);
+    const className = classifyOpportunity(preferredForClassification, qualificationTier);
     canonical.push({
       applications,
       className,
       key,
       packageAssets,
-      preferredRecord: preferred,
+      preferredRecord: preferredForClassification,
       qualificationTier,
-      releaseState: classifyReleaseState(preferred, className, qualificationTier, applications),
+      releaseState: classifyReleaseState(preferredForClassification, className, qualificationTier, applications),
       sourceOpportunityIds,
+      sourceSightings: mergeCanonicalSourceSightings(records.map((record) => record.raw)),
       submitted,
     });
   }
   return canonical;
+}
+
+function canonicalGroupReviewDecision(records: NormalizedOpportunity[]): ReviewQueueItem['reviewDecision'] {
+  const decisions = records
+    .map((record) => normalizedReviewDecision(asRecord(record.raw.raw_record).review_decision))
+    .filter((decision) => decision !== 'none');
+
+  if (decisions.includes('skip')) return 'skip';
+  if (decisions.includes('reject_similar')) return 'reject_similar';
+  if (decisions.includes('approve')) return 'approve';
+  return 'none';
 }
 
 function selectCanonicalSubmittedApplications(evidence: CareerOsEvidence): CanonicalSubmittedApplication[] {

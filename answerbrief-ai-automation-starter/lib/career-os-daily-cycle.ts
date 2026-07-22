@@ -1,5 +1,9 @@
 import crypto from 'node:crypto';
 import {
+  canonicalOpportunityIdentity,
+  mergeCanonicalSourceSightings,
+} from './career-os-canonical-opportunity';
+import {
   CAREER_OS_EMPLOYER_UNIVERSE,
   CAREER_OS_MARKET_UNIVERSE_VERSION,
   CAREER_OS_ROLE_PRIORITIES,
@@ -1396,20 +1400,43 @@ function classifyRolePolicy(title: string, description: string) {
 }
 
 function dedupePostings(postings: JsonRecord[]) {
-  const seen = new Map<string, JsonRecord>();
+  const groups = new Map<string, JsonRecord[]>();
 
   for (const posting of postings) {
-    const keys = [
-      `${compactKey(posting.company)}:req:${String(posting.external_requisition_id || '').toLowerCase()}`,
-      `url:${normalizeUrl(posting.canonical_url)}`,
-      `${compactKey(posting.company)}:title:${compactKey(posting.title)}:desc:${simpleHash(posting.normalized_description)}`,
-    ].filter((key) => !key.endsWith(':req:') && key !== 'url:');
-    const existingKey = keys.find((key) => seen.has(key));
-    if (existingKey) continue;
-    for (const key of keys) seen.set(key, posting);
+    const identity = canonicalOpportunityIdentity(posting, 'posting');
+    const bucket = groups.get(identity.canonicalOpportunityId) || [];
+    bucket.push(posting);
+    groups.set(identity.canonicalOpportunityId, bucket);
   }
 
-  return Array.from(new Set(Array.from(seen.values())));
+  return Array.from(groups.values()).map((records) => {
+    const preferred = records.slice().sort((left, right) => {
+      const leftScore = numberValue(left.fit_score);
+      const rightScore = numberValue(right.fit_score);
+      if (leftScore !== rightScore) return rightScore - leftScore;
+      return (Date.parse(String(right.updated_at || right.last_checked_at || 0)) || 0) - (Date.parse(String(left.updated_at || left.last_checked_at || 0)) || 0);
+    })[0];
+    const identity = canonicalOpportunityIdentity(preferred, 'posting');
+    const raw = asRecord(preferred.raw_record);
+    const sourceSightings = mergeCanonicalSourceSightings(records, 'posting');
+
+    return {
+      ...preferred,
+      raw_record: {
+        ...raw,
+        canonical_identity_keys: identity.exactIdentityKeys,
+        canonical_identity_tier: identity.exactIdentityKeys[0]?.includes(':req:') || identity.exactIdentityKeys[0]?.includes(':job:')
+          ? 'tier_1_exact'
+          : identity.canonicalUrl
+            ? 'tier_2_url'
+            : 'tier_3_strong',
+        canonical_opportunity_id: identity.canonicalOpportunityId,
+        possible_duplicate_key: identity.possibleDuplicateKey,
+        source_sighting_count: sourceSightings.length,
+        source_sightings: sourceSightings,
+      },
+    };
+  });
 }
 
 function processDiscoveryBacklogBatches(records: JsonRecord[], sourceRunId: string) {

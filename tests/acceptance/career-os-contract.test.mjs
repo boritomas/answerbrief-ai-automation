@@ -585,6 +585,24 @@ test('Career OS review approvals create or reuse a canonical opportunity before 
   assert.match(actionsRoute, /canonical_job_posting_id: opportunityId/);
 });
 
+test('Career OS canonical opportunity identity uses exact ATS and URL keys before any strong-match fallback', () => {
+  const canonical = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-canonical-opportunity.ts'), 'utf8');
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+  const dailyCycle = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-daily-cycle.ts'), 'utf8');
+  const applicationMatchFunction = statusSource.match(/function applicationMatchesCanonical\([\s\S]*?\n}\n/);
+
+  assert.match(canonical, /canonicalOpportunityIdentity/);
+  assert.match(canonical, /tier_1_exact|:req:|:job:/);
+  assert.match(canonical, /url:/);
+  assert.match(canonical, /possibleDuplicateKey/);
+  assert.match(canonical, /applicationMatchesCanonicalOpportunity/);
+  assert.match(statusSource, /applicationMatchesCanonicalOpportunity/);
+  assert.match(dailyCycle, /canonical_opportunity_id/);
+  assert.match(dailyCycle, /source_sightings/);
+  assert.ok(applicationMatchFunction, 'applicationMatchesCanonical should exist.');
+  assert.doesNotMatch(applicationMatchFunction[0], /compactKey\(application\.employer\).*normalizeTitle\(application\.position\)/s);
+});
+
 test('Career OS duplicate-submission locks prevent requeueing and backward transitions', () => {
   const queue = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-queue.ts'), 'utf8');
   const duplicateLock = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-duplicate-lock.ts'), 'utf8');
