@@ -1244,6 +1244,8 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
     hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
     selected_for_pilot: false,
     status: classifyDiscoveredPostingStatus(fitScore, minFitScore, locationText, rolePolicy),
+    created_at: lastCheckedAt,
+    updated_at: lastCheckedAt,
   };
 }
 
@@ -1318,6 +1320,8 @@ function normalizeOraclePosting(ownerEmail: string, job: JsonRecord, lastChecked
     hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
     selected_for_pilot: false,
     status: classifyDiscoveredPostingStatus(fitScore, minFitScore, locationText, rolePolicy),
+    created_at: lastCheckedAt,
+    updated_at: lastCheckedAt,
   };
 }
 
