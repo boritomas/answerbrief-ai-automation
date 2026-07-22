@@ -502,6 +502,7 @@ function isQueueEligible(application: QueueApplication) {
   const state = canonicalQueueState(application);
   if (!['queued', 'package_ready', 'qualified'].includes(state)) return false;
   if (humanOrTechnicalBlocker(application)) return false;
+  if (!isClaimableApplicationHref(externalApplicationHref(application))) return false;
   return Boolean(application.exact_resume || asRecord(application.raw_record).resume_path || asRecord(application.raw_record).package_status);
 }
 
@@ -775,7 +776,22 @@ async function upsertRows(table: string, rows: JsonRecord | JsonRecord[]) {
 
 function externalApplicationHref(application: JsonRecord) {
   const raw = asRecord(application.raw_record);
-  return stringValue(raw.confirmation_url || raw.application_url || raw.canonical_url || raw.job_url || application.evidence_url || application.application_url);
+  const candidates = [
+    raw.confirmation_url,
+    raw.application_url,
+    raw.canonical_url,
+    raw.job_url,
+    application.evidence_url,
+    application.application_url,
+  ].map(stringValue).filter(Boolean);
+  return candidates.find((value) => isClaimableApplicationHref(value)) || '';
+}
+
+function isClaimableApplicationHref(value: string) {
+  const href = stringValue(value);
+  if (!href) return false;
+  if (/\/embed\/job_board\b/i.test(href) && /(?:\?|&)error=true\b/i.test(href)) return false;
+  return /^https?:\/\//i.test(href);
 }
 
 function applicationText(application: JsonRecord) {

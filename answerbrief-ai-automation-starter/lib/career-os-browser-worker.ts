@@ -430,7 +430,7 @@ function canonicalQueueState(application: JsonRecord): QueueState {
 }
 
 async function buildTaskPayload(application: QueueApplication, companionId: string): Promise<BrowserWorkerTask | null> {
-  const applicationUrl = externalApplicationHref(application);
+  const applicationUrl = await resolveApplicationHref(application);
   if (!applicationUrl) return null;
 
   const profileRows = await selectAll(
@@ -613,7 +613,42 @@ function mapWorkerStatusToExecutionStatus(status: WorkerStatus) {
 
 function externalApplicationHref(application: JsonRecord) {
   const raw = asRecord(application.raw_record);
-  return cleanEnv(raw.confirmation_url || raw.application_url || raw.canonical_url || raw.job_url || application.evidence_url || application.application_url);
+  const candidates = [
+    raw.confirmation_url,
+    raw.application_url,
+    raw.canonical_url,
+    raw.job_url,
+    application.evidence_url,
+    application.application_url,
+  ].map(cleanEnv).filter(Boolean);
+  return candidates.find((value) => isClaimableApplicationHref(value)) || '';
+}
+
+async function resolveApplicationHref(application: QueueApplication) {
+  const direct = externalApplicationHref(application);
+  if (direct) return direct;
+  const opportunityId = cleanEnv(application.opportunity_id);
+  if (!opportunityId) return '';
+  const postingRows = await selectAll(
+    'career_os_job_postings',
+    `select=canonical_url,raw_record&owner_email=eq.${encodeURIComponent(application.owner_email)}&id=eq.${encodeURIComponent(opportunityId)}&limit=1`,
+  );
+  const posting = asRecord(postingRows[0]);
+  const postingRaw = asRecord(posting.raw_record);
+  const candidates = [
+    posting.canonical_url,
+    postingRaw.application_url,
+    postingRaw.canonical_url,
+    postingRaw.job_url,
+  ].map(cleanEnv).filter(Boolean);
+  return candidates.find((value) => isClaimableApplicationHref(value)) || '';
+}
+
+function isClaimableApplicationHref(value: string) {
+  const href = cleanEnv(value);
+  if (!href) return false;
+  if (/\/embed\/job_board\b/i.test(href) && /(?:\?|&)error=true\b/i.test(href)) return false;
+  return /^https?:\/\//i.test(href);
 }
 
 function applicationText(application: JsonRecord) {
