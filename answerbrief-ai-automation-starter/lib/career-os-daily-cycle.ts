@@ -447,6 +447,7 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
   const dedupedPostings = dedupePostings(postings)
     .sort((a, b) => numberValue(b.fit_score) - numberValue(a.fit_score) || String(a.company).localeCompare(String(b.company)));
   const qualifiedPostings = dedupedPostings.filter((posting) => numberValue(posting.fit_score) >= minFitScore);
+  const postingsToPersist = qualifiedPostings;
   const backlogProgress = processDiscoveryBacklogBatches(dedupedPostings, sourceRunId);
   dedupedPostings.forEach((posting) => {
     posting.selected_for_pilot = qualifiedPostings[0]?.id === posting.id;
@@ -480,14 +481,14 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
   };
 
   await persistRows('career_os_source_runs', sourceRun);
-  if (dedupedPostings.length) {
-    await persistRows('career_os_job_postings', dedupedPostings);
+  if (postingsToPersist.length) {
+    await persistRows('career_os_job_postings', postingsToPersist);
   }
 
   return {
     errors,
     postingsAccepted: qualifiedPostings.length,
-    postingsPersisted: dedupedPostings.length,
+    postingsPersisted: postingsToPersist.length,
     postingsReviewed: reviewed,
     sourceRun,
   };
