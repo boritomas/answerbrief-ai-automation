@@ -2321,6 +2321,10 @@ function stringValue(value: unknown) {
   return String(value || '').trim();
 }
 
+function booleanValue(value: unknown) {
+  return value === true || stringValue(value).toLowerCase() === 'true';
+}
+
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
