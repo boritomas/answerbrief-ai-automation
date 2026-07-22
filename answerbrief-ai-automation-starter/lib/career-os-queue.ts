@@ -697,6 +697,8 @@ function queueApplicationAfterHumanStep(application: QueueApplication, now: stri
 
 async function updateApplicationQueueState(application: QueueApplication, state: QueueState, message: string, now: string, runId: string) {
   const raw = asRecord(application.raw_record);
+  const browserWorker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
   const nextAudit = arrayValue(application.audit_timeline).concat({
       at: now,
       event: `queue_${state}`,
@@ -706,6 +708,21 @@ async function updateApplicationQueueState(application: QueueApplication, state:
   const nextLifecycleStage = state === 'blocked_technical' ? 'blocked_technical_ats_adapter_required' : `queue_${state}`;
   const nextRaw = {
     ...raw,
+    browser_worker: state === 'queued' || state === 'running'
+      ? {
+          ...browserWorker,
+          last_heartbeat_at: now,
+          status: state,
+        }
+      : browserWorker,
+    browser_worker_last_report: state === 'queued' || state === 'running'
+      ? {
+          ...lastReport,
+          evidence_text: message,
+          status: state,
+          timestamp: now,
+        }
+      : lastReport,
     execution_status: state,
     queue_processor_run_id: runId,
     queue_updated_at: now,

@@ -405,10 +405,15 @@ function isBrowserWorkerEligible(application: QueueApplication, companionId: str
   const browserWorker = asRecord(raw.browser_worker);
   const lastReport = asRecord(raw.browser_worker_last_report);
   const lastReportStatus = cleanEnv(lastReport.status);
+  const explicitlyQueued = state === 'queued' && (
+    cleanEnv(application.lifecycle_stage).toLowerCase() === 'queue_queued'
+    || cleanEnv(raw.execution_status).toLowerCase() === 'queued'
+  );
   if (
     (lastReportStatus === 'waiting_on_tomas' || lastReportStatus === 'blocked_technical')
     && !isExplicitlyResumedApplication(application)
     && !recoverableLegacyAdapterState(application)
+    && !explicitlyQueued
   ) {
     return false;
   }
