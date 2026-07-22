@@ -115,3 +115,63 @@ export function buildWorkdayQuestionMappings(task, overrides = {}) {
     },
   ];
 }
+
+export function buildGreenhouseQuestionMappings(task, overrides = {}) {
+  return [
+    {
+      key: 'country_region',
+      kind: 'select',
+      matchers: [/^country$/i, /country or region/i],
+      value: task.candidate.countryRegion || 'United States of America',
+    },
+    {
+      key: 'city',
+      kind: 'text',
+      matchers: [/^city$/i, /location \(city\)/i],
+      valueFrom: 'candidate.city',
+    },
+    {
+      key: 'state',
+      kind: 'select',
+      matchers: [/^state$/i, /state or canadian province/i],
+      valueFrom: 'candidate.stateOrProvince',
+    },
+    {
+      key: 'email',
+      kind: 'text',
+      matchers: [/email address/i, /^email$/i],
+      value: overrides.email || task.candidate.email,
+    },
+    {
+      key: 'phone_number',
+      kind: 'text',
+      matchers: [/phone number/i, /^phone$/i],
+      value: digitsOnly(task.candidate.phone),
+    },
+    {
+      key: 'referral_source',
+      kind: 'select',
+      matchers: [/how did you hear about/i, /how did you first learn about/i],
+      strategy: overrides.referralStrategy || 'first_available',
+      value: overrides.referralValue || task.candidate.referralSourceAffirmFallback || task.candidate.referralSource,
+    },
+    {
+      key: 'us_work_authorization',
+      kind: 'select',
+      matchers: [/right to work in the us/i, /authorized to work/i, /visa \/ work permit/i],
+      valueFrom: 'candidate.sponsorshipNow',
+    },
+    {
+      key: 'sponsorship_now',
+      kind: 'select',
+      matchers: [/require immigration sponsorship.*united states/i, /require sponsorship/i],
+      valueFrom: 'candidate.sponsorshipNow',
+    },
+    {
+      key: 'sponsorship_future',
+      kind: 'select',
+      matchers: [/require immigration sponsorship at any point in the future/i],
+      valueFrom: 'candidate.sponsorshipFuture',
+    },
+  ];
+}

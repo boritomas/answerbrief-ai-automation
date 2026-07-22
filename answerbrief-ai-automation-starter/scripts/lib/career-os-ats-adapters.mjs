@@ -1,5 +1,5 @@
 import { applyFieldMappings } from './career-os-field-engine.mjs';
-import { buildWorkdayQuestionMappings } from './career-os-question-mappings.mjs';
+import { buildGreenhouseQuestionMappings, buildWorkdayQuestionMappings } from './career-os-question-mappings.mjs';
 
 function clean(value) {
   return String(value || '').trim().replace(/^"|"$/g, '');
@@ -256,6 +256,14 @@ async function fillGreenhouseForm(page, task, runtime) {
   await selectFromLabel(context, /visa \/ work permit/i, task.candidate.sponsorshipNow);
   await selectFromLabel(context, /worked at nice/i, 'No');
   await selectFromLabel(context, /first-degree relatives/i, 'No');
+  await applyFieldMappings(
+    context,
+    buildGreenhouseQuestionMappings(task, {
+      email: task.candidate.email,
+      referralStrategy: 'first_available',
+    }),
+    task,
+  );
 }
 
 async function maybeUploadGreenhouseResume(context, resumePath, runtime) {
