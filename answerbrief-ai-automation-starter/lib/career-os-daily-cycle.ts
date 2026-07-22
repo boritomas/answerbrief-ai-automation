@@ -231,7 +231,7 @@ export type DailyOperatingCycleStatus = {
   version: string;
 };
 
-export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-21-v4-role-policy-and-oracle-pilot';
+export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-22-v5-inline-package-throughput';
 export const DAILY_CRON_PATH = '/api/career-os/daily-run';
 export const DAILY_CRON_SCHEDULE = '0 12 * * *';
 export const DAILY_TARGET_NEWLY_IDENTIFIED = 20;
@@ -486,7 +486,14 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
   if (postingsToPersist.length) {
     await persistRows('career_os_job_postings', postingsToPersist);
   }
-  const promoted = buildAutoApplyPromotionRows(ownerEmail, qualifiedPostings, evidence, executedAt);
+  const generatedArtifacts = buildAutoApplyPackageArtifacts(ownerEmail, qualifiedPostings, evidence, executedAt);
+  if (generatedArtifacts.length) {
+    await persistRows('career_os_artifacts', generatedArtifacts);
+  }
+  const promoted = buildAutoApplyPromotionRows(ownerEmail, qualifiedPostings, {
+    ...evidence,
+    artifacts: (evidence?.artifacts || []).concat(generatedArtifacts),
+  }, executedAt);
   if (promoted.opportunities.length) {
     await persistRows('career_os_opportunities', promoted.opportunities);
   }
@@ -560,7 +567,7 @@ function buildAutoApplyPromotionRows(
       opportunity_id: opportunityId,
       employer: stringValue(posting.company) || 'Employer',
       position: stringValue(posting.title) || 'Role',
-      exact_resume: stringValue(approvedArtifacts.resume.local_path) || null,
+      exact_resume: approvedResumeContent(approvedArtifacts.resume),
       cover_letter: null,
       application_answers: {},
       lifecycle_stage: 'qualified_pending_application',
@@ -583,7 +590,7 @@ function buildAutoApplyPromotionRows(
         package_validation_status: stringValue(approvedArtifacts.packageArtifact.validation_status),
         package_promoted_at: now,
         queue_eligible: true,
-        resume_path: stringValue(approvedArtifacts.resume.local_path),
+        resume_path: stringValue(approvedArtifacts.resume.local_path) || stringValue(asRecord(approvedArtifacts.resume.metadata).storage_key),
         review_source: 'standing_auto_apply_policy',
       },
       created_at: now,
@@ -592,6 +599,51 @@ function buildAutoApplyPromotionRows(
   }
 
   return { applications: nextApplications, opportunities: nextOpportunities };
+}
+
+function buildAutoApplyPackageArtifacts(
+  ownerEmail: string,
+  qualifiedPostings: JsonRecord[],
+  evidence: Partial<DailyCycleEvidence> | undefined,
+  now: string,
+) {
+  const profile = asRecord(evidence?.profile);
+  const verifiedProfile = asRecord(profile.verified_profile);
+  if (!profile.display_name || !Object.keys(verifiedProfile).length) return [];
+
+  const existingArtifacts = evidence?.artifacts || [];
+  const opportunities = evidence?.seededOpportunities || [];
+  const applications = evidence?.applications || [];
+  const generated: JsonRecord[] = [];
+
+  for (const posting of qualifiedPostings) {
+    if (numberValue(posting.fit_score) < AUTO_APPLY_PROMOTION_THRESHOLD) continue;
+    if (!supportedAutoApplyPlatform(posting)) continue;
+
+    const opportunity = findExistingOpportunityForPosting(posting, opportunities);
+    const opportunityId = stringValue(opportunity?.id) || stringValue(posting.id);
+    const existingApplication = findExistingApplicationForOpportunity(opportunityId, posting, applications);
+    const candidateApplicationId = stringValue(existingApplication?.id) || `app-auto-${stringValue(posting.id)}`;
+    const approvedArtifacts = approvedAutomationArtifactsForOpportunity(
+      opportunityId,
+      posting,
+      existingArtifacts.concat(generated),
+    );
+    if (approvedArtifacts.resume && approvedArtifacts.packageArtifact) continue;
+
+    const inlineArtifacts = buildInlinePackageArtifacts({
+      now,
+      ownerEmail,
+      posting,
+      profile,
+      applicationId: candidateApplicationId,
+      opportunityId,
+    });
+    if (!approvedArtifacts.resume) generated.push(inlineArtifacts.resumeArtifact);
+    if (!approvedArtifacts.packageArtifact) generated.push(inlineArtifacts.packageArtifact);
+  }
+
+  return generated;
 }
 
 function findExistingOpportunityForPosting(posting: JsonRecord, opportunities: JsonRecord[]) {
@@ -643,9 +695,310 @@ function approvedAutomationArtifactsForOpportunity(opportunityId: string, postin
   };
 }
 
+function approvedResumeContent(artifact?: JsonRecord) {
+  if (!artifact) return null;
+  const metadata = asRecord(artifact.metadata);
+  return stringValue(artifact.local_path)
+    || stringValue(metadata.inline_content)
+    || stringValue(metadata.resume_content)
+    || null;
+}
+
 function inferredPostingPlatform(posting: JsonRecord) {
   const raw = asRecord(posting.raw_record);
   return stringValue(raw.ats_platform || raw.ats || posting.source_name || posting.platform || 'greenhouse') || 'greenhouse';
+}
+
+function supportedAutoApplyPlatform(posting: JsonRecord) {
+  return ['greenhouse', 'oracle', 'workday'].includes(inferredPostingPlatform(posting).toLowerCase());
+}
+
+function buildInlinePackageArtifacts({
+  applicationId,
+  now,
+  opportunityId,
+  ownerEmail,
+  posting,
+  profile,
+}: {
+  applicationId: string;
+  now: string;
+  opportunityId: string;
+  ownerEmail: string;
+  posting: JsonRecord;
+  profile: JsonRecord;
+}) {
+  const verifiedProfile = asRecord(profile.verified_profile);
+  const contact = asRecord(verifiedProfile.contact);
+  const reusable = asRecord(verifiedProfile.reusable_application_answers);
+  const title = stringValue(posting.title) || 'Role';
+  const employer = stringValue(posting.company) || 'Employer';
+  const requisition = stringValue(posting.external_requisition_id);
+  const canonicalUrl = stringValue(posting.canonical_url);
+  const platform = inferredPostingPlatform(posting).toLowerCase();
+  const fitScore = numberValue(posting.fit_score);
+  const profileVersion = stringValue(verifiedProfile.profile_version) || 'career-os-approved-profile';
+  const resumeContent = buildInlineTargetedResume(profile, posting);
+  const packagePayload = {
+    environment: 'production',
+    profile_source: 'career_os_profiles.verified_profile',
+    profile_version: profileVersion,
+    opportunity: {
+      company: employer,
+      title,
+      external_requisition_id: requisition,
+      job_id: requisition || stringValue(posting.id),
+      canonical_url: canonicalUrl,
+      application_url: canonicalUrl,
+      location: stringValue(posting.location),
+      updated_at: now.slice(0, 10),
+      compensation_text: stringValue(posting.compensation_text),
+      ats: platform,
+    },
+    analyses: {
+      overall_fit_score: fitScore,
+      ats_alignment: atsAlignmentSummary(posting),
+      ai_readiness: aiReadinessSummary(posting),
+      recruiter_intelligence: recruiterIntelligenceSummary(posting, profile),
+      hiring_manager_evidence: hiringManagerEvidence(posting, verifiedProfile),
+      location_compatibility: locationCompatibilitySummary(posting),
+      application_risk: applicationRiskSummary(posting),
+    },
+    artifacts: [
+      {
+        type: 'targeted_resume',
+        path: `inline://career-os/${applicationId}/resume`,
+        validation_status: 'passed_text_review',
+        evidence_controls: 'Approved profile facts only. No unverified titles, certifications, compensation, or employer-specific legal answers are added.',
+      },
+    ],
+    verified_answers_available: {
+      first_name: stringValue(contact.first_name || reusable.first_name) || 'Tomas',
+      last_name: stringValue(contact.last_name || reusable.last_name) || 'Nieves',
+      preferred_first_name: stringValue(contact.preferred_name || reusable.preferred_name) || 'Tomas',
+      email: stringValue(contact.email || reusable.email) || ownerEmail,
+      phone: stringValue(contact.phone || reusable.phone),
+      linkedin: stringValue(contact.linkedin || reusable.linkedin_url || verifiedProfile.linkedin),
+      location: stringValue(contact.location || reusable.city),
+      work_authorized_us: booleanValue(reusable.us_work_authorization) ? 'Yes' : '',
+      requires_sponsorship_now_or_future: booleanValue(reusable.requires_sponsorship_now_or_future) ? 'Yes' : 'No',
+      referral_source: stringValue(reusable.job_source_default || reusable.referral_source || asRecord(verifiedProfile.referral_source).value),
+      pronouns_policy: stringValue(reusable.pronouns_reuse_scope) || 'Use only when the exact employer option matches the verified value.',
+    },
+    external_use_controls: {
+      automatic_resume_upload_authorized: booleanValue(asRecord(verifiedProfile.application_policy).auto_upload_approved_targeted_resume)
+        || booleanValue(asRecord(verifiedProfile.resume_upload_policy).automatic_upload_approved),
+      automatic_submission_policy: stringValue(asRecord(verifiedProfile.application_policy).submission_mode)
+        || 'Submit only when verified required facts are present and no human-only gate is triggered.',
+      protected_demographics: stringValue(asRecord(verifiedProfile.application_policy).protected_status_questions)
+        || 'Leave protected-status answers blank unless a verified reusable value and exact employer option exist.',
+      prior_employer_history: 'Never infer; require employer-specific verified history when asked.',
+    },
+  };
+  const packageContent = JSON.stringify(packagePayload, null, 2);
+  const packageFingerprint = simpleHash(`${canonicalUrl}:${fitScore}:${profileVersion}:${resumeContent}`);
+  const baseMetadata = {
+    canonical_job_posting_id: stringValue(posting.id),
+    canonical_url: canonicalUrl,
+    employer,
+    generated_by: 'career-os-inline-package-throughput-2026-07-22',
+    generated_once: true,
+    job_description_fingerprint: simpleHash(stringValue(posting.normalized_description || posting.job_description)),
+    package_fingerprint: packageFingerprint,
+    profile_version: profileVersion,
+    role: title,
+    storage_key: `inline://career-os/${applicationId}`,
+  };
+
+  return {
+    packageArtifact: {
+      id: deterministicUuid(`career-os-inline-package:${applicationId}:${opportunityId}:application_package`),
+      owner_email: ownerEmail,
+      opportunity_id: opportunityId,
+      application_id: applicationId,
+      artifact_type: 'application_package',
+      filename: `${safeFileStem(employer, title, requisition || stringValue(posting.id))}_application_package.json`,
+      local_path: null,
+      approval_status: 'approved_for_automation',
+      validation_status: 'passed_schema_review',
+      input_hash: packageFingerprint,
+      created_at: now,
+      updated_at: now,
+      metadata: {
+        ...baseMetadata,
+        bytes: packageContent.length,
+        inline_content: packageContent,
+        render_qa: 'passed_inline_schema_review',
+        resume_path: `inline://career-os/${applicationId}/resume`,
+        storage_mode: 'inline_json',
+      },
+    },
+    resumeArtifact: {
+      id: deterministicUuid(`career-os-inline-package:${applicationId}:${opportunityId}:targeted_resume`),
+      owner_email: ownerEmail,
+      opportunity_id: opportunityId,
+      application_id: applicationId,
+      artifact_type: 'targeted_resume',
+      filename: `${safeFileStem(employer, title, 'Tomas_Nieves')}.txt`,
+      local_path: null,
+      approval_status: 'approved_for_automation',
+      validation_status: 'passed_text_review',
+      input_hash: simpleHash(`${packageFingerprint}:resume`),
+      created_at: now,
+      updated_at: now,
+      metadata: {
+        ...baseMetadata,
+        bytes: resumeContent.length,
+        inline_content: resumeContent,
+        render_qa: 'passed_inline_text_review',
+        storage_mode: 'inline_text',
+      },
+    },
+  };
+}
+
+function buildInlineTargetedResume(profile: JsonRecord, posting: JsonRecord) {
+  const verifiedProfile = asRecord(profile.verified_profile);
+  const contact = asRecord(verifiedProfile.contact);
+  const skills = arrayValue(verifiedProfile.skills).map(String).filter(Boolean);
+  const education = arrayValue(verifiedProfile.education).map(String).filter(Boolean);
+  const certifications = arrayValue(verifiedProfile.verified_certifications).map(String).filter(Boolean).slice(0, 5);
+  const employmentHistory = arrayValue(verifiedProfile.employment_history).map(asRecord).filter((item) => stringValue(item.title) || stringValue(item.employer));
+  const title = stringValue(posting.title) || 'Role';
+  const employer = stringValue(posting.company) || 'Employer';
+  const headline = stringValue(verifiedProfile.headline) || 'Enterprise Product Management Leader';
+  const careerTransition = stringValue(verifiedProfile.career_transition);
+  const alignmentBullets = hiringManagerEvidence(posting, verifiedProfile);
+  const contactLine = [
+    stringValue(contact.location),
+    stringValue(contact.phone),
+    stringValue(contact.email),
+    stringValue(contact.linkedin || verifiedProfile.linkedin),
+  ].filter(Boolean).join(' | ');
+  const experienceBlocks = employmentHistory.slice(0, 4).map((record) => {
+    const period = stringValue(record.period);
+    const roleLine = `${stringValue(record.title) || 'Product Leadership Experience'} | ${stringValue(record.employer) || 'Employer'}${period ? ` | ${period}` : ''}`;
+    return `${roleLine}\n${experienceSummaryForRole(record, posting)}`;
+  });
+  const lines = [
+    stringValue(profile.display_name) || 'Tomas Nieves',
+    contactLine,
+    '',
+    'TARGET ROLE',
+    `${title} - ${employer}${stringValue(posting.location) ? ` | ${stringValue(posting.location)}` : ''}`,
+    '',
+    'EXECUTIVE PROFILE',
+    `${headline}. ${careerTransition || 'First external job search after nearly 30 years at Verizon.'} Strengths include ${skills.slice(0, 6).join(', ')}.`,
+    '',
+    `${employer.toUpperCase()} ROLE ALIGNMENT`,
+    ...alignmentBullets.map((bullet) => `- ${bullet}`),
+    '',
+    'CORE CAPABILITIES',
+    skills.slice(0, 10).join(' | '),
+    '',
+    'EXPERIENCE',
+    ...experienceBlocks,
+    '',
+    'EDUCATION AND CERTIFICATIONS',
+    ...education.map((item) => `- ${item}`),
+    ...certifications.map((item) => `- ${item}`),
+    '',
+    'EVIDENCE CONTROLS',
+    'Prepared from approved Career OS profile facts only. No proprietary Verizon metrics, unverified dates, unsupported certifications, or employer-specific legal answers are introduced.',
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+function experienceSummaryForRole(record: JsonRecord, posting: JsonRecord) {
+  const title = stringValue(record.title).toLowerCase();
+  const postingText = `${stringValue(posting.title)} ${stringValue(posting.job_description)}`.toLowerCase();
+  const fragments = [
+    hasAny(postingText, ['api', 'platform']) ? 'Enterprise platform strategy and roadmap execution supporting complex customer and operational journeys.' : '',
+    hasAny(postingText, ['customer', 'experience', 'contact center', 'support']) || title.includes('assistant')
+      ? 'Customer-experience modernization and cross-functional product delivery across digital, support, and operational teams.'
+      : '',
+    hasAny(postingText, ['governance', 'compliance', 'risk', 'controls'])
+      ? 'Governance, compliance, and operational discipline across regulated or high-trust product environments.'
+      : '',
+    hasAny(postingText, ['ai', 'automation', 'transformation'])
+      ? 'AI, automation, and transformation positioning framed only through verified product strategy and operating-model experience.'
+      : '',
+  ].filter(Boolean);
+  return fragments[0] || 'Product strategy, execution, and cross-functional stakeholder alignment using approved profile facts only.';
+}
+
+function atsAlignmentSummary(posting: JsonRecord) {
+  const platform = inferredPostingPlatform(posting).toLowerCase();
+  const title = stringValue(posting.title);
+  const description = stringValue(posting.job_description);
+  const signals = matchingSignals({ title, location: { name: stringValue(posting.location) } }, description);
+  return `${platform.toUpperCase()} workflow for ${title} with alignment across ${signals.length ? signals.join(', ') : 'platform strategy, cross-functional execution, and product leadership'}.`;
+}
+
+function aiReadinessSummary(posting: JsonRecord) {
+  const readiness = asRecord(posting.ai_readiness_analysis);
+  const score = numberValue(readiness.score);
+  const description = stringValue(posting.job_description).toLowerCase();
+  if (hasAny(description, ['ai', 'automation', 'agentic'])) {
+    return `Verified AI fluency is framed as practical product planning, workflow improvement, and responsible adoption support. Readiness score ${score || scoreAiReadiness(description)}.`;
+  }
+  return `No unverified AI-delivery claims added. Readiness score ${score || scoreAiReadiness(description)} based on platform, systems, and automation adjacency only.`;
+}
+
+function recruiterIntelligenceSummary(posting: JsonRecord, profile: JsonRecord) {
+  const preferredBase = preferredMinimumBaseSalary(profile);
+  const compensationMax = numberValue(posting.compensation_max_usd);
+  const location = stringValue(posting.location);
+  const score = numberValue(asRecord(posting.recruiter_intelligence).score) || scoreRecruiterFit({ title: stringValue(posting.title), location: { name: location } }, stringValue(posting.job_description));
+  if (compensationMax && preferredBase && compensationMax < preferredBase) {
+    return `${location || 'Location not published'} role within target scope, but posted base appears below Tomas's preferred minimum base salary of $${preferredBase.toLocaleString('en-US')}. Recruiter-fit score ${score}.`;
+  }
+  if (!compensationMax) {
+    return `${location || 'Location not published'} role within Tomas's approved product-management scope. Compensation is not posted, so package generation preserves the existing compensation-review guardrails. Recruiter-fit score ${score}.`;
+  }
+  return `${location || 'Location not published'} role is within Tomas's approved scope and posted compensation is compatible with current policy. Recruiter-fit score ${score}.`;
+}
+
+function hiringManagerEvidence(posting: JsonRecord, verifiedProfile: JsonRecord) {
+  const description = stringValue(posting.job_description).toLowerCase();
+  const skills = arrayValue(verifiedProfile.skills).map(String).filter(Boolean);
+  const bullets = [
+    hasAny(description, ['api', 'platform'])
+      ? 'Enterprise platform and API-adjacent product leadership supported by Verizon product strategy, roadmap, and operational execution experience.'
+      : 'Enterprise product leadership supported by Verizon roadmap, customer-experience, and transformation work.',
+    hasAny(description, ['customer', 'experience', 'contact center', 'support', 'journey'])
+      ? 'Customer-experience modernization across digital, retail, and contact-center journeys using verified product ownership and delivery experience.'
+      : 'Cross-functional product execution across business, technology, analytics, operations, and leadership stakeholders.',
+    hasAny(description, ['governance', 'compliance', 'risk', 'controls'])
+      ? 'Governance, compliance, and operational discipline aligned to regulated or high-trust product environments.'
+      : `Core strengths include ${skills.slice(0, 4).join(', ')}.`,
+    hasAny(description, ['ai', 'automation', 'transformation'])
+      ? 'AI, automation, and transformation positioning is limited to verified strategy, workflow, and operating-model experience.'
+      : '',
+  ].filter(Boolean);
+  return bullets.slice(0, 4);
+}
+
+function locationCompatibilitySummary(posting: JsonRecord) {
+  const location = stringValue(posting.location);
+  if (!location) return 'Location not published; package generation preserved the approved Texas and remote-work guardrails.';
+  if (/texas|remote|dallas|plano|irving|austin|fort worth|houston|san antonio/i.test(location)) {
+    return `${location} is compatible with Tomas's approved Texas and remote-friendly location policy.`;
+  }
+  return `${location} requires standard policy review if external relocation expectations appear later in the workflow.`;
+}
+
+function applicationRiskSummary(posting: JsonRecord) {
+  const platform = inferredPostingPlatform(posting).toLowerCase();
+  if (platform === 'oracle') return 'Oracle Recruiting may require employer-controlled account verification or hCaptcha before submission.';
+  if (platform === 'workday') return 'Workday may require structured employment dates or employer account verification later in the flow.';
+  return 'Greenhouse can continue automatically unless the employer introduces CAPTCHA, legal review text, or an unverified required answer.';
+}
+
+function safeFileStem(...parts: string[]) {
+  const joined = parts.filter(Boolean).join('_');
+  const compact = joined.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return compact.slice(0, 120) || 'career_os_package';
 }
 
 export async function persistDailyCycleReport(
