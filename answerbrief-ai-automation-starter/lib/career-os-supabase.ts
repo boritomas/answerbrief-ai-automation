@@ -156,8 +156,10 @@ function shouldFallbackToRest(error: unknown) {
     'connection terminated',
     'eauthquery',
     'timeout',
+    'timeout expired',
     'terminating connection',
     'connection to database not available',
+    'connect etimedout',
   ].some((needle) => message.includes(needle));
 }
 
@@ -286,8 +288,12 @@ function getPool(databaseUrl: string) {
   if (!pool) {
     pool = new Pool({
       connectionString: databaseUrl,
+      connectionTimeoutMillis: 1500,
+      idleTimeoutMillis: 5000,
       max: 5,
+      query_timeout: 4000,
       ssl: { rejectUnauthorized: false },
+      statement_timeout: 4000,
     });
   }
   return pool;
