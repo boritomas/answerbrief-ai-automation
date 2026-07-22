@@ -1774,8 +1774,8 @@ function buildOperationalTrustStatus(
     .filter((task) => stringValue(task.status) === 'open' && stringValue(task.related_application_id))
     .filter((task) => {
       const application = evidence.applications.find((item) => stringValue(item.id) === stringValue(task.related_application_id));
-      return Boolean(application)
-        && canonicalExecutionStateForApplication(application) !== 'waiting_on_tomas'
+      if (!application) return false;
+      return canonicalExecutionStateForApplication(application) !== 'waiting_on_tomas'
         && hasCompletedHumanGateEvidence(task, application, evidence.workflowEvents);
     })
     .map((task) => stringValue(task.id));
