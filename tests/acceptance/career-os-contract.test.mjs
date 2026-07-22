@@ -375,6 +375,12 @@ test('Career OS default page is candidate-focused and moves operational detail i
   assert.match(page, /Applications Attempted Today/);
   assert.match(page, /Submitted Today/);
   assert.match(page, /Total Submitted/);
+  assert.match(page, /Latest Run Work/);
+  assert.match(page, /Qualified Matches/);
+  assert.match(page, /Active Opportunities/);
+  assert.match(page, /Ready to Apply/);
+  assert.match(page, /Tasks for You/);
+  assert.match(page, /System Issues/);
   assert.match(page, /Applications Affected/);
   assert.match(page, /Verified Indicators/);
   assert.match(page, /Exact Action/);
@@ -402,7 +408,6 @@ test('Operational trust contract keeps unsupported and synthetic states out of C
   const adminPage = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'admin', 'page.tsx'), 'utf8');
   const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
 
-  assert.match(page, /trust\.verifiedCounts\.applying/);
   assert.match(page, /trust\.verifiedCounts\.systemIssues/);
   assert.match(page, /trust\.verifiedActionCenterRecords/);
   assert.match(page, /trust\.verifiedReadyToResumeRecords/);
@@ -791,13 +796,21 @@ test('Career OS dashboard metrics and daily action queue are actionable controls
   const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
 
   assert.equal(page.includes('href="/career-os/admin#daily" label="Raw Source Records"'), true);
-  assert.equal(page.includes('href="/career-os/admin#daily" label="Unique Live Roles"'), true);
-  assert.equal(page.includes('href="/career-os#applications" label="Applications Attempted Today"'), true);
-  assert.equal(page.includes('href="/career-os#applications" label="Total Submitted"'), true);
+  assert.equal(page.includes('href="/career-os?view=latest-run#latest-run-work" label="Unique Live Roles"'), true);
+  assert.equal(page.includes('href="/career-os?view=latest-run#latest-run-work" label="Applications Attempted Today"'), true);
+  assert.equal(page.includes('href="/career-os?view=submitted-history#applications" label="Total Submitted"'), true);
   assert.equal(page.includes("Review My Tasks"), true);
   assert.equal(page.includes('Career OS evaluated ${uniqueLiveRoles} unique live roles'), true);
+  assert.match(page, /Review \$\{qualifiedMatchRows\.length\} Matches/);
+  assert.match(page, /View Active Pipeline/);
+  assert.match(page, /Apply Now/);
+  assert.match(page, /Complete Task/);
+  assert.match(page, /View Blocker/);
+  assert.match(page, /Already Submitted/);
   assert.match(page, /ApplicationActionControl/);
   assert.match(page, /ReviewQueueActionControl/);
+  assert.match(page, /buildWorkflowRows/);
+  assert.match(page, /buildLatestRunSections/);
   assert.match(page, /buildTodayPriorities/);
   assert.match(page, /buildSystemNotice/);
   assert.match(page, /buildPrimaryAction/);

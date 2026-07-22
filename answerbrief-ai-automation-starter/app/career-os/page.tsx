@@ -40,6 +40,29 @@ type ActionCenterCard = {
   supportingLinks: Array<{ href: string; label: string }>;
   variant: ActionCenterVariant;
 };
+type WorkflowRow = {
+  applicationsAffected: number;
+  ats: string;
+  createdAt?: string;
+  ctaHref: string;
+  ctaLabel: string;
+  ctaVariant: 'primary' | 'secondary' | 'terminal';
+  detail: string;
+  duplicateLocked: boolean;
+  employer: string;
+  id: string;
+  isNewOpportunity: boolean;
+  isSubmitted: boolean;
+  lifecycleState: string;
+  location: string;
+  packageStatus: string;
+  qualificationReason: string;
+  readinessState: string;
+  requisitionId: string;
+  role: string;
+  score: number;
+  sourceLabel: string;
+};
 type TaskGroupType =
   | 'Employment Details'
   | 'Employer Account or Sign-In'
@@ -79,7 +102,11 @@ type TaskGroup = {
   verifiedIndicators: string[];
  };
 
-export default async function CareerOsPage() {
+export default async function CareerOsPage(
+  { searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> },
+) {
+  const params = searchParams ? await searchParams : {};
+  const activeView = firstQueryValue(params.view) || 'home';
   const status = await getCareerOsStatus();
   const trust = status.operationalTrust;
   const artifacts = status.evidence.artifacts.filter((artifact) => artifact.artifact_type === 'targeted_resume' || artifact.artifact_type === 'application_package');
@@ -99,10 +126,15 @@ export default async function CareerOsPage() {
   const candidateSummary = buildCandidateSummary(status);
   const priorities = buildTodayPriorities(status, taskGroups);
   const recentActivity = buildRecentActivity(status, submittedCards);
-  const candidatePipeline = buildCandidatePipeline(status);
+  const workflowRows = buildWorkflowRows(status, taskGroups, submittedCards);
+  const qualifiedMatchRows = workflowRows.qualifiedMatches;
+  const activeOpportunityRows = workflowRows.activeOpportunities;
+  const readyToApplyRows = workflowRows.readyToApply;
+  const submittedTodayRows = workflowRows.submittedToday;
+  const candidatePipeline = buildCandidatePipeline(status, workflowRows, taskGroups.length);
   const systemNotice = buildSystemNotice(status);
-  const opportunitySnapshot = buildCandidateOpportunitySnapshot(status);
   const primaryAction = buildPrimaryAction(status, taskGroups);
+  const latestRunSections = buildLatestRunSections(workflowRows, status);
   const navItems = [
     { href: '/career-os', label: 'Home' },
     { href: '/career-os#opportunities', label: 'Opportunities' },
@@ -149,12 +181,12 @@ export default async function CareerOsPage() {
           <p className="subhead">Career OS status: {candidateSummary.systemStatus} · Last successful run: {candidateSummary.lastSuccessfulRun} · Next scheduled run: {candidateSummary.nextScheduledRun}</p>
           {candidateSummary.dataUnavailable ? null : (
             <div className="career-os-metrics" aria-label="Career OS Today">
-              <Metric href="/career-os/admin#daily" label="Raw Source Records" value={candidateSummary.rawSourceRecords} />
-              <Metric href="/career-os/admin#daily" label="Unique Live Roles" value={candidateSummary.uniqueLiveRoles} />
-              <Metric href="/career-os#opportunities" label="Qualified Roles" value={candidateSummary.qualifiedRoles} />
-              <Metric href="/career-os#applications" label="Applications Attempted Today" value={candidateSummary.applicationsAttemptedToday} />
-              <Metric href="/career-os#applications" label="Submitted Today" value={candidateSummary.applicationsSubmittedToday} />
-              <Metric href="/career-os#applications" label="Total Submitted" value={candidateSummary.totalSubmittedApplications} />
+              <Metric ctaLabel="View Run Metrics" href="/career-os/admin#daily" label="Raw Source Records" value={candidateSummary.rawSourceRecords} />
+              <Metric ctaLabel={candidateSummary.uniqueLiveRoles > 0 ? `Review ${candidateSummary.uniqueLiveRoles} Jobs` : 'View Latest Run'} href="/career-os?view=latest-run#latest-run-work" label="Unique Live Roles" value={candidateSummary.uniqueLiveRoles} />
+              <Metric ctaLabel={`Review ${qualifiedMatchRows.length} Matches`} href="/career-os?view=qualified#qualified-matches" label="Qualified Roles" value={qualifiedMatchRows.length} />
+              <Metric ctaLabel="View Today’s Work" href="/career-os?view=latest-run#latest-run-work" label="Applications Attempted Today" value={candidateSummary.applicationsAttemptedToday} />
+              <Metric ctaLabel={submittedTodayRows.length ? 'View Today’s Submissions' : 'View Today’s Work'} href="/career-os?view=submitted-today#submitted-today" label="Submitted Today" value={candidateSummary.applicationsSubmittedToday} />
+              <Metric ctaLabel="View Application History" href="/career-os?view=submitted-history#applications" label="Total Submitted" value={candidateSummary.totalSubmittedApplications} />
             </div>
           )}
           <div className="career-os-summary">
@@ -214,10 +246,10 @@ export default async function CareerOsPage() {
         <div className="career-os-section-grid">
           <section className="career-os-panel" id="opportunities">
             <h2>Pipeline</h2>
-            <p>Only the stages that matter for your search are shown here.</p>
+            <p>Each stage opens the exact records represented by the count so Tomas can move work forward.</p>
             <div className="career-os-metrics secondary" aria-label="Career OS candidate pipeline">
               {candidatePipeline.map((item) => (
-                <Metric detail={item.detail} href={item.href} key={item.label} label={item.label} value={item.value} />
+                <Metric ctaLabel={item.ctaLabel} detail={item.detail} href={item.href} key={item.label} label={item.label} value={item.value} />
               ))}
             </div>
           </section>
@@ -227,6 +259,39 @@ export default async function CareerOsPage() {
               <p>{systemNotice}</p>
             </section>
           ) : null}
+        </div>
+      </section>
+
+      <section id="latest-run-work" className={`career-os-band ${activeView === 'latest-run' ? 'career-os-focus-band' : ''}`}>
+        <h2>Latest Run Work</h2>
+        <p>Career OS found {qualifiedMatchRows.length} qualified application-backed matches in the current pipeline. {status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 0 ? 'All current qualified work is already known, submitted, duplicated, or blocked; no net-new opportunities were added in the latest run.' : `${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new opportunities were added in the latest run.`}</p>
+        <div className="career-os-work-grid">
+          {latestRunSections.map((section) => (
+            <section className="career-os-panel" id={section.id} key={section.id}>
+              <div className="career-os-inline-header">
+                <div>
+                  <h3>{section.title}</h3>
+                  <p>{section.description}</p>
+                </div>
+                <strong>{section.rows.length}</strong>
+              </div>
+              <div className="career-os-list compact">
+                {section.rows.length ? section.rows.slice(0, 8).map((row) => (
+                  <WorkflowRowCard key={`${section.id}-${row.id}`} row={row} />
+                )) : <DetailRow detail={section.emptyDetail} label={section.title} value="0" />}
+              </div>
+            </section>
+          ))}
+        </div>
+      </section>
+
+      <section id="qualified-matches" className={`career-os-band ${activeView === 'qualified' ? 'career-os-focus-band' : ''}`}>
+        <h2>Qualified Matches</h2>
+        <p>{qualifiedMatchRows.length} qualified roles currently reconcile to persisted application-backed records. Each row shows what happens next.</p>
+        <div className="career-os-list">
+          {qualifiedMatchRows.map((row) => (
+            <WorkflowRowCard key={row.id} row={row} />
+          ))}
         </div>
       </section>
 
@@ -395,23 +460,37 @@ export default async function CareerOsPage() {
         </div>
       </section>
 
-      <section id="opportunities-list" className="career-os-band">
-        <h2>Opportunities</h2>
-        <p>{trust.verifiedCounts.opportunities} verified active opportunities currently match your policy and role band.</p>
+      <section id="opportunities-list" className={`career-os-band ${activeView === 'active-opportunities' ? 'career-os-focus-band' : ''}`}>
+        <h2>Active Opportunities</h2>
+        <p>{activeOpportunityRows.length} active, non-terminal opportunities currently match Tomas&apos;s policy and role band. Submitted and historical-only records are excluded here.</p>
         <div className="career-os-list" id="opportunity-list">
-          {opportunitySnapshot.map((opportunity) => (
-            <article className="career-os-row" key={String(opportunity.id)}>
-              <div>
-                <h3>{String(opportunity.title || opportunity.position)}</h3>
-                <p>{String(opportunity.company || opportunity.employer)} · {String(opportunity.location || 'Location not verified')}</p>
-              </div>
-              <strong>{Number(opportunity.fit_score || opportunity.match_score || 0)}%</strong>
-            </article>
+          {activeOpportunityRows.map((row) => (
+            <WorkflowRowCard key={row.id} row={row} />
           ))}
         </div>
       </section>
 
-      <section id="applications" className="career-os-band">
+      <section id="ready-to-apply" className={`career-os-band ${activeView === 'ready' ? 'career-os-focus-band' : ''}`}>
+        <h2>Ready to Apply</h2>
+        <p>{readyToApplyRows.length ? `${readyToApplyRows.length} record${readyToApplyRows.length === 1 ? ' is' : 's are'} currently execution-ready.` : 'No applications are ready to start right now.'} {readyToApplyRows.length ? 'These rows already have an approved package, no Tomas blocker, and no recorded technical issue.' : `${taskGroups.length} task${taskGroups.length === 1 ? '' : 's'} need Tomas and ${trust.verifiedCounts.systemIssues} issue${trust.verifiedCounts.systemIssues === 1 ? '' : 's'} are system-owned.`}</p>
+        <div className="career-os-list">
+          {readyToApplyRows.length ? readyToApplyRows.map((row) => (
+            <WorkflowRowCard key={row.id} row={row} />
+          )) : <DetailRow detail="No applications are ready to start. Use Today’s Tasks or System Issues to unblock the next safe applications." label="Ready to Apply" value="0" />}
+        </div>
+      </section>
+
+      <section id="submitted-today" className={`career-os-band ${activeView === 'submitted-today' ? 'career-os-focus-band' : ''}`}>
+        <h2>Submitted Today</h2>
+        <p>Only verified submissions completed during the current reporting day appear here.</p>
+        <div className="career-os-list">
+          {submittedTodayRows.length ? submittedTodayRows.map((row) => (
+            <WorkflowRowCard key={row.id} row={row} />
+          )) : <DetailRow detail="No verified submissions were completed during the current reporting day." label="Submitted Today" value="0" />}
+        </div>
+      </section>
+
+      <section id="applications" className={`career-os-band ${activeView === 'submitted-history' ? 'career-os-focus-band' : ''}`}>
         <h2>Applications</h2>
         <p>Submitted applications stay locked here so Career OS does not reopen them.</p>
         <div className="career-os-list" id="submitted-applications">
@@ -562,7 +641,7 @@ function buildPrimaryAction(status: CareerStatus, taskGroups: TaskGroup[]) {
     return { href: '/career-os/admin#system-health', label: 'View System Status' };
   }
   if (status.reviewQueue.total > 0 || status.dailyWorkflow.marketCoverage.qualifiedMatches > 0) {
-    return { href: '/career-os#opportunities-list', label: 'View New Opportunities' };
+    return { href: '/career-os?view=active-opportunities#opportunities-list', label: 'View New Opportunities' };
   }
   return { href: '/career-os#applications', label: 'View Applications' };
 }
@@ -935,14 +1014,221 @@ function buildRecentActivity(status: CareerStatus, submittedCards: ActionCenterC
   return items.slice(0, 5);
 }
 
-function buildCandidatePipeline(status: CareerStatus) {
+function buildCandidatePipeline(status: CareerStatus, workflowRows: ReturnType<typeof buildWorkflowRows>, taskCount: number) {
   const trust = status.operationalTrust;
   return [
-    { detail: 'Verified active qualified opportunities', href: '/career-os#opportunities', label: 'Opportunities', value: trust.verifiedCounts.opportunities },
-    { detail: 'Waiting for your decision', href: '/career-os#review-queue', label: 'Review', value: trust.verifiedCounts.reviewQueue },
-    { detail: 'Active execution with current worker heartbeat', href: '/career-os#active-executions', label: 'Applying', value: trust.verifiedCounts.applying },
-    { detail: 'Submitted, confirmed, and duplicate-locked', href: '/career-os#applications', label: 'Submitted', value: trust.verifiedCounts.submitted },
-    { detail: 'Interview activity recorded', href: '/career-os#interviews', label: 'Interviews', value: trust.verifiedCounts.interviews },
+    { ctaLabel: 'View Active Pipeline', detail: 'Active, non-terminal opportunities only', href: '/career-os?view=active-opportunities#opportunities-list', label: 'Active Opportunities', value: workflowRows.activeOpportunities.length },
+    { ctaLabel: 'Review Matches', detail: 'Qualified roles with persisted record-level state', href: '/career-os?view=qualified#qualified-matches', label: 'Qualified Matches', value: workflowRows.qualifiedMatches.length },
+    { ctaLabel: 'Start Applications', detail: 'Execution-ready records only', href: '/career-os?view=ready#ready-to-apply', label: 'Ready to Apply', value: workflowRows.readyToApply.length },
+    { ctaLabel: 'Review My Tasks', detail: 'Tomas-owned tasks only', href: '/career-os#action-center', label: 'Tasks for You', value: taskCount },
+    { ctaLabel: 'View System Issues', detail: 'Engineering-owned blockers only', href: '/career-os#system-issues', label: 'System Issues', value: trust.verifiedCounts.systemIssues },
+    { ctaLabel: 'View Application History', detail: 'Submitted, confirmed, and duplicate-locked', href: '/career-os?view=submitted-history#applications', label: 'Submitted', value: trust.verifiedCounts.submitted },
+  ];
+}
+
+function buildWorkflowRows(status: CareerStatus, taskGroups: TaskGroup[], submittedCards: ActionCenterCard[]) {
+  const opportunityRows = status.evidence.jobPostings.length ? status.evidence.jobPostings : status.evidence.seededOpportunities;
+  const opportunityById = new Map(opportunityRows.map((row) => [String(row.id || ''), row] as const));
+  const taskGroupByApplicationId = new Map(
+    taskGroups.flatMap((group) => group.affectedApplicationIds.map((applicationId) => [applicationId, group] as const)),
+  );
+  const confirmationHrefByApplicationId = new Map(
+    submittedCards.map((card) => [String(card.application.id), card.confirmationHref || card.supportingLinks[0]?.href || ''] as const),
+  );
+  const qualifiedMatches = status.evidence.applications.map((application) => buildQualifiedMatchRow(status, application, opportunityById.get(String(application.opportunity_id || '')), taskGroupByApplicationId.get(String(application.id || '')), confirmationHrefByApplicationId.get(String(application.id || ''))));
+  const qualifiedByOpportunityId = new Map(
+    status.evidence.applications
+      .map((application, index) => [String(application.opportunity_id || ''), qualifiedMatches[index]] as const)
+      .filter(([opportunityId]) => Boolean(opportunityId)),
+  );
+  const activeOpportunities = status.operationalTrust.verifiedOpportunityRecords.map((record) => buildActiveOpportunityRow(status, record, opportunityById.get(String(record.opportunityId || '')), qualifiedByOpportunityId.get(String(record.opportunityId || ''))));
+  const readyToApply = qualifiedMatches.filter((row) => row.ctaLabel === 'Apply Now' || row.ctaLabel === 'Start Application');
+  const submittedToday = qualifiedMatches.filter((row) => row.isSubmitted && isCurrentReportingDay(row.createdAt));
+  const technicalBlockers = qualifiedMatches.filter((row) => row.readinessState === 'Technical Blocker');
+  const waitingOnTomas = qualifiedMatches.filter((row) => row.readinessState === 'Waiting on Tomas');
+  const alreadyKnownOrMerged = qualifiedMatches.filter((row) => row.isSubmitted || row.duplicateLocked);
+
+  return {
+    activeOpportunities,
+    alreadyKnownOrMerged,
+    qualifiedMatches,
+    readyToApply,
+    submittedToday,
+    technicalBlockers,
+    waitingOnTomas,
+  };
+}
+
+function buildQualifiedMatchRow(
+  status: CareerStatus,
+  application: JsonRecord,
+  opportunity: JsonRecord | undefined,
+  taskGroup?: TaskGroup,
+  confirmationHref?: string,
+): WorkflowRow {
+  const execution = matchingApplicationExecution(status, application);
+  const raw = asRecord(application.raw_record);
+  const canonicalState = execution?.canonicalExecutionState || applicationCanonicalStateFromRaw(application);
+  const fitScore = Number(opportunity?.fit_score || opportunity?.match_score || 0);
+  const ats = String(raw.ats_platform || raw.platform || raw.ats || 'unknown').replace(/_/g, ' ').toUpperCase();
+  const requisitionId = String(
+    raw.external_requisition_id
+    || raw.requisition_id
+    || raw.ats_job_id
+    || raw.job_id
+    || application.opportunity_id
+    || 'not published',
+  );
+  const readinessState = canonicalState === 'waiting_on_tomas'
+    ? 'Waiting on Tomas'
+    : canonicalState === 'blocked_technical'
+      ? 'Technical Blocker'
+      : canonicalState === 'queued'
+        ? 'Ready to Apply'
+        : canonicalState === 'running'
+          ? 'Applying'
+          : ['confirmed', 'submitted', 'duplicate'].includes(canonicalState)
+            ? 'Submitted'
+            : 'Qualified';
+  const packageStatus = String(raw.package_status || (application.exact_resume ? 'approved_for_automation' : 'package_missing')).replace(/_/g, ' ');
+  let ctaLabel = 'View Application';
+  let ctaHref = String(raw.application_url || raw.canonical_url || raw.confirmation_url || '').trim() || `/career-os#${applicationAnchorId(application)}`;
+  let ctaVariant: WorkflowRow['ctaVariant'] = 'secondary';
+  if (readinessState === 'Waiting on Tomas' && taskGroup) {
+    ctaLabel = 'Complete Task';
+    ctaHref = `/career-os#task-group-${taskGroup.id}`;
+    ctaVariant = 'primary';
+  } else if (readinessState === 'Technical Blocker') {
+    ctaLabel = 'View Blocker';
+    ctaHref = '/career-os#system-issues';
+  } else if (readinessState === 'Ready to Apply') {
+    ctaLabel = 'Apply Now';
+    ctaVariant = 'primary';
+  } else if (readinessState === 'Applying') {
+    ctaLabel = 'View Application';
+  } else if (['confirmed', 'submitted', 'duplicate'].includes(canonicalState)) {
+    ctaLabel = 'Already Submitted';
+    ctaHref = confirmationHref || ctaHref || '/career-os#applications';
+    ctaVariant = 'terminal';
+  }
+
+  return {
+    applicationsAffected: 1,
+    ats,
+    createdAt: String(application.updated_at || application.created_at || ''),
+    ctaHref,
+    ctaLabel,
+    ctaVariant,
+    detail: execution?.reason || String(application.next_action || 'Qualified record is persisted in Career OS.'),
+    duplicateLocked: canonicalState === 'duplicate' || raw.duplicate_locked === true,
+    employer: String(application.employer || opportunity?.company || 'Employer'),
+    id: `qualified-${String(application.id || application.opportunity_id || slug(`${application.employer}-${application.position}`))}`,
+    isNewOpportunity: false,
+    isSubmitted: ['confirmed', 'submitted', 'duplicate'].includes(canonicalState),
+    lifecycleState: String(application.lifecycle_stage || canonicalState).replace(/_/g, ' '),
+    location: String(opportunity?.location || raw.location || 'Location not verified'),
+    packageStatus,
+    qualificationReason: qualificationReasonText(opportunity || application),
+    readinessState,
+    requisitionId,
+    role: String(application.position || opportunity?.title || 'Role'),
+    score: fitScore,
+    sourceLabel: 'Qualified Match',
+  };
+}
+
+function buildActiveOpportunityRow(
+  status: CareerStatus,
+  record: CareerStatus['operationalTrust']['verifiedOpportunityRecords'][number],
+  opportunity: JsonRecord | undefined,
+  qualifiedMatch?: WorkflowRow,
+): WorkflowRow {
+  if (qualifiedMatch) {
+    return {
+      ...qualifiedMatch,
+      ctaHref: qualifiedMatch.ctaHref || '/career-os?view=qualified#qualified-matches',
+      id: `active-${String(record.opportunityId || record.id)}`,
+      sourceLabel: 'Active Opportunity',
+    };
+  }
+  const raw = asRecord(opportunity?.raw_record);
+  const reviewDecision = String(raw.review_decision || '').toLowerCase();
+  const hasApprovedPackage = Boolean(raw.package_status || raw.resume_path || raw.approved_resume_local_path);
+  const ctaLabel = reviewDecision === 'approve'
+    ? hasApprovedPackage ? 'Start Application' : 'Prepare Application'
+    : 'Review Opportunity';
+  return {
+    applicationsAffected: 0,
+    ats: String(raw.ats_platform || raw.ats || 'unknown').replace(/_/g, ' ').toUpperCase(),
+    createdAt: String(opportunity?.created_at || opportunity?.updated_at || ''),
+    ctaHref: String(opportunity?.canonical_url || raw.application_url || '').trim() || `/career-os#review-queue`,
+    ctaLabel,
+    ctaVariant: ctaLabel === 'Review Opportunity' ? 'secondary' : 'primary',
+    detail: String(record.reasoning || opportunity?.status || 'Active canonical opportunity in the current pipeline.'),
+    duplicateLocked: false,
+    employer: record.employer,
+    id: `active-${String(record.opportunityId || record.id)}`,
+    isNewOpportunity: false,
+    isSubmitted: false,
+    lifecycleState: String(opportunity?.status || 'active').replace(/_/g, ' '),
+    location: String(opportunity?.location || 'Location not verified'),
+    packageStatus: hasApprovedPackage ? 'package ready' : 'package needed',
+    qualificationReason: qualificationReasonText(opportunity || record),
+    readinessState: ctaLabel === 'Start Application' ? 'Ready to Apply' : ctaLabel === 'Prepare Application' ? 'Package Needed' : 'Needs Review',
+    requisitionId: String(record.requisitionId || opportunity?.external_requisition_id || 'not published'),
+    role: record.role,
+    score: Number(opportunity?.fit_score || opportunity?.match_score || 0),
+    sourceLabel: 'Active Opportunity',
+  };
+}
+
+function buildLatestRunSections(workflowRows: ReturnType<typeof buildWorkflowRows>, status: CareerStatus) {
+  return [
+    {
+      description: 'Qualified roles in the current persisted application pipeline.',
+      emptyDetail: 'No qualified application-backed rows are currently persisted.',
+      id: 'latest-qualified',
+      rows: workflowRows.qualifiedMatches,
+      title: 'Qualified Matches',
+    },
+    {
+      description: 'Applications that can safely start now without a Tomas blocker or a technical blocker.',
+      emptyDetail: 'No applications are ready to start right now.',
+      id: 'latest-ready',
+      rows: workflowRows.readyToApply,
+      title: 'Ready to Apply',
+    },
+    {
+      description: 'Human-only actions that Tomas must complete before supported automation can continue.',
+      emptyDetail: 'No Tomas-owned tasks are currently blocking applications.',
+      id: 'latest-tasks',
+      rows: workflowRows.waitingOnTomas,
+      title: 'Waiting on Tomas',
+    },
+    {
+      description: 'Engineering-owned blockers that do not require Tomas action.',
+      emptyDetail: 'No technical blockers are currently recorded for these qualified matches.',
+      id: 'latest-blockers',
+      rows: workflowRows.technicalBlockers,
+      title: 'Technical Blockers',
+    },
+    {
+      description: 'Verified submissions completed during the current reporting day.',
+      emptyDetail: 'No submissions were recorded today.',
+      id: 'latest-submitted',
+      rows: workflowRows.submittedToday,
+      title: 'Submitted Today',
+    },
+    {
+      description: status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 0
+        ? 'These qualified roles were already known, submitted, or otherwise merged into existing pipeline records, which is why no new opportunities were created.'
+        : 'These roles are already represented in Career OS and did not create new opportunity rows in the latest run.'
+      ,
+      emptyDetail: 'No already-known or merged qualified records were detected.',
+      id: 'latest-known',
+      rows: workflowRows.alreadyKnownOrMerged,
+      title: 'Already Known or Merged',
+    },
   ];
 }
 
@@ -959,25 +1245,32 @@ function buildSystemNotice(status: CareerStatus) {
   return '';
 }
 
-function buildCandidateOpportunitySnapshot(status: CareerStatus) {
-  const verifiedIds = new Set(
-    status.operationalTrust.verifiedOpportunityRecords
-      .map((record) => String(record.opportunityId || ''))
-      .filter(Boolean),
-  );
-  const opportunities = status.evidence.jobPostings.length ? status.evidence.jobPostings : status.evidence.seededOpportunities;
-  return opportunities
-    .filter((opportunity) => verifiedIds.has(String(opportunity.id || '')))
-    .slice(0, 6);
+function qualificationReasonText(record: unknown) {
+  const data = asRecord(record);
+  return String(
+    data.highestReason
+    || data.qualification_reason
+    || data.normalized_description
+    || data.reasoning
+    || 'Qualified for Tomas’s target product-management profile.',
+  ).slice(0, 180);
 }
 
-function Metric({ detail, href, label, value }: { detail?: string; href?: string; label: string; value: number }) {
+function isCurrentReportingDay(value: unknown) {
+  if (!value) return false;
+  const date = new Date(String(value));
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' });
+  return formatter.format(date) === formatter.format(now);
+}
+
+function Metric({ ctaLabel, detail, href, label, value }: { ctaLabel?: string; detail?: string; href?: string; label: string; value: number }) {
   const content = (
     <>
       <strong>{value}</strong>
       <span>{label}</span>
       {detail ? <small>{detail}</small> : null}
-      <em>{href ? 'Open' : 'Status'}</em>
+      <em>{href ? (ctaLabel || 'View') : 'Status'}</em>
     </>
   );
 
@@ -996,6 +1289,24 @@ function Metric({ detail, href, label, value }: { detail?: string; href?: string
   );
 }
 
+function WorkflowRowCard({ row }: { row: WorkflowRow }) {
+  return (
+    <article className="career-os-row career-os-workflow-row" id={row.id}>
+      <div>
+        <h3>{row.employer} · {row.role}</h3>
+        <p>{row.location} · Requisition {row.requisitionId || 'not published'} · ATS {row.ats}</p>
+        <p>Fit {row.score} · {row.qualificationReason}</p>
+        <p>{row.readinessState} · {row.lifecycleState} · Package {row.packageStatus}{row.duplicateLocked ? ' · duplicate lock active' : ''}</p>
+        <p>{row.detail}</p>
+      </div>
+      <div className="career-os-row-actions">
+        <span className={`career-os-status-pill ${row.ctaVariant === 'terminal' ? 'terminal' : row.ctaVariant === 'secondary' ? 'secondary' : ''}`}>{row.sourceLabel}</span>
+        <a className={`button ${row.ctaVariant === 'secondary' ? 'secondary' : row.ctaVariant === 'terminal' ? 'ghost' : 'primary'}`} href={row.ctaHref}>{row.ctaLabel}</a>
+      </div>
+    </article>
+  );
+}
+
 function DetailRow({ detail, id, label, value }: { detail?: string; id?: string; label: string; value: string }) {
   return (
     <article className="career-os-row" id={id}>
@@ -1006,6 +1317,11 @@ function DetailRow({ detail, id, label, value }: { detail?: string; id?: string;
       <span>{value}</span>
     </article>
   );
+}
+
+function firstQueryValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] || '';
+  return value || '';
 }
 
 function formatDate(value: unknown) {
