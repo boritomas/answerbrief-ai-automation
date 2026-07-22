@@ -288,6 +288,26 @@ async function captureConfirmation(context, page, task, runtime, adapterId) {
 
 async function fillGreenhouseForm(page, task, runtime) {
   const context = await resolveGreenhouseContext(page);
+  const locationText = [task.candidate.city, task.candidate.stateOrProvince].filter(Boolean).join(', ');
+  await fillInputBySelectors(context, [
+    'input[id*="legal_first_name" i]',
+    'input[placeholder="Legal First Name" i]',
+  ], task.candidate.firstName);
+  await fillInputBySelectors(context, [
+    'input[id*="legal_last_name" i]',
+    'input[placeholder="Legal Last Name" i]',
+  ], task.candidate.lastName);
+  await fillInputBySelectors(context, [
+    'input[type="email"]',
+    'input[name*="[email_value]" i]',
+  ], task.candidate.email);
+  await fillInputBySelectors(context, [
+    'input[type="tel"]',
+    'input[name*="[phone_value]" i]',
+  ], task.candidate.phone);
+  await fillInputBySelectors(context, [
+    'input[placeholder="City, State" i]',
+  ], locationText);
   await fillInputFromLabel(context, /first name/i, task.candidate.firstName);
   await fillInputFromLabel(context, /last name/i, task.candidate.lastName);
   await fillInputFromLabel(context, /preferred first name|preferred name/i, task.candidate.preferredName);

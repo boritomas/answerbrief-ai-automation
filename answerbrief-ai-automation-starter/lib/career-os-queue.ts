@@ -141,7 +141,8 @@ const HUMAN_BLOCKER_TERMS = [
 ];
 
 const TECHNICAL_BLOCKER_TERMS = [
-  'technical',
+  'technical blocker',
+  'technical failure',
   'upload_gate',
   'unsupported',
   'file-upload limitation',

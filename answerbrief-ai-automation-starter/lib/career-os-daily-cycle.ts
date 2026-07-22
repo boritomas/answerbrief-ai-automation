@@ -1447,7 +1447,7 @@ function canonicalExecutionStateForApplication(application: JsonRecord): Canonic
   if (hasAny(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
   if (hasAny(text, ['failed', 'error'])) return 'failed';
   if (hasAny(text, ['running'])) return 'running';
-  if (hasAny(text, ['technical', 'upload_gate', 'browser'])) return 'blocked_technical';
+  if (hasAny(text, ['technical blocker', 'technical failure', 'upload_gate', 'browser_worker_blocked_technical', 'unsupported browser', 'unsupported ats'])) return 'blocked_technical';
   if (hasAny(text, ['compensation_unknown', 'compensation review', 'total_compensation', 'desired total compensation', 'compensation'])) return 'waiting_on_tomas';
   if (hasAny(text, ['legal', 'privacy', 'policy', 'approval', 'attestation', 'self-identification', 'employment_start_month', 'account', 'mfa', 'captcha', 'identity'])) return 'waiting_on_tomas';
   if (hasAny(text, ['queued', 'ready_for_automation', 'package_ready', 'qualified_pending_application', 'application_started', 'resumable'])) return 'queued';

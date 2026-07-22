@@ -143,6 +143,16 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
       valueFrom: 'candidate.city',
     },
     {
+      key: 'location',
+      kind: 'text',
+      matchers: [/^location$/i, /^location\b/i],
+      resolve: ({ context, field }) => {
+        const label = clean(field?.label).toLowerCase();
+        if (label.includes('city')) return context.candidate.city;
+        return [context.candidate.city, context.candidate.stateOrProvince].filter(Boolean).join(', ');
+      },
+    },
+    {
       key: 'state',
       kind: 'select',
       matchers: [/^state$/i, /state or canadian province/i],
