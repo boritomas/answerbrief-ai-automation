@@ -733,6 +733,7 @@ function buildInlinePackageArtifacts({
   const reusable = asRecord(verifiedProfile.reusable_application_answers);
   const title = stringValue(posting.title) || 'Role';
   const employer = stringValue(posting.company) || 'Employer';
+  const postingId = stringValue(posting.id);
   const requisition = stringValue(posting.external_requisition_id);
   const canonicalUrl = stringValue(posting.canonical_url);
   const platform = inferredPostingPlatform(posting).toLowerCase();
@@ -816,7 +817,7 @@ function buildInlinePackageArtifacts({
     packageArtifact: {
       id: deterministicUuid(`career-os-inline-package:${applicationId}:${opportunityId}:application_package`),
       owner_email: ownerEmail,
-      opportunity_id: opportunityId,
+      opportunity_id: postingId,
       application_id: applicationId,
       artifact_type: 'application_package',
       filename: `${safeFileStem(employer, title, requisition || stringValue(posting.id))}_application_package.json`,
@@ -844,7 +845,7 @@ function buildInlinePackageArtifacts({
     resumeArtifact: {
       id: deterministicUuid(`career-os-inline-package:${applicationId}:${opportunityId}:targeted_resume`),
       owner_email: ownerEmail,
-      opportunity_id: opportunityId,
+      opportunity_id: postingId,
       application_id: applicationId,
       artifact_type: 'targeted_resume',
       filename: `${safeFileStem(employer, title, 'Tomas_Nieves')}.txt`,
