@@ -1540,7 +1540,7 @@ function buildAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBa
       .map((item) => stringValue(item.application.id))
       .filter(Boolean),
   );
-  const rows = canonical
+  const rows = dedupeAuthoritativeLedgerRows(canonical
     .filter((item) => includeCanonicalOpportunityInLedger(item))
     .map((item) => authoritativeLedgerRowForCanonical(
       item,
@@ -1549,7 +1549,7 @@ function buildAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBa
       profileReady,
       canonicalSubmittedApplicationIds,
       confirmedApplicationIds,
-    ));
+    )));
 
   const counts = {
     submitted: rows.filter((row) => row.outcome === 'submitted').length,
@@ -1669,6 +1669,34 @@ function authoritativeLedgerRowForCanonical(
     technicalBlockerStatus: technicalBlocked ? 'blocked' : 'none',
     tomasTaskStatus: needsTomas ? 'needs_tomas' : 'none',
   };
+}
+
+function dedupeAuthoritativeLedgerRows(rows: AuthoritativeLedgerRow[]) {
+  const bestByKey = new Map<string, AuthoritativeLedgerRow>();
+
+  for (const row of rows) {
+    const key = row.outcome === 'submitted' && row.linkedApplicationId
+      ? `submitted:${row.linkedApplicationId}`
+      : row.canonicalOpportunityId;
+    const existing = bestByKey.get(key);
+    if (!existing || authoritativeLedgerRowRank(row) > authoritativeLedgerRowRank(existing)) {
+      bestByKey.set(key, row);
+    }
+  }
+
+  return Array.from(bestByKey.values());
+}
+
+function authoritativeLedgerRowRank(row: AuthoritativeLedgerRow) {
+  let rank = 0;
+  if (row.outcome === 'submitted') rank += 100;
+  if (row.confirmationEvidence) rank += 20;
+  if (row.atsSupportState === 'supported') rank += 10;
+  if (row.opportunityStatus === 'submitted') rank += 5;
+  if (row.opportunityStatus === 'duplicate_locked') rank += 4;
+  if (row.opportunityStatus === 'externally_submitted_manual_attestation') rank += 3;
+  rank += row.evidenceReferences.length;
+  return rank;
 }
 
 function determineLedgerOutcome(input: {
