@@ -1736,29 +1736,31 @@ function buildDiscoveryTruthStatus(
   const postingsReviewed = numberValue(evidence.latestSourceRun?.number_reviewed);
   const postingsAccepted = numberValue(evidence.latestSourceRun?.number_accepted);
   const sourceRunStatus = stringValue(evidence.latestSourceRun?.status) || undefined;
+  const currentRunCanonicalOpportunities = buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd)
+    .filter((item) => canonicalOpportunitySourceRunId(item, evidence) === authoritativeRunId);
   const currentRunQualifiedRows = authoritativeLedger.rows.filter((row) => row.currentRunId === authoritativeRunId);
   const currentRunQualifiedOpportunityIds = currentRunQualifiedRows.map((row) => row.canonicalOpportunityId);
   const currentRunQualifiedOpportunitiesLinked = currentRunQualifiedRows.filter((row) => Boolean(row.currentRunId)).length;
+  const currentRunUniqueQualifiedCount = currentRunCanonicalOpportunities.length;
   const currentRunMetricsOnly = Boolean(
     authoritativeRunId
     && postingsReviewed > 0
-    && currentRunQualifiedRows.length === postingsAccepted
+    && currentRunQualifiedRows.length === currentRunUniqueQualifiedCount
+    && currentRunQualifiedOpportunitiesLinked === currentRunQualifiedRows.length
   );
   const historicalContaminationDetected = Boolean(
     authoritativeRunId
-    && postingsAccepted > 0
-    && currentRunQualifiedRows.length !== postingsAccepted
+    && currentRunQualifiedRows.length !== currentRunUniqueQualifiedCount
   );
   const reasons: string[] = [];
 
   void canonicalRelease;
-  void preferredMinimumBaseSalaryUsd;
 
   if (!authoritativeRunId) reasons.push('missing_authoritative_run_id');
   if (postingsReviewed <= 0) reasons.push('latest_run_review_count_missing');
   if (postingsAccepted <= 0) reasons.push('latest_run_accept_count_missing');
   if (!currentRunQualifiedRows.length) reasons.push('no_qualified_opportunities_linked_to_latest_run');
-  if (currentRunQualifiedRows.length !== postingsAccepted) reasons.push('qualified_opportunity_count_does_not_match_latest_run_accept_count');
+  if (currentRunQualifiedRows.length !== currentRunUniqueQualifiedCount) reasons.push('qualified_opportunity_count_does_not_match_latest_run_unique_canonical_scope');
   if (currentRunQualifiedOpportunitiesLinked !== currentRunQualifiedRows.length) reasons.push('one_or_more_current_run_qualified_opportunities_missing_source_run_link');
 
   return {
