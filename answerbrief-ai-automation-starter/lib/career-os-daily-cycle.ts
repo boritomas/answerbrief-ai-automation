@@ -548,7 +548,7 @@ function buildAutoApplyPromotionRows(
         match_score: numberValue(posting.fit_score) || null,
         recommendation: 'Prepared for immediate autonomous execution using approved package artifacts.',
         status: 'approved_pending_application',
-        next_action: 'Standing auto-apply policy promoted this packaged discovery into the autonomous queue.',
+        next_action: 'Career OS promoted this packaged discovery into the autonomous queue.',
         discovered_at: stringValue(posting.created_at) || now,
         updated_at: now,
         raw_record: {
@@ -573,7 +573,7 @@ function buildAutoApplyPromotionRows(
       lifecycle_stage: 'qualified_pending_application',
       confirmation_number: null,
       submission_evidence: null,
-      next_action: 'Standing auto-apply policy promoted this packaged discovery into the autonomous queue.',
+      next_action: 'Career OS promoted this packaged discovery into the autonomous queue.',
       audit_timeline: [{
         at: now,
         event: 'auto_apply_discovery_promoted',
