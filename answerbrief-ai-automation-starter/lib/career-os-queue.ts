@@ -571,10 +571,12 @@ function hasResolvedLegalApproval(application: JsonRecord) {
 
 function recoverableLegacyAdapterState(application: JsonRecord): QueueState | null {
   const text = applicationText(application);
-  if (!text.includes('does not yet have an ats adapter for platform')) return null;
   const raw = asRecord(application.raw_record);
   const platform = stringValue(raw.platform || raw.ats_platform).toLowerCase();
   if (!browserWorkerPlatformSupported(platform)) return null;
+  const recoverableOracleApplyFlow = platform.includes('oracle')
+    && text.includes('oracle adapter could not open the employer apply flow from the public job page');
+  if (!text.includes('does not yet have an ats adapter for platform') && !recoverableOracleApplyFlow) return null;
   return hasResumeOrPackage(application) ? 'package_ready' : 'qualified';
 }
 

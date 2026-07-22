@@ -552,6 +552,7 @@ test('Oracle browser execution path is supported and can stop at the employer ve
   assert.match(adapterSource, /primary-email/);
   assert.match(adapterSource, /h-captcha-response/);
   assert.match(adapterSource, /email-authentication step/);
+  assert.match(queueSource, /oracle adapter could not open the employer apply flow from the public job page/);
   assert.match(statusSource, /platform\.includes\('oracle'\)\) return 'supported'/);
   assert.match(queueSource, /does not yet have an ats adapter for platform/);
   assert.match(queueSource, /package_ready' : 'qualified'/);
