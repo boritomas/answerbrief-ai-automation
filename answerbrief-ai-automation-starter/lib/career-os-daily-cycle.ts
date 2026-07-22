@@ -1583,7 +1583,7 @@ function sleep(ms: number) {
 
 function normalizeUpsertRows(rows: JsonRecord | JsonRecord[]) {
   if (!Array.isArray(rows)) return rows;
-  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(asRecord(row)))));
+  const columns = allowedColumnsForTable(rows);
   return rows.map((row) => {
     const record = asRecord(row);
     return Object.fromEntries(columns.map((column) => [
@@ -1591,6 +1591,43 @@ function normalizeUpsertRows(rows: JsonRecord | JsonRecord[]) {
       Object.prototype.hasOwnProperty.call(record, column) ? record[column] ?? null : null,
     ]));
   });
+}
+
+function allowedColumnsForTable(rows: JsonRecord[]) {
+  const discoveredColumns = Array.from(new Set(rows.flatMap((row) => Object.keys(asRecord(row)))));
+  if (!rows.length) return discoveredColumns;
+  const sample = asRecord(rows[0]);
+  if (typeof sample.company === 'string' && typeof sample.title === 'string' && Object.prototype.hasOwnProperty.call(sample, 'canonical_url')) {
+    return [
+      'id',
+      'source_run_id',
+      'owner_email',
+      'company',
+      'title',
+      'location',
+      'work_arrangement',
+      'compensation_min_usd',
+      'compensation_max_usd',
+      'compensation_text',
+      'canonical_url',
+      'external_requisition_id',
+      'job_description',
+      'normalized_description',
+      'posting_validation_status',
+      'last_checked_at',
+      'raw_record',
+      'fit_score',
+      'ats_analysis',
+      'ai_readiness_analysis',
+      'recruiter_intelligence',
+      'hiring_manager_evidence_matrix',
+      'selected_for_pilot',
+      'status',
+      'created_at',
+      'updated_at',
+    ];
+  }
+  return discoveredColumns;
 }
 
 function scorePosting(job: JsonRecord, description: string) {
