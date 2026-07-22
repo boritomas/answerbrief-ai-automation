@@ -487,9 +487,6 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
     await persistRows('career_os_job_postings', postingsToPersist);
   }
   const generatedArtifacts = buildAutoApplyPackageArtifacts(ownerEmail, qualifiedPostings, evidence, executedAt);
-  if (generatedArtifacts.length) {
-    await persistRows('career_os_artifacts', generatedArtifacts);
-  }
   const promoted = buildAutoApplyPromotionRows(ownerEmail, qualifiedPostings, {
     ...evidence,
     artifacts: (evidence?.artifacts || []).concat(generatedArtifacts),
@@ -499,6 +496,9 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
   }
   if (promoted.applications.length) {
     await persistRows('career_os_applications', promoted.applications);
+  }
+  if (generatedArtifacts.length) {
+    await persistRows('career_os_artifacts', generatedArtifacts);
   }
 
   return {
