@@ -78,6 +78,7 @@ export type CareerOsStatus = {
   };
   employmentModel: EmploymentModelStatus;
   atsEmploymentMapper: AtsEmploymentMapperStatus;
+  operationalTrust: OperationalTrustStatus;
   productionEvidenceReady: boolean;
   blocker?: string;
   evidence: CareerOsEvidence;
@@ -123,6 +124,102 @@ export type ReviewQueueStatus = {
   items: ReviewQueueItem[];
   oldestWaitingRole?: string;
   total: number;
+};
+
+export type OperationalTrustClassification =
+  | 'verified'
+  | 'inferred'
+  | 'stale'
+  | 'synthetic'
+  | 'duplicated'
+  | 'unsupported'
+  | 'terminal_but_incorrectly_active'
+  | 'missing_evidence';
+
+export type OperationalTrustCounts = {
+  actionCenter: number;
+  applying: number;
+  interviews: number;
+  opportunities: number;
+  readyToResume: number;
+  reviewQueue: number;
+  submitted: number;
+  systemIssues: number;
+};
+
+export type OperationalTrustRecord = {
+  applicationId?: string;
+  blockerEvidence?: string;
+  canonicalOpportunityId?: string;
+  checkpointAgeHours?: number;
+  checkpointId?: string;
+  checkpointStorageLocation?: string;
+  classification: OperationalTrustClassification;
+  confirmationTimestamp?: string;
+  confirmationType?: string;
+  currentStep?: string;
+  currentUrl?: string;
+  duplicateLock: boolean;
+  employer: string;
+  executionId?: string;
+  gateId?: string;
+  gateType?: string;
+  humanAction?: string;
+  id: string;
+  lastHeartbeatAt?: string;
+  lastValidatedAt?: string;
+  missingEvidence: string[];
+  opportunityId?: string;
+  reasoning: string;
+  requisitionId?: string;
+  role: string;
+  stale: boolean;
+};
+
+export type OperationalTrustIssue = {
+  actualValue: number;
+  affectedRecordIds: string[];
+  evidence: string;
+  expectedValue: number;
+  id: string;
+  rule: string;
+  severity: 'high' | 'low' | 'medium';
+};
+
+export type OperationalTrustStatus = {
+  applicationsWithoutCheckpoints: string[];
+  beforeCounts: OperationalTrustCounts;
+  candidateModeUnsupportedClaimsRemoved: boolean;
+  checkpointsWithoutExecutions: string[];
+  completedGatesStillActive: string[];
+  consistencyChecksReady: boolean;
+  dashboardCountMismatches: OperationalTrustIssue[];
+  executionsWithoutHeartbeats: string[];
+  stateInspectorReady: boolean;
+  staleRecordIds: string[];
+  submittedRecords: OperationalTrustRecord[];
+  syntheticRecordIds: string[];
+  systemIssueRecords: OperationalTrustRecord[];
+  terminalApplicationsIncorrectlyActionable: string[];
+  trustReport: {
+    confidenceScore: number;
+    inconsistenciesOpen: number;
+    staleRecordsExcluded: number;
+    unsupportedClaimsRemoved: number;
+    verifiedActionCenterItems: number;
+    verifiedActiveExecutions: number;
+    verifiedOpportunities: number;
+    verifiedResumableCheckpoints: number;
+    verifiedReviewQueueItems: number;
+    verifiedSubmittedApplications: number;
+  };
+  unsupportedRecordIds: string[];
+  verifiedActionCenterRecords: OperationalTrustRecord[];
+  verifiedApplyingRecords: OperationalTrustRecord[];
+  verifiedCounts: OperationalTrustCounts;
+  verifiedOpportunityRecords: OperationalTrustRecord[];
+  verifiedReadyToResumeRecords: OperationalTrustRecord[];
+  verifiedReviewRecords: OperationalTrustRecord[];
 };
 
 export type CanonicalEmploymentRecord = {
@@ -513,6 +610,26 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
   const employmentModel = buildEmploymentModel(evidence);
   const atsEmploymentMapper = buildAtsEmploymentMapperStatus(evidence, employmentModel);
   const verificationRows = buildVerificationRows(evidence, supabaseConnected, dailyWorkflow, duplicateSafety);
+  const operationalTrust = buildOperationalTrustStatus(
+    evidence,
+    buildCanonicalOpportunityList(evidence, compensationPreference.preferredMinimumBaseSalaryUsd),
+    reviewQueue,
+    applicationExecution,
+    {
+      actionCenter: applications.filter((application) => {
+        const state = canonicalExecutionStateForApplication(application);
+        return !['confirmed', 'submitted', 'duplicate', 'inactive', 'ineligible'].includes(state);
+      }).length,
+      applying: canonicalRelease.inProgress,
+      interviews: dailyWorkflow.pipelineHealth.interviews,
+      opportunities: canonicalRelease.activeQualifiedOpportunities,
+      readyToResume: canonicalRelease.readyForAutomation,
+      reviewQueue: reviewQueue.total,
+      submitted: submittedApplications,
+      systemIssues: applicationExecution.queueStates.blocked_technical,
+    },
+    new Date(),
+  );
 
   return {
     environment: supabaseConnected ? 'production' : 'unconfigured',
@@ -559,6 +676,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates, applicationExecution),
     employmentModel,
     atsEmploymentMapper,
+    operationalTrust,
     productionEvidenceReady: supabaseConnected,
     blocker: supabaseConnected ? undefined : evidence.diagnostics[0],
     evidence,
@@ -1378,6 +1496,515 @@ function canonicalGroupReviewDecision(records: NormalizedOpportunity[]): ReviewQ
   if (decisions.includes('reject_similar')) return 'reject_similar';
   if (decisions.includes('approve')) return 'approve';
   return 'none';
+}
+
+function buildOperationalTrustStatus(
+  evidence: CareerOsEvidence,
+  canonicalOpportunities: CanonicalOpportunity[],
+  reviewQueue: ReviewQueueStatus,
+  applicationExecution: ApplicationExecutionStatus,
+  beforeCounts: OperationalTrustCounts,
+  generatedAt: Date,
+): OperationalTrustStatus {
+  const isSyntheticId = (value: unknown) => stringValue(value).startsWith('last-known-good');
+  const syntheticRecordIds = [
+    ...evidence.jobPostings,
+    ...evidence.seededOpportunities,
+    ...evidence.applications,
+  ]
+    .map((record) => stringValue(record.id))
+    .filter((id) => id.startsWith('last-known-good'));
+  const activeCanonicalOpportunities = canonicalOpportunities.filter((item) => item.className === 'active_retained');
+  const verifiedOpportunityRecords = activeCanonicalOpportunities
+    .filter((item) => item.sourceOpportunityIds.size > 0)
+    .filter((item) => !isSyntheticId(item.key) && !Array.from(item.sourceOpportunityIds).some((id) => isSyntheticId(id)))
+    .map((item) => ({
+      canonicalOpportunityId: item.key,
+      classification: 'verified' as const,
+      duplicateLock: item.submitted,
+      employer: item.preferredRecord.employer,
+      id: item.key,
+      missingEvidence: [],
+      opportunityId: Array.from(item.sourceOpportunityIds)[0],
+      reasoning: 'Canonical opportunity has persisted source evidence and an active lifecycle state.',
+      requisitionId: item.preferredRecord.requisitionId,
+      role: item.preferredRecord.position,
+      stale: false,
+    }));
+  const verifiedReviewRecords = reviewQueue.items
+    .filter((item) => !isSyntheticId(item.opportunityId) && !isSyntheticId(item.applicationId))
+    .map((item) => ({
+      applicationId: item.applicationId,
+      canonicalOpportunityId: item.opportunityId,
+      classification: 'verified' as const,
+      duplicateLock: item.duplicateLocked,
+      employer: item.employer,
+      id: item.opportunityId,
+      missingEvidence: [],
+      opportunityId: item.opportunityId,
+      reasoning: 'Review item is unique, persisted, and still awaiting Tomas review.',
+      requisitionId: item.requisitionId,
+      role: item.title,
+      stale: false,
+    }));
+  const activeApplications = evidence.applications.filter((application) => {
+    const state = canonicalExecutionStateForApplication(application);
+    return !isSyntheticId(application.id) && !['confirmed', 'submitted', 'duplicate', 'inactive', 'ineligible'].includes(state);
+  });
+  const terminalApplications = evidence.applications.filter((application) => {
+    const state = canonicalExecutionStateForApplication(application);
+    return !isSyntheticId(application.id) && ['confirmed', 'submitted', 'duplicate'].includes(state);
+  });
+  const waitingExecutions = applicationExecution.exactStatuses.filter((execution) => execution.canonicalExecutionState === 'waiting_on_tomas');
+  const verifiedActionCenterRecords = waitingExecutions.flatMap((execution) => {
+    const application = evidence.applications.find((item) => stringValue(item.id) === execution.applicationId);
+    if (!application) return [];
+    const latestWaitingEvent = latestWorkflowEventForApplication(
+      evidence.workflowEvents,
+      stringValue(application.id),
+      ['waiting_on_tomas'],
+      ['queue_blocker_verified', 'cta_inspected', 'human_only_gate'],
+    );
+    if (!latestWaitingEvent) return [];
+    const latestResumeEvent = latestWorkflowEventForApplication(
+      evidence.workflowEvents,
+      stringValue(application.id),
+      ['queued', 'running', 'submitted', 'confirmed'],
+      ['tomas_answer_saved', 'human_step_completed_resume_requested', 'queue_queued', 'queue_running', 'submission_confirmed'],
+    );
+    if (latestResumeEvent && isoMillis(latestResumeEvent.occurred_at) >= isoMillis(latestWaitingEvent.occurred_at)) {
+      return [];
+    }
+    const raw = asRecord(application.raw_record);
+    const blockerEvidence = stringValue(latestWaitingEvent.evidence_text || execution.reason);
+    const lastValidatedAt = stringValue(latestWaitingEvent.occurred_at || application.updated_at);
+    const missingEvidence = [];
+    if (!blockerEvidence) missingEvidence.push('Blocker evidence');
+    if (!execution.cta?.whatTomasMustDo) missingEvidence.push('Exact human action');
+    if (isGenericCheckpointReason(blockerEvidence)) missingEvidence.push('Specific blocker text');
+
+    const record: OperationalTrustRecord = {
+      applicationId: stringValue(application.id) || undefined,
+      blockerEvidence: blockerEvidence || undefined,
+      canonicalOpportunityId: stringValue(application.opportunity_id) || undefined,
+      checkpointAgeHours: hoursBetween(lastValidatedAt, generatedAt.toISOString()),
+      checkpointId: explicitCheckpointId(application) || undefined,
+      checkpointStorageLocation: checkpointStorageLocation(application) || undefined,
+      classification: missingEvidence.length ? 'missing_evidence' : 'verified',
+      currentStep: currentApplicationStep(application),
+      currentUrl: currentApplicationUrl(application) || undefined,
+      duplicateLock: false,
+      employer: execution.employer,
+      executionId: stringValue(application.id) || undefined,
+      gateId: stringValue(latestWaitingEvent.id) || undefined,
+      gateType: inferGateType(execution, application),
+      humanAction: execution.cta.whatTomasMustDo || undefined,
+      id: stringValue(application.id),
+      lastHeartbeatAt: lastHeartbeatAt(application) || undefined,
+      lastValidatedAt: lastValidatedAt || undefined,
+      missingEvidence,
+      opportunityId: stringValue(application.opportunity_id) || undefined,
+      reasoning: missingEvidence.length
+        ? 'Human blocker is present but the active record is missing one or more required proof fields.'
+        : 'Human-only blocker is persisted with current evidence and an exact next action.',
+      requisitionId: applicationRequisitionId(application),
+      role: execution.role,
+      stale: isStaleTimestamp(lastValidatedAt, generatedAt, 72),
+    };
+    if (record.stale) record.classification = 'stale';
+    return record.classification === 'verified' ? [record] : [];
+  });
+  const verifiedApplyingRecords = applicationExecution.exactStatuses.flatMap((execution) => {
+    if (execution.canonicalExecutionState !== 'running') return [];
+    const application = evidence.applications.find((item) => stringValue(item.id) === execution.applicationId);
+    if (!application) return [];
+    const raw = asRecord(application.raw_record);
+    const worker = asRecord(raw.browser_worker);
+    const lastReport = asRecord(raw.browser_worker_last_report);
+    const heartbeat = stringValue(worker.last_heartbeat_at || lastReport.timestamp);
+    if (!heartbeat || isStaleTimestamp(heartbeat, generatedAt, 0.25)) return [];
+    if (!stringValue(worker.companion_id)) return [];
+    const currentUrl = stringValue(lastReport.current_url || raw.application_url || raw.canonical_url);
+    if (!currentUrl) return [];
+    return [{
+      applicationId: stringValue(application.id) || undefined,
+      classification: 'verified' as const,
+      currentStep: currentApplicationStep(application),
+      currentUrl,
+      duplicateLock: false,
+      employer: execution.employer,
+      executionId: stringValue(application.id) || undefined,
+      id: stringValue(application.id),
+      lastHeartbeatAt: heartbeat,
+      lastValidatedAt: heartbeat,
+      missingEvidence: [],
+      opportunityId: stringValue(application.opportunity_id) || undefined,
+      reasoning: 'Execution has worker ownership, a recent heartbeat, and a current employer page.',
+      requisitionId: applicationRequisitionId(application),
+      role: execution.role,
+      stale: false,
+    }];
+  });
+  const submittedRecords = evidence.applications
+    .filter((application) => !isSyntheticId(application.id))
+    .filter((application) => ['confirmed', 'submitted', 'duplicate'].includes(canonicalExecutionStateForApplication(application)))
+    .map((application) => {
+      const raw = asRecord(application.raw_record);
+      const duplicateLock = raw.duplicate_locked === true;
+      const confirmationTimestamp = stringValue(raw.submission_locked_at || raw.manual_confirmation_attested_at || application.updated_at);
+      const missingEvidence = [];
+      if (!hasConfirmationEvidence(application) && !hasManualSubmissionAttestation(application)) missingEvidence.push('Submission evidence');
+      if (!duplicateLock) missingEvidence.push('Duplicate lock');
+      return {
+        applicationId: stringValue(application.id) || undefined,
+        canonicalOpportunityId: stringValue(application.opportunity_id) || undefined,
+        classification: missingEvidence.length ? 'missing_evidence' as const : 'verified' as const,
+        confirmationTimestamp: confirmationTimestamp || undefined,
+        confirmationType: hasManualSubmissionAttestation(application) ? 'manual_attestation' : 'confirmation_evidence',
+        currentUrl: currentApplicationUrl(application) || undefined,
+        duplicateLock,
+        employer: stringValue(application.employer) || 'Employer',
+        id: stringValue(application.id),
+        missingEvidence,
+        opportunityId: stringValue(application.opportunity_id) || undefined,
+        reasoning: missingEvidence.length
+          ? 'Submitted record is missing at least one required verification field.'
+          : 'Submitted record has confirmation or attestation evidence and duplicate protection.',
+        requisitionId: applicationRequisitionId(application),
+        role: stringValue(application.position) || 'Role',
+        stale: false,
+      };
+    });
+  const verifiedSubmittedRecords = submittedRecords.filter((record) => record.classification === 'verified');
+  const verifiedReadyToResumeRecords = activeApplications.flatMap((application) => {
+    const execution = applicationExecution.exactStatuses.find((item) => item.applicationId === stringValue(application.id));
+    if (!execution || !['queued', 'waiting_on_tomas', 'running'].includes(execution.canonicalExecutionState)) return [];
+    const checkpointId = explicitCheckpointId(application);
+    const checkpointLocation = checkpointStorageLocation(application);
+    const lastValidatedAt = lastValidationAt(application);
+    const heartbeat = lastHeartbeatAt(application);
+    const missingEvidence = [];
+    if (!checkpointId) missingEvidence.push('Persisted checkpoint ID');
+    if (!checkpointLocation) missingEvidence.push('Checkpoint storage location');
+    if (!currentApplicationUrl(application)) missingEvidence.push('Current URL');
+    if (!lastValidatedAt && !heartbeat) missingEvidence.push('Validation or heartbeat timestamp');
+    if (canonicalExecutionStateForApplication(application) === 'confirmed' || canonicalExecutionStateForApplication(application) === 'submitted') missingEvidence.push('Non-terminal lifecycle state');
+    const classification: OperationalTrustClassification = missingEvidence.length ? 'missing_evidence' : 'verified';
+    return classification === 'verified'
+      ? [{
+          applicationId: stringValue(application.id) || undefined,
+          checkpointAgeHours: hoursBetween(lastValidatedAt || heartbeat, generatedAt.toISOString()),
+          checkpointId: checkpointId || undefined,
+          checkpointStorageLocation: checkpointLocation || undefined,
+          classification,
+          currentStep: currentApplicationStep(application),
+          currentUrl: currentApplicationUrl(application) || undefined,
+          duplicateLock: false,
+          employer: stringValue(application.employer) || 'Employer',
+          executionId: stringValue(application.id) || undefined,
+          id: stringValue(application.id),
+          lastHeartbeatAt: heartbeat || undefined,
+          lastValidatedAt: lastValidatedAt || heartbeat || undefined,
+          missingEvidence,
+          opportunityId: stringValue(application.opportunity_id) || undefined,
+          reasoning: 'Checkpoint is explicitly persisted and still resumable.',
+          requisitionId: applicationRequisitionId(application),
+          role: stringValue(application.position) || 'Role',
+          stale: false,
+        }]
+      : [];
+  });
+  const verifiedSystemIssueRecords = applicationExecution.exactStatuses.flatMap((execution) => {
+    if (execution.canonicalExecutionState !== 'blocked_technical') return [];
+    const application = evidence.applications.find((item) => stringValue(item.id) === execution.applicationId);
+    if (!application) return [];
+    const latestBlockedEvent = latestWorkflowEventForApplication(
+      evidence.workflowEvents,
+      stringValue(application.id),
+      ['blocked_technical'],
+      ['queue_blocker_verified', 'cta_inspected', 'resume_blocked_technical'],
+    );
+    if (!latestBlockedEvent) return [];
+    return [{
+      applicationId: stringValue(application.id) || undefined,
+      blockerEvidence: stringValue(latestBlockedEvent.evidence_text) || undefined,
+      classification: 'verified' as const,
+      currentUrl: stringValue(latestBlockedEvent.evidence_url || currentApplicationUrl(application)) || undefined,
+      duplicateLock: false,
+      employer: execution.employer,
+      executionId: stringValue(application.id) || undefined,
+      gateId: stringValue(latestBlockedEvent.id) || undefined,
+      gateType: 'system_issue',
+      humanAction: execution.cta.whatTomasMustDo || undefined,
+      id: `system-issue-${stringValue(application.id)}`,
+      lastValidatedAt: stringValue(latestBlockedEvent.occurred_at) || undefined,
+      missingEvidence: [],
+      opportunityId: stringValue(application.opportunity_id) || undefined,
+      reasoning: 'Technical blocker remains unresolved and is backed by a persisted workflow event.',
+      requisitionId: applicationRequisitionId(application),
+      role: execution.role,
+      stale: false,
+    }];
+  });
+  const staleRecordIds = [
+    ...submittedRecords.filter((record) => record.stale).map((record) => record.id),
+    ...verifiedActionCenterRecords.filter((record) => record.stale).map((record) => record.id),
+  ];
+  const unsupportedRecordIds = activeApplications
+    .filter((application) => {
+      const state = canonicalExecutionStateForApplication(application);
+      return ['qualified', 'queued', 'running', 'package_ready', 'package_pending', 'qualification_pending'].includes(state)
+        && !verifiedReadyToResumeRecords.some((record) => record.applicationId === stringValue(application.id))
+        && !verifiedApplyingRecords.some((record) => record.applicationId === stringValue(application.id))
+        && !verifiedActionCenterRecords.some((record) => record.applicationId === stringValue(application.id));
+    })
+    .map((application) => stringValue(application.id));
+  const completedGatesStillActive = evidence.tasks
+    .filter((task) => stringValue(task.status) === 'open' && stringValue(task.related_application_id))
+    .filter((task) => {
+      const application = evidence.applications.find((item) => stringValue(item.id) === stringValue(task.related_application_id));
+      return !application || canonicalExecutionStateForApplication(application) !== 'waiting_on_tomas';
+    })
+    .map((task) => stringValue(task.id));
+  const applicationsWithoutCheckpoints = activeApplications
+    .filter((application) => !explicitCheckpointId(application))
+    .map((application) => stringValue(application.id));
+  const checkpointsWithoutExecutions = evidence.applications
+    .filter((application) => checkpointStorageLocation(application))
+    .filter((application) => {
+      const state = canonicalExecutionStateForApplication(application);
+      return !['queued', 'running', 'waiting_on_tomas', 'blocked_technical'].includes(state);
+    })
+    .map((application) => stringValue(application.id));
+  const executionsWithoutHeartbeats = activeApplications
+    .filter((application) => {
+      const state = canonicalExecutionStateForApplication(application);
+      if (!['queued', 'running', 'waiting_on_tomas'].includes(state)) return false;
+      return !lastHeartbeatAt(application);
+    })
+    .map((application) => stringValue(application.id));
+  const terminalApplicationsIncorrectlyActionable = activeApplications
+    .filter((application) => ['confirmed', 'submitted', 'duplicate'].includes(canonicalExecutionStateForApplication(application)))
+    .map((application) => stringValue(application.id));
+  const terminalApplicationsStillActionable = terminalApplications
+    .filter((application) => {
+      const raw = asRecord(application.raw_record);
+      const worker = asRecord(raw.browser_worker);
+      const lastReport = asRecord(raw.browser_worker_last_report);
+      const statuses = [
+        stringValue(worker.status).toLowerCase(),
+        stringValue(lastReport.status).toLowerCase(),
+        stringValue(raw.execution_status).toLowerCase(),
+      ];
+      return statuses.some((status) => ['queued', 'running', 'waiting_on_tomas', 'resumable'].includes(status));
+    })
+    .map((application) => stringValue(application.id));
+  const verifiedCounts = {
+    actionCenter: verifiedActionCenterRecords.length,
+    applying: verifiedApplyingRecords.length,
+    interviews: dailyInterviewCount(evidence),
+    opportunities: verifiedOpportunityRecords.length,
+    readyToResume: verifiedReadyToResumeRecords.length,
+    reviewQueue: verifiedReviewRecords.length,
+    submitted: verifiedSubmittedRecords.length,
+    systemIssues: verifiedSystemIssueRecords.length,
+  };
+  const dashboardCountMismatches = buildOperationalTrustMismatches(beforeCounts, verifiedCounts, {
+    actionCenter: unsupportedRecordIds,
+    applying: executionsWithoutHeartbeats,
+    readyToResume: applicationsWithoutCheckpoints,
+    submitted: submittedRecords.filter((record) => record.classification !== 'verified').map((record) => record.id),
+    systemIssues: verifiedSystemIssueRecords.filter((record) => record.stale).map((record) => record.id),
+  });
+  const unsupportedClaimsRemoved = beforeCounts.actionCenter - verifiedCounts.actionCenter
+    + beforeCounts.readyToResume - verifiedCounts.readyToResume
+    + beforeCounts.applying - verifiedCounts.applying;
+  const confidenceScore = percentage(
+    verifiedCounts.opportunities
+      + verifiedCounts.reviewQueue
+      + verifiedCounts.actionCenter
+      + verifiedCounts.applying
+      + verifiedCounts.readyToResume
+      + verifiedCounts.submitted
+      + verifiedCounts.interviews
+      + verifiedCounts.systemIssues,
+    Math.max(
+      beforeCounts.opportunities
+        + beforeCounts.reviewQueue
+        + beforeCounts.actionCenter
+        + beforeCounts.applying
+        + beforeCounts.readyToResume
+        + beforeCounts.submitted
+        + beforeCounts.interviews
+        + beforeCounts.systemIssues,
+      1,
+    ),
+  );
+
+  return {
+    applicationsWithoutCheckpoints,
+    beforeCounts,
+    candidateModeUnsupportedClaimsRemoved: unsupportedClaimsRemoved > 0,
+    checkpointsWithoutExecutions,
+    completedGatesStillActive,
+    consistencyChecksReady: true,
+    dashboardCountMismatches,
+    executionsWithoutHeartbeats,
+    stateInspectorReady: true,
+    staleRecordIds,
+    submittedRecords,
+    syntheticRecordIds,
+    systemIssueRecords: verifiedSystemIssueRecords,
+    terminalApplicationsIncorrectlyActionable: Array.from(
+      new Set([...terminalApplicationsIncorrectlyActionable, ...terminalApplicationsStillActionable]),
+    ),
+    trustReport: {
+      confidenceScore,
+      inconsistenciesOpen: dashboardCountMismatches.length,
+      staleRecordsExcluded: staleRecordIds.length,
+      unsupportedClaimsRemoved,
+      verifiedActionCenterItems: verifiedCounts.actionCenter,
+      verifiedActiveExecutions: verifiedCounts.applying,
+      verifiedOpportunities: verifiedCounts.opportunities,
+      verifiedResumableCheckpoints: verifiedCounts.readyToResume,
+      verifiedReviewQueueItems: verifiedCounts.reviewQueue,
+      verifiedSubmittedApplications: verifiedCounts.submitted,
+    },
+    unsupportedRecordIds,
+    verifiedActionCenterRecords,
+    verifiedApplyingRecords,
+    verifiedCounts,
+    verifiedOpportunityRecords,
+    verifiedReadyToResumeRecords,
+    verifiedReviewRecords,
+  };
+}
+
+function buildOperationalTrustMismatches(
+  beforeCounts: OperationalTrustCounts,
+  verifiedCounts: OperationalTrustCounts,
+  affected: Record<string, string[]>,
+): OperationalTrustIssue[] {
+  const rules: Array<{ key: keyof OperationalTrustCounts; rule: string; severity: OperationalTrustIssue['severity'] }> = [
+    { key: 'submitted', rule: 'submitted_tile_matches_verified_submissions', severity: 'high' },
+    { key: 'reviewQueue', rule: 'review_queue_matches_verified_review_items', severity: 'medium' },
+    { key: 'actionCenter', rule: 'action_center_matches_verified_human_gates', severity: 'high' },
+    { key: 'readyToResume', rule: 'ready_to_resume_matches_verified_checkpoints', severity: 'high' },
+    { key: 'applying', rule: 'applying_matches_verified_active_executions', severity: 'high' },
+    { key: 'systemIssues', rule: 'system_issues_match_verified_technical_issues', severity: 'medium' },
+  ];
+  return rules
+    .filter((rule) => beforeCounts[rule.key] !== verifiedCounts[rule.key])
+    .map((rule) => ({
+      actualValue: beforeCounts[rule.key],
+      affectedRecordIds: affected[rule.key] || [],
+      evidence: `Candidate-facing count is ${beforeCounts[rule.key]}, but verified evidence supports ${verifiedCounts[rule.key]}.`,
+      expectedValue: verifiedCounts[rule.key],
+      id: `trust-${rule.rule}`,
+      rule: rule.rule,
+      severity: rule.severity,
+    }));
+}
+
+function latestWorkflowEventForApplication(
+  events: JsonRecord[],
+  applicationId: string,
+  statuses: string[],
+  eventTypes: string[],
+) {
+  return events
+    .filter((event) => stringValue(event.application_id) === applicationId)
+    .filter((event) => !statuses.length || statuses.includes(stringValue(event.status)))
+    .filter((event) => !eventTypes.length || eventTypes.includes(stringValue(event.event_type)))
+    .sort((left, right) => isoMillis(right.occurred_at) - isoMillis(left.occurred_at))[0];
+}
+
+function explicitCheckpointId(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const worker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
+  return stringValue(raw.checkpoint_id || worker.checkpoint_id || lastReport.checkpoint_id);
+}
+
+function checkpointStorageLocation(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const worker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
+  return stringValue(lastReport.screenshot_path || worker.last_screenshot_path || raw.checkpoint_storage_path);
+}
+
+function currentApplicationUrl(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const lastReport = asRecord(raw.browser_worker_last_report);
+  return stringValue(lastReport.current_url || raw.application_url || raw.canonical_url);
+}
+
+function currentApplicationStep(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const lastReport = asRecord(raw.browser_worker_last_report);
+  return stringValue(asRecord(lastReport.details).step || raw.cisco_exact_page || raw.current_step || raw.current_page);
+}
+
+function lastHeartbeatAt(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const worker = asRecord(raw.browser_worker);
+  return stringValue(worker.last_heartbeat_at);
+}
+
+function lastValidationAt(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const lastReport = asRecord(raw.browser_worker_last_report);
+  return stringValue(lastReport.timestamp || raw.blocker_resolved_at || application.updated_at);
+}
+
+function applicationRequisitionId(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return stringValue(
+    raw.external_requisition_id
+      || raw.requisition_id
+      || raw.oracle_job_id
+      || raw.job_id
+      || raw.ats_job_id
+      || atsIdFromUrl(raw.canonical_url || raw.application_url)
+      || application.opportunity_id,
+  );
+}
+
+function inferGateType(execution: ApplicationExecutionItem, application: JsonRecord) {
+  const text = `${execution.reason} ${execution.cta?.label || ''} ${application.next_action || ''}`.toLowerCase();
+  if (text.includes('compensation')) return 'compensation';
+  if (text.includes('employment')) return 'employment';
+  if (text.includes('account') || text.includes('workday')) return 'account';
+  if (text.includes('privacy') || text.includes('legal') || text.includes('nda') || text.includes('policy')) return 'legal';
+  if (text.includes('captcha') || text.includes('security code')) return 'verification';
+  return 'human_gate';
+}
+
+function dailyInterviewCount(evidence: CareerOsEvidence) {
+  return evidence.workflowEvents.filter((event) => hasAnyStatus(`${event.event_type || ''} ${event.status || ''}`, ['interview_requested', 'interview_scheduled', 'interview_completed'])).length;
+}
+
+function isStaleTimestamp(value: string, generatedAt: Date, maxAgeHours: number) {
+  if (!value) return true;
+  const ageHours = hoursBetween(value, generatedAt.toISOString());
+  return ageHours === undefined ? true : ageHours > maxAgeHours;
+}
+
+function hoursBetween(left: string, right: string) {
+  const leftMs = isoMillis(left);
+  const rightMs = isoMillis(right);
+  if (!leftMs || !rightMs) return undefined;
+  return Math.round(((rightMs - leftMs) / (1000 * 60 * 60)) * 10) / 10;
+}
+
+function isoMillis(value: unknown) {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function isGenericCheckpointReason(value: string) {
+  const text = value.toLowerCase();
+  return !text || text.includes('no detailed checkpoint') || text.includes('resume application');
 }
 
 function selectCanonicalSubmittedApplications(evidence: CareerOsEvidence): CanonicalSubmittedApplication[] {

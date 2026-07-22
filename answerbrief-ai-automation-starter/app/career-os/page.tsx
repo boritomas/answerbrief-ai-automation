@@ -43,15 +43,17 @@ type ActionCenterCard = {
 
 export default async function CareerOsPage() {
   const status = await getCareerOsStatus();
-  const opportunities = status.evidence.jobPostings.length ? status.evidence.jobPostings : status.evidence.seededOpportunities;
+  const trust = status.operationalTrust;
   const artifacts = status.evidence.artifacts.filter((artifact) => artifact.artifact_type === 'targeted_resume' || artifact.artifact_type === 'application_package');
   const applications = status.evidence.applications;
   const dailyWorkflow = status.dailyWorkflow;
   const pipelineHealth = dailyWorkflow.pipelineHealth;
-  const actionCenterCards = buildActionCenterCards(status);
+  const allActionCenterCards = buildActionCenterCards(status);
+  const verifiedActionCenterIds = new Set(trust.verifiedActionCenterRecords.map((record) => String(record.applicationId || '')));
+  const verifiedSubmittedIds = new Set(trust.submittedRecords.filter((record) => record.classification === 'verified').map((record) => String(record.applicationId || '')));
+  const actionCenterCards = allActionCenterCards.filter((card) => verifiedActionCenterIds.has(String(card.application.id)));
   const pendingActionCards = actionCenterCards.filter((card) => card.variant !== 'terminal');
-  const submittedApplicationIds = new Set(status.submittedApplicationIds);
-  const submittedCards = actionCenterCards.filter((card) => submittedApplicationIds.has(String(card.application.id)));
+  const submittedCards = allActionCenterCards.filter((card) => verifiedSubmittedIds.has(String(card.application.id)));
   const resumePerformance = buildResumePerformance(artifacts, applications, status);
   const activitySnapshot = buildActivitySnapshot(status.evidence.workflowEvents, applications);
   const candidateSummary = buildCandidateSummary(status);
@@ -59,14 +61,14 @@ export default async function CareerOsPage() {
   const recentActivity = buildRecentActivity(status, submittedCards);
   const candidatePipeline = buildCandidatePipeline(status);
   const systemNotice = buildSystemNotice(status);
-  const opportunitySnapshot = buildCandidateOpportunitySnapshot(status, opportunities);
+  const opportunitySnapshot = buildCandidateOpportunitySnapshot(status);
   const navItems = [
     { href: '/career-os', label: 'Home' },
     { href: '/career-os#opportunities', label: 'Opportunities' },
-    { href: '/career-os#review-queue', label: 'My Review Queue', count: status.reviewQueue.total },
-    { href: '/career-os#action-center', label: 'My Action Center', count: pendingActionCards.length },
-    { href: '/career-os#applications', label: 'Applications', count: status.submittedApplications },
-    { href: '/career-os#interviews', label: 'Interviews', count: pipelineHealth.interviews },
+    { href: '/career-os#review-queue', label: 'My Review Queue', count: trust.verifiedCounts.reviewQueue },
+    { href: '/career-os#action-center', label: 'My Action Center', count: trust.verifiedCounts.actionCenter },
+    { href: '/career-os#applications', label: 'Applications', count: trust.verifiedCounts.submitted },
+    { href: '/career-os#interviews', label: 'Interviews', count: trust.verifiedCounts.interviews },
     { href: '/career-os#documents', label: 'Documents' },
     { href: '/career-os/admin', label: 'Admin' },
   ];
@@ -105,10 +107,10 @@ export default async function CareerOsPage() {
           <h1>Good morning, Tomas.</h1>
           <p className="subhead">{candidateSummary.summaryLine}</p>
           <div className="career-os-metrics" aria-label="Morning Summary">
-            <Metric href="/career-os#applications" label="Applications Submitted" value={status.submittedApplications} />
-            <Metric href="/career-os#review-queue" label="Opportunities to Review" value={status.reviewQueue.total} />
-            <Metric href="/career-os#action-center" label="Actions Required" value={pendingActionCards.length} />
-            <Metric href="/career-os#interviews" label="Interviews" value={pipelineHealth.interviews} />
+            <Metric href="/career-os#applications" label="Applications Submitted" value={trust.verifiedCounts.submitted} />
+            <Metric href="/career-os#review-queue" label="Opportunities to Review" value={trust.verifiedCounts.reviewQueue} />
+            <Metric href="/career-os#action-center" label="Actions Required" value={trust.verifiedCounts.actionCenter} />
+            <Metric href="/career-os#interviews" label="Interviews" value={trust.verifiedCounts.interviews} />
           </div>
           <div className="career-os-summary">
             <p>{candidateSummary.detailLine}</p>
@@ -204,7 +206,7 @@ export default async function CareerOsPage() {
       <section id="review-queue" className="career-os-band">
         <h2>My Review Queue</h2>
         <div className="career-os-review-summary">
-          <p>{status.reviewQueue.total} opportunit{status.reviewQueue.total === 1 ? 'y needs' : 'ies need'} your decision.</p>
+          <p>{trust.verifiedCounts.reviewQueue} opportunit{trust.verifiedCounts.reviewQueue === 1 ? 'y needs' : 'ies need'} your decision.</p>
           <p>Estimated review time: {status.reviewQueue.estimatedReviewMinutes} minute{status.reviewQueue.estimatedReviewMinutes === 1 ? '' : 's'}.</p>
           <p>Highest fit: {status.reviewQueue.items[0]?.fitScore || 0}{status.reviewQueue.highestScoringRole ? ` · ${status.reviewQueue.highestScoringRole}` : ''}</p>
         </div>
@@ -256,16 +258,17 @@ export default async function CareerOsPage() {
 
       <section id="action-center" className="career-os-band">
         <h2>My Action Center</h2>
-        <p>{pendingActionCards.length} application step{pendingActionCards.length === 1 ? '' : 's'} need your help before Career OS can continue.</p>
+        <p>{trust.verifiedCounts.actionCenter} verified application step{trust.verifiedCounts.actionCenter === 1 ? '' : 's'} need your help before Career OS can continue.</p>
         <div className="career-os-metrics secondary" aria-label="Career OS action center status">
-          <Metric detail="Needs your help" href="/career-os#action-center-list" label="Action Center" value={pendingActionCards.length} />
-          <Metric detail="Ready to continue after your step" href="/career-os#action-center-list" label="Ready to Resume" value={status.readyForAutomation} />
-          <Metric detail="Already submitted and locked" href="/career-os#applications" label="Submitted" value={status.submittedApplications} />
-          <Metric detail="Only shown when they affect active work" href="/career-os/admin#system-health" label="System Issues" value={status.applicationExecution.queueStates.blocked_technical} />
+          <Metric detail="Needs your help" href="/career-os#action-center-list" label="Action Center" value={trust.verifiedCounts.actionCenter} />
+          <Metric detail="Verified resumable checkpoints only" href="/career-os#ready-to-resume" label="Ready to Resume" value={trust.verifiedCounts.readyToResume} />
+          <Metric detail="Already submitted and locked" href="/career-os#applications" label="Submitted" value={trust.verifiedCounts.submitted} />
+          <Metric detail="Only unresolved verified technical issues" href="/career-os#system-issues" label="System Issues" value={trust.verifiedCounts.systemIssues} />
         </div>
         <div className="career-os-action-center" id="action-center-list">
           {pendingActionCards.map((card) => {
             const cta = actionCenterCardToCta(card);
+            const trustRecord = trust.verifiedActionCenterRecords.find((record) => String(record.applicationId) === String(card.application.id));
             return (
               <article className="career-os-action-card" id={applicationAnchorId(card.application)} key={String(card.application.id)}>
                 <div className="career-os-card-header">
@@ -297,6 +300,12 @@ export default async function CareerOsPage() {
                     <p>{card.nextStep}</p>
                     <p><strong>Estimated Time:</strong> {card.estimatedTime}</p>
                   </section>
+                  <section>
+                    <p className="career-os-card-label">Evidence</p>
+                    <p>Gate ID: {trustRecord?.gateId || 'not recorded'}</p>
+                    <p>Last validated: {trustRecord?.lastValidatedAt ? formatDateTime(trustRecord.lastValidatedAt) : 'not recorded'}</p>
+                    <p>Resume verified: {trustRecord?.checkpointId ? 'Yes' : 'No'}</p>
+                  </section>
                 </div>
                 <ApplicationActionControl
                   actionToken={pageActionToken}
@@ -326,9 +335,24 @@ export default async function CareerOsPage() {
         </div>
       </section>
 
+      <section id="ready-to-resume" className="career-os-band">
+        <h2>Ready to Resume</h2>
+        <p>Only checkpoints with explicit persisted resume evidence appear here.</p>
+        <div className="career-os-list compact">
+          {trust.verifiedReadyToResumeRecords.length ? trust.verifiedReadyToResumeRecords.map((record) => (
+            <DetailRow
+              detail={`${record.employer} · ${record.role} · checkpoint ${record.checkpointId || 'not recorded'} · last validated ${record.lastValidatedAt ? formatDateTime(record.lastValidatedAt) : 'not recorded'}`}
+              key={record.id}
+              label={record.requisitionId || record.employer}
+              value={record.currentStep || 'Ready'}
+            />
+          )) : <DetailRow detail="No persisted resumable checkpoints are currently verified in production." label="Verified resumable checkpoints" value="0" />}
+        </div>
+      </section>
+
       <section id="opportunities-list" className="career-os-band">
         <h2>Opportunities</h2>
-        <p>{status.activeQualifiedOpportunities} active opportunities currently match your policy and role band.</p>
+        <p>{trust.verifiedCounts.opportunities} verified opportunities currently match your policy and role band.</p>
         <div className="career-os-list" id="opportunity-list">
           {opportunitySnapshot.map((opportunity) => (
             <article className="career-os-row" key={String(opportunity.id)}>
@@ -346,26 +370,59 @@ export default async function CareerOsPage() {
         <h2>Applications</h2>
         <p>Submitted applications stay locked here so Career OS does not reopen them.</p>
         <div className="career-os-list" id="submitted-applications">
-          {submittedCards.map((card) => (
-            <article className="career-os-row" key={String(card.application.id)}>
+          {trust.submittedRecords.filter((record) => record.classification === 'verified').map((record) => {
+            const card = submittedCards.find((item) => String(item.application.id) === String(record.applicationId));
+            return (
+            <article className="career-os-row" key={record.id}>
               <div>
-                <h3>{card.employer}: {card.role}</h3>
-                <p>{card.statusLabel}{card.confirmationDate ? ` · ${card.confirmationDate}` : ''}</p>
-                <p>{card.reason}</p>
+                <h3>{record.employer}: {record.role}</h3>
+                <p>Requisition {record.requisitionId || 'not published'} · Application {record.applicationId || 'not recorded'}</p>
+                <p>{record.confirmationType || 'confirmation evidence'} · {record.confirmationTimestamp ? formatDateTime(record.confirmationTimestamp) : 'timestamp not recorded'} · Duplicate lock {record.duplicateLock ? 'active' : 'missing'}</p>
               </div>
-              {card.confirmationHref ? <a className="text-link" href={card.confirmationHref}>View Confirmation</a> : <span>{card.statusLabel}</span>}
+              {card?.confirmationHref ? <a className="text-link" href={card.confirmationHref}>View Confirmation</a> : <span>Evidence recorded</span>}
             </article>
-          ))}
+            );
+          })}
+        </div>
+      </section>
+
+      <section id="active-executions" className="career-os-band">
+        <h2>Applying</h2>
+        <p>Only executions with a current worker heartbeat remain visible here.</p>
+        <div className="career-os-list compact">
+          {trust.verifiedApplyingRecords.length ? trust.verifiedApplyingRecords.map((record) => (
+            <DetailRow
+              detail={`${record.employer} · ${record.role} · worker heartbeat ${record.lastHeartbeatAt ? formatDateTime(record.lastHeartbeatAt) : 'not recorded'} · ${record.currentUrl || 'no url'}`}
+              key={record.id}
+              label={record.requisitionId || record.employer}
+              value={record.currentStep || 'Running'}
+            />
+          )) : <DetailRow detail="No active executions currently have a recent verified heartbeat." label="Verified active executions" value="0" />}
         </div>
       </section>
 
       <section id="interviews" className="career-os-band">
         <h2>Interviews</h2>
-        <p>{pipelineHealth.interviews} interview{pipelineHealth.interviews === 1 ? '' : 's'} and {pipelineHealth.recruiterResponses} recruiter response{pipelineHealth.recruiterResponses === 1 ? '' : 's'} are currently recorded.</p>
+        <p>{trust.verifiedCounts.interviews} verified interview{trust.verifiedCounts.interviews === 1 ? '' : 's'} and {pipelineHealth.recruiterResponses} recruiter response{pipelineHealth.recruiterResponses === 1 ? '' : 's'} are currently recorded.</p>
         <div className="career-os-list compact">
           <DetailRow detail="Recruiter replies or employer responses recorded in production." label="Recruiter Responses" value={String(pipelineHealth.recruiterResponses)} />
           <DetailRow detail="Application-to-interview conversion from the live pipeline." label="Conversion Rate" value={`${pipelineHealth.applicationToInterviewConversionRate.toFixed(1)}%`} />
           <DetailRow detail="Open follow-up items connected to applications or recruiter replies." label="Follow-ups" value={String(activitySnapshot.followUps)} />
+        </div>
+      </section>
+
+      <section id="system-issues" className="career-os-band">
+        <h2>System Issues</h2>
+        <p>Only unresolved technical issues with persisted evidence appear here.</p>
+        <div className="career-os-list compact">
+          {trust.systemIssueRecords.length ? trust.systemIssueRecords.map((record) => (
+            <DetailRow
+              detail={`${record.employer} · ${record.role} · ${record.blockerEvidence || 'Technical issue'} · last checked ${record.lastValidatedAt ? formatDateTime(record.lastValidatedAt) : 'not recorded'}`}
+              key={record.id}
+              label={record.requisitionId || record.employer}
+              value={record.gateId || 'issue-recorded'}
+            />
+          )) : <DetailRow detail="No verified unresolved technical issues are currently affecting Candidate Mode." label="Verified system issues" value="0" />}
         </div>
       </section>
 
@@ -394,10 +451,12 @@ export default async function CareerOsPage() {
 }
 
 function buildCandidateSummary(status: CareerStatus) {
+  const trust = status.operationalTrust;
   const newJobs = status.dailyWorkflow.pipelineHealth.newOpportunitiesToday;
   const submittedToday = status.dailyWorkflow.pipelineHealth.applicationsSubmittedToday;
-  const reviewCount = status.reviewQueue.total;
-  const actionCount = buildActionCenterCards(status).filter((card) => card.variant !== 'terminal').length;
+  const reviewCount = trust.verifiedCounts.reviewQueue;
+  const actionCount = trust.verifiedCounts.actionCenter;
+  const qualifiedCount = trust.verifiedCounts.opportunities;
 
   return {
     detailLine: `Career OS found ${newJobs} new job${newJobs === 1 ? '' : 's'}, submitted ${submittedToday} application${submittedToday === 1 ? '' : 's'} today, and needs your input on ${reviewCount} opportunit${reviewCount === 1 ? 'y' : 'ies'} and ${actionCount} application step${actionCount === 1 ? '' : 's'}.`,
@@ -406,7 +465,7 @@ function buildCandidateSummary(status: CareerStatus) {
       : actionCount
         ? 'Your next best move is to complete the open action-center steps so Career OS can resume the saved applications.'
         : 'No decision is blocking Career OS right now. The system will keep processing qualified roles automatically.',
-    summaryLine: `${status.activeQualifiedOpportunities} qualified opportunities are live today.`,
+    summaryLine: `${qualifiedCount} verified qualified opportunit${qualifiedCount === 1 ? 'y is' : 'ies are'} live today.`,
   };
 }
 
@@ -525,12 +584,13 @@ function buildRecentActivity(status: CareerStatus, submittedCards: ActionCenterC
 }
 
 function buildCandidatePipeline(status: CareerStatus) {
+  const trust = status.operationalTrust;
   return [
-    { detail: 'Active qualified opportunities', href: '/career-os#opportunities', label: 'Opportunities', value: status.activeQualifiedOpportunities },
-    { detail: 'Waiting for your decision', href: '/career-os#review-queue', label: 'Review', value: status.reviewQueue.total },
-    { detail: 'Application steps in progress', href: '/career-os#action-center', label: 'Applying', value: status.inProgress },
-    { detail: 'Submitted and locked', href: '/career-os#applications', label: 'Submitted', value: status.submittedApplications },
-    { detail: 'Interview activity recorded', href: '/career-os#interviews', label: 'Interviews', value: status.dailyWorkflow.pipelineHealth.interviews },
+    { detail: 'Verified active qualified opportunities', href: '/career-os#opportunities', label: 'Opportunities', value: trust.verifiedCounts.opportunities },
+    { detail: 'Waiting for your decision', href: '/career-os#review-queue', label: 'Review', value: trust.verifiedCounts.reviewQueue },
+    { detail: 'Active execution with current worker heartbeat', href: '/career-os#active-executions', label: 'Applying', value: trust.verifiedCounts.applying },
+    { detail: 'Submitted, confirmed, and duplicate-locked', href: '/career-os#applications', label: 'Submitted', value: trust.verifiedCounts.submitted },
+    { detail: 'Interview activity recorded', href: '/career-os#interviews', label: 'Interviews', value: trust.verifiedCounts.interviews },
   ];
 }
 
@@ -538,17 +598,25 @@ function buildSystemNotice(status: CareerStatus) {
   if (status.environment !== 'production') {
     return status.blocker || 'Career OS is showing the last verified production snapshot until the live database connection is restored.';
   }
-  if (status.applicationExecution.queueStates.blocked_technical > 0) {
-    return `${status.applicationExecution.queueStates.blocked_technical} application${status.applicationExecution.queueStates.blocked_technical === 1 ? ' is' : 's are'} paused because Career OS could not continue automatically.`;
+  if (status.operationalTrust.verifiedCounts.systemIssues > 0) {
+    return `${status.operationalTrust.verifiedCounts.systemIssues} verified system issue${status.operationalTrust.verifiedCounts.systemIssues === 1 ? ' is' : 's are'} still affecting active automation.`;
+  }
+  if (status.operationalTrust.dashboardCountMismatches.length > 0) {
+    return 'Candidate Mode is suppressing unsupported or stale records until they are fully verified in production evidence.';
   }
   return '';
 }
 
-function buildCandidateOpportunitySnapshot(status: CareerStatus, opportunities: JsonRecord[]) {
-  const reviewIds = new Set(status.reviewQueue.items.map((item) => item.opportunityId));
-  const reviewRows = opportunities.filter((opportunity) => reviewIds.has(String(opportunity.id || '')));
-  const fallbackRows = opportunities.filter((opportunity) => !reviewIds.has(String(opportunity.id || '')));
-  return [...reviewRows, ...fallbackRows].slice(0, 6);
+function buildCandidateOpportunitySnapshot(status: CareerStatus) {
+  const verifiedIds = new Set(
+    status.operationalTrust.verifiedOpportunityRecords
+      .map((record) => String(record.opportunityId || ''))
+      .filter(Boolean),
+  );
+  const opportunities = status.evidence.jobPostings.length ? status.evidence.jobPostings : status.evidence.seededOpportunities;
+  return opportunities
+    .filter((opportunity) => verifiedIds.has(String(opportunity.id || '')))
+    .slice(0, 6);
 }
 
 function Metric({ detail, href, label, value }: { detail?: string; href?: string; label: string; value: number }) {
@@ -591,6 +659,18 @@ function DetailRow({ detail, id, label, value }: { detail?: string; id?: string;
 function formatDate(value: unknown) {
   if (!value) return 'not recorded';
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(String(value)));
+}
+
+function formatDateTime(value: unknown) {
+  if (!value) return 'not recorded';
+  return new Intl.DateTimeFormat('en-US', {
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: 'short',
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+  }).format(new Date(String(value)));
 }
 
 function flattenActionQueue(groups: {

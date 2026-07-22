@@ -382,12 +382,38 @@ test('Career OS default page is candidate-focused and moves operational detail i
   assert.doesNotMatch(page, /Complete Market Search Coverage/);
   assert.doesNotMatch(page, /Current batch progress/);
   assert.match(adminPage, /Operational Detail/);
+  assert.match(adminPage, /Career OS Trust Report/);
+  assert.match(adminPage, /State Inspector/);
+  assert.match(adminPage, /Consistency Checks/);
   assert.match(adminPage, /Daily Automation Health/);
   assert.match(adminPage, /Funnel/);
   assert.match(adminPage, /Discovery and Coverage/);
   assert.match(adminPage, /System Health/);
   assert.match(adminPage, /Employers and Knowledge Base/);
   assert.doesNotMatch(page, /hard-coded production metrics/i);
+});
+
+test('Operational trust contract keeps unsupported and synthetic states out of Candidate Mode selectors', () => {
+  const page = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'page.tsx'), 'utf8');
+  const adminPage = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'app', 'career-os', 'admin', 'page.tsx'), 'utf8');
+  const statusSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'lib', 'career-os-status.ts'), 'utf8');
+
+  assert.match(page, /trust\.verifiedCounts\.readyToResume/);
+  assert.match(page, /trust\.verifiedCounts\.applying/);
+  assert.match(page, /trust\.verifiedCounts\.systemIssues/);
+  assert.match(page, /trust\.verifiedActionCenterRecords/);
+  assert.match(page, /trust\.verifiedReadyToResumeRecords/);
+  assert.match(page, /trust\.verifiedApplyingRecords/);
+  assert.match(page, /Candidate Mode is suppressing unsupported or stale records/);
+  assert.match(adminPage, /Unsupported Claims Removed/);
+  assert.match(adminPage, /Synthetic Records/);
+  assert.match(adminPage, /Applications Without Checkpoints/);
+  assert.match(adminPage, /Terminal Applications Incorrectly Actionable/);
+  assert.match(statusSource, /OperationalTrustStatus/);
+  assert.match(statusSource, /candidateModeUnsupportedClaimsRemoved/);
+  assert.match(statusSource, /stateInspectorReady: true/);
+  assert.match(statusSource, /consistencyChecksReady: true/);
+  assert.match(statusSource, /last-known-good/);
 });
 
 test('Career OS daily execution separates raw records, qualification, queueing, and compensation policy', () => {

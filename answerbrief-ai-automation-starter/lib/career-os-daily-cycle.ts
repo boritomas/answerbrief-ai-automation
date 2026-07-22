@@ -1399,7 +1399,7 @@ function classifyRolePolicy(title: string, description: string) {
   return { excluded: true, normalizedLevel: 'excluded_non_product_scope', reason: 'excluded_outside_target_role_band' };
 }
 
-function dedupePostings(postings: JsonRecord[]) {
+function dedupePostings(postings: JsonRecord[]): JsonRecord[] {
   const groups = new Map<string, JsonRecord[]>();
 
   for (const posting of postings) {

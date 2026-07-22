@@ -1,4 +1,4 @@
-import { getCareerOsStatus } from '@/lib/career-os-status';
+import { getCareerOsStatus, type CareerOsStatus, type OperationalTrustRecord } from '@/lib/career-os-status';
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
 import { RunNowControl } from '../action-controls';
 import { HashScroll } from '../hash-scroll';
@@ -7,13 +7,19 @@ export const dynamic = 'force-dynamic';
 
 type JsonRecord = Record<string, unknown>;
 
-export default async function CareerOsAdminPage() {
+export default async function CareerOsAdminPage(
+  { searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> },
+) {
+  const params = searchParams ? await searchParams : {};
+  const query = firstQueryValue(params.q);
   const status = await getCareerOsStatus();
+  const trust = status.operationalTrust;
   const dailyWorkflow = status.dailyWorkflow;
   const marketCoverage = dailyWorkflow.marketCoverage;
   const globalLifecycle = status.globalLifecycle;
   const knowledgeBase = status.evidence.employerKnowledgeBase;
   const artifacts = status.evidence.artifacts.filter((artifact) => artifact.artifact_type === 'targeted_resume' || artifact.artifact_type === 'application_package');
+  const inspector = buildStateInspector(status, query);
   const actionTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
   const pageActionToken = createCareerOsActionToken({
     action: 'career_os_admin_page',
@@ -44,12 +50,12 @@ export default async function CareerOsAdminPage() {
         <div className="career-os-briefing">
           <p className="eyebrow">Admin</p>
           <h1>Operational Detail</h1>
-          <p className="subhead">The candidate experience stays focused on decisions and applications. This view keeps the operational metrics available when you need them.</p>
-          <div className="career-os-metrics" aria-label="Career OS admin summary">
-            <Metric href="#daily" label="New Jobs Discovered Today" value={dailyWorkflow.pipelineHealth.newOpportunitiesToday} />
-            <Metric href="#funnel" label="Ready for Automation" value={status.readyForAutomation} />
-            <Metric href="#system-health" label="Technical Blockers" value={status.applicationExecution.queueStates.blocked_technical} />
-            <Metric href="#documents" label="Package Coverage" value={status.packagesCoveringQualifiedJobs} />
+          <p className="subhead">Candidate Mode shows only verified states. This view explains what is verified, what was excluded, and why.</p>
+          <div className="career-os-metrics" aria-label="Career OS trust summary">
+            <Metric href="#trust-report" label="Verified Opportunities" value={trust.verifiedCounts.opportunities} />
+            <Metric href="#system-health" label="Unsupported Claims Removed" value={trust.trustReport.unsupportedClaimsRemoved} />
+            <Metric href="#consistency-checks" label="Open Inconsistencies" value={trust.dashboardCountMismatches.length} />
+            <Metric href="#state-inspector" label="Confidence Score" value={trust.trustReport.confidenceScore} />
           </div>
         </div>
         <aside className="career-os-action">
@@ -60,6 +66,24 @@ export default async function CareerOsAdminPage() {
           <p>Next scheduled run: {dailyWorkflow.immediateQueueProcessor.nextScheduledRun}.</p>
           <RunNowControl actionToken={pageActionToken} actionTokenExpiresAt={actionTokenExpiresAt} ownerEmail={status.evidence.ownerEmail} />
         </aside>
+      </section>
+
+      <section className="career-os-band" id="trust-report">
+        <h2>Career OS Trust Report</h2>
+        <div className="career-os-metrics secondary">
+          <Metric detail="Persisted canonical opportunities with source evidence" label="Verified Opportunities" value={trust.trustReport.verifiedOpportunities} />
+          <Metric detail="Exactly one visible review identity per opportunity" label="Verified Review Queue" value={trust.trustReport.verifiedReviewQueueItems} />
+          <Metric detail="Unresolved verified human gates only" label="Verified Action Center" value={trust.trustReport.verifiedActionCenterItems} />
+          <Metric detail="Current worker heartbeat required" label="Verified Active Executions" value={trust.trustReport.verifiedActiveExecutions} />
+          <Metric detail="Explicit persisted checkpoints only" label="Verified Resumable Checkpoints" value={trust.trustReport.verifiedResumableCheckpoints} />
+          <Metric detail="Evidence and duplicate protection required" label="Verified Submitted Applications" value={trust.trustReport.verifiedSubmittedApplications} />
+        </div>
+        <div className="career-os-list compact">
+          <DetailRow detail="Counts removed from Candidate Mode because evidence is incomplete, stale, or synthetic." label="Unsupported Claims Removed" value={String(trust.trustReport.unsupportedClaimsRemoved)} />
+          <DetailRow detail="Records excluded because the last validation is stale." label="Stale Records Excluded" value={String(trust.trustReport.staleRecordsExcluded)} />
+          <DetailRow detail="Deterministic selector mismatches still open." label="Inconsistencies Open" value={String(trust.trustReport.inconsistenciesOpen)} />
+          <DetailRow detail="Deterministic evidence-coverage score for Candidate Mode." label="Confidence Score" value={`${trust.trustReport.confidenceScore}%`} />
+        </div>
       </section>
 
       <section className="career-os-band" id="daily">
@@ -80,15 +104,85 @@ export default async function CareerOsAdminPage() {
 
       <section className="career-os-band" id="funnel">
         <h2>Funnel</h2>
+        <p>These are the verified Candidate Mode counts currently shown to Tomas.</p>
         <div className="career-os-metrics secondary">
-          <Metric detail="Deduped opportunities" label="Unique Opportunities" value={status.totalUniqueOpportunities} />
-          <Metric detail="Policy and fit match" label="Qualified Jobs" value={status.activeQualifiedOpportunities} />
-          <Metric detail="Awaiting Tomas review" label="Review Queue" value={status.reviewQueue.total} />
-          <Metric detail="Human-only gates" label="Waiting on Tomas" value={status.waitingOnTomas} />
-          <Metric detail="Safe queue" label="Queued" value={status.applicationExecution.queueStates.queued} />
-          <Metric detail="Active browser work" label="Running" value={status.applicationExecution.queueStates.running} />
-          <Metric detail="Confirmation evidence" label="Submitted" value={status.submittedApplications} />
-          <Metric detail="Closed or incompatible" label="Inactive/Ineligible" value={status.inactive + status.ineligible} />
+          <Metric detail="Candidate Mode selector" label="Opportunities" value={trust.verifiedCounts.opportunities} />
+          <Metric detail="Candidate Mode selector" label="Review Queue" value={trust.verifiedCounts.reviewQueue} />
+          <Metric detail="Candidate Mode selector" label="Action Center" value={trust.verifiedCounts.actionCenter} />
+          <Metric detail="Candidate Mode selector" label="Ready to Resume" value={trust.verifiedCounts.readyToResume} />
+          <Metric detail="Candidate Mode selector" label="Applying" value={trust.verifiedCounts.applying} />
+          <Metric detail="Candidate Mode selector" label="Submitted" value={trust.verifiedCounts.submitted} />
+          <Metric detail="Candidate Mode selector" label="Interviews" value={trust.verifiedCounts.interviews} />
+          <Metric detail="Candidate Mode selector" label="System Issues" value={trust.verifiedCounts.systemIssues} />
+        </div>
+      </section>
+
+      <section className="career-os-band" id="consistency-checks">
+        <h2>Consistency Checks</h2>
+        <div className="career-os-list">
+          {trust.dashboardCountMismatches.length ? trust.dashboardCountMismatches.map((issue) => (
+            <article className="career-os-row" key={issue.id}>
+              <div>
+                <h3>{issue.rule}</h3>
+                <p>{issue.evidence}</p>
+                <p>Affected records: {issue.affectedRecordIds.length ? issue.affectedRecordIds.join(', ') : 'none recorded'}</p>
+              </div>
+              <span>{issue.actualValue} → {issue.expectedValue}</span>
+            </article>
+          )) : <DetailRow detail="Candidate Mode counts reconcile to the verified drill-down rows." label="Open inconsistencies" value="0" />}
+        </div>
+        <div className="career-os-list compact">
+          <DetailRow detail="Synthetic last-known-good records found in the current status payload." label="Synthetic Records" value={String(trust.syntheticRecordIds.length)} />
+          <DetailRow detail="Stale records excluded from verified selectors." label="Stale Records" value={String(trust.staleRecordIds.length)} />
+          <DetailRow detail="Active records excluded because evidence is missing or unsupported." label="Unsupported Records" value={String(trust.unsupportedRecordIds.length)} />
+          <DetailRow detail="Open tasks whose application is no longer waiting on Tomas." label="Completed Gates Still Active" value={String(trust.completedGatesStillActive.length)} />
+          <DetailRow detail="Active applications with no explicit persisted checkpoint ID." label="Applications Without Checkpoints" value={String(trust.applicationsWithoutCheckpoints.length)} />
+          <DetailRow detail="Checkpoint artifacts with no active execution state." label="Checkpoints Without Executions" value={String(trust.checkpointsWithoutExecutions.length)} />
+          <DetailRow detail="Active executions missing a worker heartbeat." label="Executions Without Heartbeats" value={String(trust.executionsWithoutHeartbeats.length)} />
+          <DetailRow detail="Terminal applications that still look actionable in raw execution residue." label="Terminal Applications Incorrectly Actionable" value={String(trust.terminalApplicationsIncorrectlyActionable.length)} />
+        </div>
+      </section>
+
+      <section className="career-os-band" id="state-inspector">
+        <h2>State Inspector</h2>
+        <p>Search by canonical opportunity ID, requisition, employer, application ID, execution ID, or checkpoint ID.</p>
+        <form action="/career-os/admin#state-inspector" className="career-os-link-row" method="get">
+          <input defaultValue={query} name="q" placeholder="Search employer, requisition, application, execution, or checkpoint" />
+          <button className="button secondary" type="submit">Inspect</button>
+        </form>
+        <div className="career-os-list compact">
+          <DetailRow detail="Canonical opportunities, applications, and workflow events matching the current query." label="Matches" value={String(inspector.matches.length)} />
+          <DetailRow detail="Verified trust records among the current matches." label="Verified Records" value={String(inspector.verifiedMatches)} />
+          <DetailRow detail="Missing-evidence or unsupported records among the current matches." label="Needs Verification" value={String(inspector.needsVerification)} />
+        </div>
+        <div className="career-os-list">
+          {inspector.matches.length ? inspector.matches.map((match) => (
+            <article className="career-os-row" key={match.id}>
+              <div>
+                <h3>{match.title}</h3>
+                <p>{match.subtitle}</p>
+                <p>{match.summary}</p>
+                <details>
+                  <summary>Explain</summary>
+                  <p>{match.detail}</p>
+                  <p>{match.missingEvidence.length ? `Missing evidence: ${match.missingEvidence.join(', ')}` : 'Missing evidence: none'}</p>
+                </details>
+              </div>
+              <span>{match.badge}</span>
+            </article>
+          )) : <DetailRow detail="Enter an employer, requisition, application ID, execution ID, checkpoint ID, or canonical opportunity ID." label="Inspector" value="No query matches" />}
+        </div>
+      </section>
+
+      <section className="career-os-band" id="system-health">
+        <h2>System Health</h2>
+        <div className="career-os-list compact">
+          <DetailRow detail="Applications waiting for technical recovery." label="Technical Blockers" value={String(trust.verifiedCounts.systemIssues)} />
+          <DetailRow detail="Applications already safe to continue automatically." label="Ready for Automation" value={String(status.readyForAutomation)} />
+          <DetailRow detail="Queued browser-worker states." label="Queued" value={String(status.applicationExecution.queueStates.queued)} />
+          <DetailRow detail="Active browser-worker states." label="Running" value={String(status.applicationExecution.queueStates.running)} />
+          <DetailRow detail="Exact statuses produced by the canonical execution classifier." label="Applications Processed Today" value={String(status.applicationExecution.applicationsProcessedToday)} />
+          <DetailRow detail="Last verified production status timestamp." label="Generated At" value={status.generatedAt} />
         </div>
       </section>
 
@@ -105,18 +199,6 @@ export default async function CareerOsAdminPage() {
           <DetailRow detail="Failed sources are isolated from the rest of the run." label="Source Failures" value={String(marketCoverage.employerSourcesFailed)} />
           <DetailRow detail="Historical duplicate records removed from active pipeline counts." label="Duplicates Removed" value={String(globalLifecycle.duplicatesRemoved)} />
           <DetailRow detail="Qualified opportunity backlog across all active records." label="Backlog Qualified Opportunities" value={String(globalLifecycle.backlogQualifiedOpportunities)} />
-        </div>
-      </section>
-
-      <section className="career-os-band" id="system-health">
-        <h2>System Health</h2>
-        <div className="career-os-list compact">
-          <DetailRow detail="Applications waiting for technical recovery." label="Technical Blockers" value={String(status.applicationExecution.queueStates.blocked_technical)} />
-          <DetailRow detail="Applications already safe to continue automatically." label="Ready for Automation" value={String(status.readyForAutomation)} />
-          <DetailRow detail="Queued browser-worker states." label="Queued" value={String(status.applicationExecution.queueStates.queued)} />
-          <DetailRow detail="Active browser-worker states." label="Running" value={String(status.applicationExecution.queueStates.running)} />
-          <DetailRow detail="Exact statuses produced by the canonical execution classifier." label="Applications Processed Today" value={String(status.applicationExecution.applicationsProcessedToday)} />
-          <DetailRow detail="Last verified production status timestamp." label="Generated At" value={status.generatedAt} />
         </div>
       </section>
 
@@ -157,6 +239,77 @@ export default async function CareerOsAdminPage() {
       </section>
     </main>
   );
+}
+
+function buildStateInspector(status: CareerOsStatus, query: string) {
+  const trust = status.operationalTrust;
+  const normalizedQuery = query.trim().toLowerCase();
+  const allTrustRecords = [
+    ...trust.verifiedOpportunityRecords,
+    ...trust.verifiedReviewRecords,
+    ...trust.verifiedActionCenterRecords,
+    ...trust.verifiedReadyToResumeRecords,
+    ...trust.verifiedApplyingRecords,
+    ...trust.submittedRecords,
+    ...trust.systemIssueRecords,
+  ];
+  const matches = allTrustRecords
+    .filter((record, index, records) => records.findIndex((item) => item.id === record.id) === index)
+    .filter((record) => {
+      if (!normalizedQuery) return true;
+      return [
+        record.id,
+        record.applicationId,
+        record.executionId,
+        record.checkpointId,
+        record.canonicalOpportunityId,
+        record.opportunityId,
+        record.requisitionId,
+        record.employer,
+        record.role,
+      ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
+    })
+    .map((record) => stateInspectorMatch(record, status))
+    .slice(0, 25);
+
+  return {
+    matches,
+    needsVerification: matches.filter((match) => match.badge !== 'verified').length,
+    verifiedMatches: matches.filter((match) => match.badge === 'verified').length,
+  };
+}
+
+function stateInspectorMatch(record: OperationalTrustRecord, status: CareerOsStatus) {
+  const application = status.evidence.applications.find((item) => String(item.id || '') === String(record.applicationId || record.executionId || ''));
+  const matchingEvents = status.evidence.workflowEvents
+    .filter((event) => String(event.application_id || '') === String(record.applicationId || ''))
+    .slice(0, 3)
+    .map((event) => `${String(event.event_type || 'event')} (${String(event.status || 'status')})`)
+    .join(', ');
+  const raw = asRecord(application?.raw_record);
+  const lifecycle = String(application?.lifecycle_stage || application?.next_action || 'not recorded');
+
+  return {
+    badge: record.classification === 'verified' ? 'verified' : 'needs verification',
+    detail: [
+      record.reasoning,
+      `Lifecycle ledger: ${lifecycle}.`,
+      `Duplicate lock: ${record.duplicateLock ? 'yes' : 'no'}.`,
+      `Latest workflow evidence: ${matchingEvents || 'none recorded'}.`,
+      `Checkpoint storage: ${record.checkpointStorageLocation || 'not recorded'}.`,
+      `Current URL: ${record.currentUrl || String(raw.application_url || raw.canonical_url || 'not recorded')}.`,
+    ].join(' '),
+    id: record.id,
+    missingEvidence: record.missingEvidence,
+    subtitle: `${record.employer} · ${record.role} · requisition ${record.requisitionId || 'not recorded'}`,
+    summary: `Application ${record.applicationId || 'not recorded'} · execution ${record.executionId || 'not recorded'} · checkpoint ${record.checkpointId || 'not recorded'} · gate ${record.gateId || 'not recorded'}`,
+    title: record.canonicalOpportunityId || record.opportunityId || record.id,
+  };
+}
+
+function firstQueryValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return String(value[0] || '').trim();
+  return String(value || '').trim();
 }
 
 function Metric({ detail, href, label, value }: { detail?: string; href?: string; label: string; value: number }) {
