@@ -16,6 +16,8 @@ function fieldHaystack(field) {
     field.id,
     field.name,
     field.ariaLabel,
+    field.role,
+    field.className,
     field.placeholder,
   ].filter(Boolean).join(' '));
 }
@@ -84,6 +86,7 @@ export async function scanVisibleFields(page) {
             : '';
         return {
           ariaLabel: normalize(element.getAttribute('aria-label')),
+          className: normalize(element.getAttribute('class')),
           currentValue,
           id: element.id || '',
           label: labelTextFor(element),
@@ -96,6 +99,7 @@ export async function scanVisibleFields(page) {
             : [],
           placeholder: normalize(element.getAttribute('placeholder')),
           required: element.hasAttribute('required') || element.getAttribute('aria-required') === 'true',
+          role: normalize(element.getAttribute('role')),
           tagName,
           type,
         };
@@ -108,10 +112,10 @@ function resolveFromPath(source, path) {
 }
 
 function resolveMappingValue(mapping, context, field) {
-  if (mapping.strategy === 'first_available') return '__first_available__';
   if (mapping.value !== undefined) return mapping.value;
   if (mapping.valueFrom) return resolveFromPath(context, mapping.valueFrom);
   if (typeof mapping.resolve === 'function') return mapping.resolve({ context, field });
+  if (mapping.strategy === 'first_available') return '__first_available__';
   return undefined;
 }
 
@@ -141,7 +145,99 @@ async function applyTextMapping(page, field, value) {
   return clean(finalValue) === clean(value);
 }
 
+function fieldUsesCombobox(field) {
+  return field.role === 'combobox';
+}
+
+async function visibleComboboxOptionIndex(page, { strategy, resolved }) {
+  return page.locator('[role="option"]').evaluateAll((nodes, payload) => {
+    const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const visible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const options = nodes
+      .map((node, index) => ({
+        index,
+        text: normalize(node.textContent || ''),
+        visible: visible(node),
+      }))
+      .filter((option) => option.visible && option.text);
+
+    if (!options.length) return -1;
+
+    if (payload.strategy === 'first_available') {
+      const firstRealOption = options.find((option) => !/^(select|choose|please select)\b/.test(option.text));
+      return firstRealOption ? firstRealOption.index : options[0].index;
+    }
+
+    const target = normalize(payload.resolved);
+    if (!target) return -1;
+
+    const direct = options.find((option) => option.text === target || option.text.startsWith(`${target} `));
+    if (direct) return direct.index;
+
+    if (target === 'internet search') {
+      const equivalent = options.find((option) => option.text === 'online search' || option.text.includes('internet search'));
+      if (equivalent) return equivalent.index;
+    }
+
+    const tokens = target.split(/\s+/).filter(Boolean);
+    const fuzzy = options.find((option) => tokens.length > 1 && tokens.every((token) => option.text.includes(token)));
+    return fuzzy ? fuzzy.index : -1;
+  }, { resolved: clean(resolved), strategy: clean(strategy) });
+}
+
+async function applyComboboxMapping(page, field, mapping, resolved) {
+  const locator = field.id
+    ? page.locator(`#${cssEscape(field.id)}`).first()
+    : field.name
+      ? page.locator(`[name="${field.name}"]`).first()
+      : page.locator(`input[aria-label="${field.ariaLabel}"]`).first();
+  if (!await locator.count()) return false;
+
+  await locator.click({ force: true }).catch(() => null);
+  await locator.fill('');
+  if (clean(resolved) && clean(resolved) !== '__first_available__') {
+    await locator.type(String(resolved), { delay: 20 });
+  } else {
+    await locator.press('ArrowDown').catch(() => null);
+  }
+  await page.waitForTimeout(250);
+
+  let optionIndex = await visibleComboboxOptionIndex(page, { strategy: mapping.strategy, resolved });
+  if (optionIndex < 0 && mapping.strategy !== 'first_available' && clean(resolved)) {
+    await locator.press('ArrowDown').catch(() => null);
+    await page.waitForTimeout(250);
+    optionIndex = await visibleComboboxOptionIndex(page, { strategy: mapping.strategy, resolved });
+  }
+  if (optionIndex < 0) return false;
+
+  const option = page.locator('[role="option"]').nth(optionIndex);
+  if (!await option.count()) return false;
+  const optionText = clean(await option.textContent().catch(() => ''));
+  await option.click();
+  await page.waitForTimeout(150);
+
+  const finalValue = clean(await locator.inputValue().catch(() => ''));
+  if (mapping.strategy === 'first_available') {
+    return Boolean(optionText);
+  }
+  return normalized(finalValue).includes(normalized(resolved))
+    || normalized(optionText).includes(normalized(resolved));
+}
+
 async function applySelectMapping(page, field, mapping, resolved) {
+  if (fieldUsesCombobox(field)) {
+    return applyComboboxMapping(page, field, mapping, resolved);
+  }
+  if (field.tagName !== 'select') {
+    return clean(resolved) && clean(resolved) !== '__first_available__'
+      ? applyTextMapping(page, field, resolved)
+      : false;
+  }
   const locator = field.id
     ? page.locator(`#${cssEscape(field.id)}`).first()
     : field.name

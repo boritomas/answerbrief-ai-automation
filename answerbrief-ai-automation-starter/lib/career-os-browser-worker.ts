@@ -89,6 +89,9 @@ export type BrowserWorkerTask = {
     city?: string;
     currentCompany?: string;
     email?: string;
+    employerSpecificAnswers?: {
+      previouslyWorkedAtEmployer?: string;
+    };
     firstName?: string;
     lastName?: string;
     linkedin?: string;
@@ -499,6 +502,7 @@ async function buildTaskPayload(application: QueueApplication, companionId: stri
   const referralSource = asRecord(verifiedProfile.referral_source);
   const priorAffirm = asRecord(verifiedProfile.prior_affirm_employment);
   const sponsorship = asRecord(verifiedProfile.sponsorship_requirement);
+  const employerSpecificAnswers = asRecord(asRecord(verifiedProfile.employer_specific_answers)[application.employer]);
   const employmentTenure = asRecord(asRecord(application.application_answers).verified_employment_tenure);
   const candidateProfile = buildCandidateProfile(verifiedProfile, profile, application.application_answers);
   const employmentProfile = candidateProfile.primaryEmployment;
@@ -514,6 +518,14 @@ async function buildTaskPayload(application: QueueApplication, companionId: stri
     candidate: {
       currentCompany: cleanEnv(raw.current_company) || candidateProfile.currentCompany || 'Verizon',
       email: candidateProfile.email,
+      employerSpecificAnswers: {
+        previouslyWorkedAtEmployer: normalizeEmployerBooleanAnswer(
+          employerSpecificAnswers.previously_worked_at_samsara
+          ?? employerSpecificAnswers.previously_worked_at_employer
+          ?? employerSpecificAnswers.previously_employed_here
+          ?? employerSpecificAnswers.prior_employment,
+        ),
+      },
       employmentHistory: candidateProfile.employmentHistory,
       firstName: candidateProfile.firstName || displayName.split(/\s+/)[0] || 'Tomas',
       lastName: candidateProfile.lastName || 'Nieves',
@@ -718,6 +730,21 @@ function stringValue(value: unknown) {
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeEmployerBooleanAnswer(value: unknown) {
+  if (value === true) return 'Yes';
+  if (value === false) return 'No';
+  const record = asRecord(value);
+  const answerLabel = cleanEnv(record.answer_label || record.answer || record.value);
+  if (/^(yes|no)$/i.test(answerLabel)) {
+    return answerLabel[0].toUpperCase() + answerLabel.slice(1).toLowerCase();
+  }
+  const direct = cleanEnv(value);
+  if (/^(yes|no)$/i.test(direct)) {
+    return direct[0].toUpperCase() + direct.slice(1).toLowerCase();
+  }
+  return undefined;
 }
 
 function slugify(value: string) {

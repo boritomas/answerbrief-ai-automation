@@ -125,6 +125,18 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
       value: task.candidate.countryRegion || 'United States of America',
     },
     {
+      key: 'preferred_first_name',
+      kind: 'text',
+      matchers: [/preferred first name/i, /^preferred name$/i],
+      valueFrom: 'candidate.preferredName',
+    },
+    {
+      key: 'preferred_last_name',
+      kind: 'text',
+      matchers: [/preferred last name/i],
+      valueFrom: 'candidate.lastName',
+    },
+    {
       key: 'city',
       kind: 'text',
       matchers: [/^city$/i, /location \(city\)/i],
@@ -135,6 +147,12 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
       kind: 'select',
       matchers: [/^state$/i, /state or canadian province/i],
       valueFrom: 'candidate.stateOrProvince',
+    },
+    {
+      key: 'postal_code',
+      kind: 'text',
+      matchers: [/postal code/i, /\bzip\b/i],
+      valueFrom: 'candidate.postalCode',
     },
     {
       key: 'email',
@@ -149,17 +167,23 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
       value: digitsOnly(task.candidate.phone),
     },
     {
+      key: 'current_employer',
+      kind: 'text',
+      matchers: [/current employer/i, /^company$/i, /^employer$/i],
+      valueFrom: 'candidate.currentCompany',
+    },
+    {
       key: 'referral_source',
       kind: 'select',
-      matchers: [/how did you hear about/i, /how did you first learn about/i],
-      strategy: overrides.referralStrategy || 'first_available',
+      matchers: [/how did you hear about/i, /how did you first learn about/i, /where have you learned about/i],
+      strategy: overrides.referralStrategy || '',
       value: overrides.referralValue || task.candidate.referralSourceAffirmFallback || task.candidate.referralSource,
     },
     {
       key: 'us_work_authorization',
       kind: 'select',
       matchers: [/right to work in the us/i, /authorized to work/i, /visa \/ work permit/i],
-      valueFrom: 'candidate.sponsorshipNow',
+      resolve: ({ context }) => context.candidate.usWorkAuthorization ? 'Yes' : 'No',
     },
     {
       key: 'sponsorship_now',
@@ -172,6 +196,12 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
       kind: 'select',
       matchers: [/require immigration sponsorship at any point in the future/i],
       valueFrom: 'candidate.sponsorshipFuture',
+    },
+    {
+      key: 'previously_worked_at_employer',
+      kind: 'select',
+      matchers: [/have you previously worked at samsara/i, /previously been employed at affirm/i, /worked at nice/i],
+      resolve: ({ context }) => context.candidate.employerSpecificAnswers?.previouslyWorkedAtEmployer || context.candidate.previouslyWorkedAtEmployer,
     },
   ];
 }

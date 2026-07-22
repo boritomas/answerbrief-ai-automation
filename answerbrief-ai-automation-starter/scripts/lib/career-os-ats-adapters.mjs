@@ -290,11 +290,13 @@ async function fillGreenhouseForm(page, task, runtime) {
   const context = await resolveGreenhouseContext(page);
   await fillInputFromLabel(context, /first name/i, task.candidate.firstName);
   await fillInputFromLabel(context, /last name/i, task.candidate.lastName);
+  await fillInputFromLabel(context, /preferred first name|preferred name/i, task.candidate.preferredName);
+  await fillInputFromLabel(context, /preferred last name/i, task.candidate.lastName);
   await fillInputFromLabel(context, /^email/i, task.candidate.email);
   await fillInputFromLabel(context, /^phone/i, task.candidate.phone);
-  await fillInputFromLabel(context, /preferred name/i, task.candidate.preferredName);
   await fillInputFromLabel(context, /linkedin/i, task.candidate.linkedin);
   await fillInputFromLabel(context, /current company/i, task.candidate.currentCompany);
+  await fillInputFromLabel(context, /zip|postal code/i, task.candidate.postalCode);
 
   const resumePath = await runtime.ensureResumeFile();
   const uploaded = await maybeUploadGreenhouseResume(context, resumePath, runtime);
@@ -315,7 +317,6 @@ async function fillGreenhouseForm(page, task, runtime) {
     context,
     buildGreenhouseQuestionMappings(task, {
       email: task.candidate.email,
-      referralStrategy: 'first_available',
     }),
     task,
   );
