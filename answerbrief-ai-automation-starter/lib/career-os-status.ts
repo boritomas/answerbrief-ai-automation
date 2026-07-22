@@ -2151,6 +2151,7 @@ function isReadyToStartApplication(application: JsonRecord) {
   const state = canonicalExecutionStateForApplication(application);
   if (state !== 'queued') return false;
   if (explicitCheckpointId(application) || hasExecutionFootprint(application)) return false;
+  if (!currentApplicationUrl(application)) return false;
   return !careerOsActionMetadata(application).disabledReason;
 }
 
