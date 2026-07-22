@@ -461,13 +461,14 @@ export function canonicalQueueState(application: JsonRecord): QueueState {
 
 function actionKindForApplication(application: JsonRecord, state: QueueState): QueueActionKind {
   const text = applicationText(application);
+  const legalApprovalResolved = hasResolvedLegalApproval(application);
   if (state === 'confirmed' || state === 'submitted') return 'view_confirmation';
   if (state === 'blocked_technical') return 'view_technical_blocker';
   if (hasAny(text, ['total_compensation', 'desired total compensation', 'compensation_unknown', 'compensation review'])) return 'enter_compensation';
   if (hasAny(text, ['employment_start_month', 'employment date', 'start month', 'employment history facts', 'verified employment history', 'requires additional verified answers', 'missing required fields', 'job title*', 'company*', 'from*', 'to*'])) return 'answer_question';
   if (hasAny(text, ['account', 'workday', 'login', 'sign in', 'sign into', 'acknowledgement', 'acknowledgment'])) return 'create_or_open_account';
-  if (hasAny(text, ['ai policy'])) return 'review_legal';
-  if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'policy'])) return 'review_legal';
+  if (!legalApprovalResolved && hasAny(text, ['ai policy'])) return 'review_legal';
+  if (!legalApprovalResolved && hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'policy'])) return 'review_legal';
   if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'open_security_step';
   if (hasAny(text, ['upload', 'resume'])) return 'upload_resume';
   if (state === 'queued' || state === 'running') return 'continue_application';
@@ -535,9 +536,21 @@ function humanOrTechnicalBlocker(application: JsonRecord) {
     return 'Tomas must create or sign in to the GEICO Workday account and review the required acknowledgement before automation can continue.';
   }
   if (hasAny(text, ['account', 'workday', 'login', 'sign in', 'sign into', 'acknowledgement', 'acknowledgment'])) return 'Tomas must create or open the employer account, then resume automation.';
-  if (hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'ai policy', 'policy'])) return 'Tomas must review and approve the exact legal, privacy, AI, NDA, or attestation text.';
+  if (!hasResolvedLegalApproval(application) && hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'ai policy', 'policy'])) return 'Tomas must review and approve the exact legal, privacy, AI, NDA, or attestation text.';
   if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'Tomas must complete the security or identity step in the employer session.';
   return '';
+}
+
+function hasResolvedLegalApproval(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const answers = asRecord(application.application_answers);
+  const approval = asRecord(answers.tomas_approved_answer);
+  return Boolean(
+    stringValue(raw.blocker_resolved_at)
+    || stringValue(raw.human_step_completed_at)
+    || stringValue(approval.approved_at)
+    || raw.tomas_answer_saved === true
+  );
 }
 
 function terminalQueueState(application: JsonRecord): QueueState | null {
