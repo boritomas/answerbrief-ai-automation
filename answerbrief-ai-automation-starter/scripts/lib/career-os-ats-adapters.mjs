@@ -177,6 +177,30 @@ export function greenhouseConfirmationDetected({ currentUrl = '', pageText = '' 
     || GREENHOUSE_CONFIRMATION_PATTERN.test(text);
 }
 
+function greenhouseJobIdentity(url = '') {
+  const value = clean(url);
+  try {
+    const parsed = new URL(value);
+    return clean(parsed.searchParams.get('gh_jid') || parsed.searchParams.get('token'))
+      || clean(parsed.pathname.match(/\/jobs\/(\d+)/i)?.[1])
+      || clean(parsed.pathname.match(/\/roles\/(\d+)/i)?.[1]);
+  } catch {
+    return '';
+  }
+}
+
+function greenhouseListingRedirected({ currentUrl = '', expectedUrl = '', pageText = '' } = {}) {
+  const current = clean(currentUrl);
+  const expectedId = greenhouseJobIdentity(expectedUrl);
+  const currentId = greenhouseJobIdentity(currentUrl);
+  const text = clean(pageText).toLowerCase();
+  if (!current) return false;
+  if (expectedId && currentId && expectedId === currentId) return false;
+  if (expectedId && current.toLowerCase().includes(expectedId.toLowerCase())) return false;
+  return /open positions|work at .*apply to open roles today|jobs at\b/.test(text)
+    && !/submit application|resume|cover letter|application questions/i.test(text);
+}
+
 async function captureConfirmation(page, task, runtime, adapterId) {
   const text = await bodyText(page);
   if (!greenhouseConfirmationDetected({ currentUrl: page.url(), pageText: text })) {
@@ -634,6 +658,16 @@ const greenhouseAdapter = {
     await runtime.takeShot('greenhouse-opened');
 
     if (await runtime.detectCommonHumanGate()) return true;
+    const openedText = await bodyText(page);
+    if (greenhouseListingRedirected({ currentUrl: page.url(), expectedUrl: task.applicationUrl, pageText: openedText })) {
+      await runtime.report({
+        status: 'failed',
+        currentUrl: page.url(),
+        evidenceText: 'Greenhouse posting is no longer available; employer redirected to a generic careers listing.',
+        screenshotPath: await runtime.safeShot('greenhouse-unavailable-redirect'),
+      });
+      return true;
+    }
 
     await fillGreenhouseForm(page, task, runtime);
     await runtime.takeShot('greenhouse-filled');

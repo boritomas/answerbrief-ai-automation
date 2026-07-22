@@ -25,7 +25,7 @@ export type CareerOsDiscoveryPlan = {
   sourceRegistry: string[];
 };
 
-export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-management-market-2026-07-22-v2';
+export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-management-market-2026-07-22-v3';
 
 export const CAREER_OS_SOURCE_REGISTRY = [
   'Greenhouse official board API',
@@ -151,9 +151,15 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Microsoft', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
   source('Google Cloud', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
   source('Amazon Web Services', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
+  source('Databricks', 'greenhouse', 'enterprise SaaS and digital transformation', 'data and AI platform', 84, 'databricks'),
+  source('Airtable', 'greenhouse', 'enterprise SaaS and digital transformation', 'collaboration and workflow platform', 78, 'airtable'),
+  source('Asana', 'greenhouse', 'enterprise SaaS and digital transformation', 'work management platform', 78, 'asana'),
   source('Samsara', 'greenhouse', 'enterprise SaaS and digital transformation', 'connected operations platform', 84, 'samsara'),
+  source('Zscaler', 'greenhouse', 'enterprise SaaS and digital transformation', 'cloud security platform', 76, 'zscaler'),
+  source('Glean', 'greenhouse', 'enterprise SaaS and digital transformation', 'enterprise AI search platform', 76, 'gleanwork'),
   source('Stripe', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'payments platform', 76, 'stripe'),
   source('Block', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'commerce and payments platform', 76, 'block'),
+  source('Marqeta', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'card issuing and payments platform', 76, 'marqeta'),
   source('PayPal', 'workday', 'payments, digital commerce, and adjacent platforms', 'payments platform', 74),
   source('Toast', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'restaurant commerce platform', 82, 'toast'),
   source('Affirm', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'fintech platform', 82, 'affirm'),
