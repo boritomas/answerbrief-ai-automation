@@ -795,7 +795,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     },
     reviewQueue,
     dailyWorkflow,
-    nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates, applicationExecution),
+    nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates, applicationExecution, authoritativeLedger),
     employmentModel,
     atsEmploymentMapper,
     authoritativeLedger,
@@ -959,9 +959,16 @@ function buildNextAction(
   openTasks: JsonRecord[],
   openHumanOnlyGates: JsonRecord[],
   applicationExecution: ApplicationExecutionStatus,
+  authoritativeLedger: AuthoritativeLedgerStatus,
 ) {
-  const applicationBlocker = applicationExecution.exactStatuses.find((item) => item.canonicalExecutionState === 'waiting_on_tomas')
-    || applicationExecution.exactStatuses.find((item) => item.canonicalExecutionState === 'blocked_technical');
+  const activeBlockerApplicationIds = new Set(
+    authoritativeLedger.rows
+      .filter((row) => row.outcome === 'waiting_on_tomas' || row.outcome === 'technical_blocker')
+      .map((row) => stringValue(row.linkedApplicationId))
+      .filter(Boolean),
+  );
+  const applicationBlocker = applicationExecution.exactStatuses.find((item) => item.applicationId && activeBlockerApplicationIds.has(item.applicationId) && item.canonicalExecutionState === 'waiting_on_tomas')
+    || applicationExecution.exactStatuses.find((item) => item.applicationId && activeBlockerApplicationIds.has(item.applicationId) && item.canonicalExecutionState === 'blocked_technical');
 
   if (applicationBlocker) {
     return {
@@ -1667,6 +1674,13 @@ function includeCanonicalOpportunityInLedger(item: CanonicalOpportunity) {
   return reviewDecision !== 'none';
 }
 
+function isPolicyExcludedOpportunity(item: NormalizedOpportunity) {
+  const raw = asRecord(item.raw.raw_record);
+  const normalizedRoleLevel = stringValue(item.normalizedRoleLevel);
+  const deterministicFilterReason = stringValue(item.raw.deterministic_filter_reason || raw.deterministic_filter_reason);
+  return normalizedRoleLevel.startsWith('excluded_') || deterministicFilterReason.startsWith('excluded_');
+}
+
 function authoritativeLedgerRowForCanonical(
   item: CanonicalOpportunity,
   evidence: CareerOsEvidence,
@@ -1691,14 +1705,16 @@ function authoritativeLedgerRowForCanonical(
   const confirmationEvidence = item.applications.some((application) => confirmedApplicationIds.has(stringValue(application.id)));
   const currentRunId = canonicalOpportunitySourceRunId(item, evidence);
   const reviewDecision = normalizedReviewDecision(asRecord(item.preferredRecord.raw.raw_record).review_decision);
-  const needsTomas = relatedTasks.length > 0 || queueStates.includes('waiting_on_tomas') || item.releaseState === 'waiting_on_tomas' || item.releaseState === 'tomas_review';
-  const technicalBlocked = queueStates.some((state) => ['blocked_technical', 'running', 'retry_scheduled', 'failed'].includes(state));
+  const policyExcluded = isPolicyExcludedOpportunity(item.preferredRecord);
+  const needsTomas = !policyExcluded && (relatedTasks.length > 0 || queueStates.includes('waiting_on_tomas') || item.releaseState === 'waiting_on_tomas' || item.releaseState === 'tomas_review');
+  const technicalBlocked = !policyExcluded && queueStates.some((state) => ['blocked_technical', 'running', 'retry_scheduled', 'failed'].includes(state));
   const outcome = determineLedgerOutcome({
     atsSupportState,
     duplicateLock,
     needsTomas,
     packageState,
     postingLiveState,
+    policyExcluded,
     releaseState: item.releaseState,
     reviewDecision,
     submissionEvidence,
@@ -1847,6 +1863,7 @@ function determineLedgerOutcome(input: {
   needsTomas: boolean;
   packageState: AuthoritativeLedgerRow['packageState'];
   postingLiveState: AuthoritativeLedgerRow['postingLiveState'];
+  policyExcluded: boolean;
   releaseState: CanonicalOpportunity['releaseState'];
   reviewDecision: ReviewQueueItem['reviewDecision'];
   submissionEvidence: boolean;
@@ -1855,6 +1872,7 @@ function determineLedgerOutcome(input: {
   if (input.submissionEvidence) return 'submitted';
   if (input.duplicateLock) return 'duplicate';
   if (input.postingLiveState === 'stale') return 'stale';
+  if (input.policyExcluded) return 'rejected';
   if (input.reviewDecision === 'skip' || input.reviewDecision === 'reject_similar') return 'rejected';
   if (input.atsSupportState === 'unsupported') return 'unsupported_ats';
   if (input.needsTomas) return 'waiting_on_tomas';
@@ -2017,6 +2035,7 @@ function qualificationTierForOpportunity(item: NormalizedOpportunity, preferredM
   const reviewDecision = normalizedReviewDecision(raw.review_decision);
   if (isInactiveStatus(item.status) || isInactiveStatus(item.postingValidationStatus)) return 'archive';
   if (reviewDecision === 'skip' || reviewDecision === 'reject_similar') return 'archive';
+  if (isPolicyExcludedOpportunity(item)) return 'archive';
   if (item.status.startsWith('ineligible')) return 'archive';
   if (preferredMinimumBaseSalaryUsd && item.compensationMaxUsd > 0 && item.compensationMaxUsd < preferredMinimumBaseSalaryUsd && !hasTotalCompensationEvidence(item.compensationText)) return 'archive';
   if (item.score >= AUTO_APPLY_THRESHOLD) return 'auto_apply';
@@ -2039,6 +2058,10 @@ function classifyReleaseState(
 ): CanonicalOpportunity['releaseState'] {
   const applicationStates = applications.map((application) => canonicalQueueState(application));
   if (applicationStates.some((state) => state === 'confirmed' || state === 'submitted' || state === 'duplicate')) return 'submitted';
+  if (qualificationTier === 'archive') {
+    if (className === 'ineligible') return 'ineligible';
+    return 'inactive';
+  }
   if (applicationStates.some((state) => state === 'waiting_on_tomas')) return 'waiting_on_tomas';
   if (applicationStates.some((state) => state === 'blocked_technical' || state === 'running' || state === 'retry_scheduled' || state === 'failed')) return 'in_progress';
   if (applicationStates.some((state) => state === 'queued' || state === 'package_ready' || state === 'qualified')) return 'ready_for_automation';
