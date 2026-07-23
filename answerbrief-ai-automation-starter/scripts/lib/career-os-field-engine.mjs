@@ -132,6 +132,29 @@ async function setNativeTextValue(locator, value) {
   }, String(value));
 }
 
+async function locatorControlMeta(locator) {
+  return locator.evaluate((element) => ({
+    role: String(element.getAttribute('role') || '').trim().toLowerCase(),
+    tagName: String(element.tagName || '').trim().toLowerCase(),
+    type: element instanceof HTMLInputElement
+      ? String(element.type || '').trim().toLowerCase()
+      : '',
+  })).catch(() => ({
+    role: '',
+    tagName: '',
+    type: '',
+  }));
+}
+
+function isChoiceControlMeta(meta = {}) {
+  const type = clean(meta.type).toLowerCase();
+  const role = clean(meta.role).toLowerCase();
+  return type === 'checkbox'
+    || type === 'radio'
+    || role === 'checkbox'
+    || role === 'radio';
+}
+
 async function applyTextMapping(page, field, value) {
   const locator = field.id
     ? page.locator(`#${cssEscape(field.id)}`).first()
@@ -139,6 +162,8 @@ async function applyTextMapping(page, field, value) {
       ? page.locator(`[name="${field.name}"]`).first()
       : page.locator(`input[aria-label="${field.ariaLabel}"], textarea[aria-label="${field.ariaLabel}"]`).first();
   if (!await locator.count()) return false;
+  const meta = await locatorControlMeta(locator);
+  if (isChoiceControlMeta(meta)) return false;
   await locator.fill('');
   await setNativeTextValue(locator, value);
   const finalValue = await locator.inputValue().catch(() => '');
@@ -281,6 +306,12 @@ async function applySelectMapping(page, field, mapping, resolved) {
       ? page.locator(`[name="${field.name}"]`).first()
       : null;
   if (!locator || !await locator.count()) return false;
+  const meta = await locatorControlMeta(locator);
+  if (isChoiceControlMeta(meta)) {
+    return applyRadioMapping(page, mapping, resolved);
+  }
+  const radioFallback = await applyRadioMapping(page, mapping, resolved);
+  if (radioFallback) return true;
   const index = optionIndexForStrategy(field, mapping.strategy, resolved);
   if (index < 0) return false;
   await locator.selectOption({ index });
@@ -297,10 +328,17 @@ async function applyRadioMapping(page, mapping, resolved) {
     hasText: mapping.matchers.find((matcher) => matcher instanceof RegExp) || mapping.matchers[0],
   }).first();
   if (!await group.count()) return false;
-  const escaped = String(resolved).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  let option = group.locator('label').filter({ hasText: new RegExp(`^\\s*${escaped}\\s*$`, 'i') }).first();
-  if (!await option.count()) {
-    option = group.locator('label').filter({ hasText: new RegExp(escaped, 'i') }).first();
+  let option = null;
+  if (clean(resolved) === '__first_available__') {
+    option = group.locator('label').filter({
+      has: page.locator('input[type="radio"], input[type="checkbox"]'),
+    }).first();
+  } else {
+    const escaped = String(resolved).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    option = group.locator('label').filter({ hasText: new RegExp(`^\\s*${escaped}\\s*$`, 'i') }).first();
+    if (!await option.count()) {
+      option = group.locator('label').filter({ hasText: new RegExp(escaped, 'i') }).first();
+    }
   }
   if (!await option.count()) return false;
   const control = option.locator('input[type="radio"], input[type="checkbox"]').first();
