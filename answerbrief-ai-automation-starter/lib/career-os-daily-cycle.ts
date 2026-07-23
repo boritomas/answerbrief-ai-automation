@@ -1529,8 +1529,13 @@ function buildPipelineHealth(
   dailyFunnel: DailyOperatingCycleStatus['dailyFunnel'],
 ): DailyOperatingCycleStatus['pipelineHealth'] {
   const submissionEvents = evidence.workflowEvents.filter((event) => String(event.event_type || '') === 'submission_confirmed');
-  const submittedToday = submissionEvents.filter((event) => centralDateKey(event.occurred_at) === centralToday).length;
-  const submittedThisWeek = submissionEvents.filter((event) => isRecentIso(String(event.occurred_at || ''), 24 * 7)).length;
+  const submittedTodayFromEvents = submissionEvents.filter((event) => centralDateKey(event.occurred_at) === centralToday).length;
+  const submittedThisWeekFromEvents = submissionEvents.filter((event) => isRecentIso(String(event.occurred_at || ''), 24 * 7)).length;
+  // Prefer authoritative application evidence; workflow events still cover runs where the event lands before the app row refreshes.
+  const submittedTodayFromApplications = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence) && centralDateKey(application.updated_at) === centralToday).length;
+  const submittedThisWeekFromApplications = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence) && isRecentIso(String(application.updated_at || ''), 24 * 7)).length;
+  const submittedToday = Math.max(submittedTodayFromApplications, submittedTodayFromEvents);
+  const submittedThisWeek = Math.max(submittedThisWeekFromApplications, submittedThisWeekFromEvents);
   const interviews = evidence.applications.filter((application) => hasAny(String(application.lifecycle_stage || ''), ['interview'])).length
     + evidence.workflowEvents.filter((event) => hasAny(`${event.event_type || ''} ${event.status || ''}`, ['interview'])).length;
   const recruiterResponses = evidence.workflowEvents.filter((event) => hasAny(`${event.event_type || ''} ${event.status || ''}`, ['recruiter_response', 'recruiter review', 'employer_response'])).length;
