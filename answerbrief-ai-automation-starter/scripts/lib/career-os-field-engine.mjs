@@ -190,6 +190,26 @@ async function visibleComboboxOptionIndex(page, { strategy, resolved }) {
   }, { resolved: clean(resolved), strategy: clean(strategy) });
 }
 
+async function comboboxCommittedValue(locator) {
+  return clean(await locator.evaluate((element) => {
+    let current = element.parentElement;
+    const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+      const selectedText = Array.from(
+        current.querySelectorAll('.select__single-value, [class*="singleValue"], [class*="single-value"], [class*="multiValue__label"], [class*="multi-value__label"]'),
+      )
+        .map((node) => normalize(node.textContent || ''))
+        .find(Boolean);
+      if (selectedText) return selectedText;
+      const hiddenValue = Array.from(current.querySelectorAll('input[type="hidden"], input[aria-hidden="true"]'))
+        .map((node) => normalize(node.getAttribute('value') || node.value || ''))
+        .find(Boolean);
+      if (hiddenValue) return hiddenValue;
+    }
+    return '';
+  }).catch(() => ''));
+}
+
 async function applyComboboxMapping(page, field, mapping, resolved) {
   const locator = field.id
     ? page.locator(`#${cssEscape(field.id)}`).first()
@@ -220,18 +240,35 @@ async function applyComboboxMapping(page, field, mapping, resolved) {
   const optionText = clean(await option.textContent().catch(() => ''));
   await option.click();
   await page.waitForTimeout(150);
+  let committed = await comboboxCommittedValue(locator);
+  if (!committed) {
+    await locator.click({ force: true }).catch(() => null);
+    if (clean(resolved) && clean(resolved) !== '__first_available__') {
+      await locator.press('Meta+A').catch(() => null);
+      await locator.type(String(resolved), { delay: 20 }).catch(() => null);
+    }
+    await locator.press('ArrowDown').catch(() => null);
+    await locator.press('Enter').catch(() => null);
+    await locator.press('Tab').catch(() => null);
+    await page.waitForTimeout(250);
+    committed = await comboboxCommittedValue(locator);
+  }
 
   const finalValue = clean(await locator.inputValue().catch(() => ''));
   if (mapping.strategy === 'first_available') {
-    return Boolean(optionText);
+    return Boolean(optionText || committed);
   }
-  return normalized(finalValue).includes(normalized(resolved))
+  return normalized(committed).includes(normalized(resolved))
+    || normalized(finalValue).includes(normalized(resolved))
     || normalized(optionText).includes(normalized(resolved));
 }
 
 async function applySelectMapping(page, field, mapping, resolved) {
   if (fieldUsesCombobox(field)) {
     return applyComboboxMapping(page, field, mapping, resolved);
+  }
+  if (field.type === 'radio' || field.type === 'checkbox') {
+    return applyRadioMapping(page, mapping, resolved);
   }
   if (field.tagName !== 'select') {
     return clean(resolved) && clean(resolved) !== '__first_available__'
@@ -260,7 +297,11 @@ async function applyRadioMapping(page, mapping, resolved) {
     hasText: mapping.matchers.find((matcher) => matcher instanceof RegExp) || mapping.matchers[0],
   }).first();
   if (!await group.count()) return false;
-  const option = group.locator('label').filter({ hasText: new RegExp(`^\\s*${String(resolved).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i') }).first();
+  const escaped = String(resolved).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let option = group.locator('label').filter({ hasText: new RegExp(`^\\s*${escaped}\\s*$`, 'i') }).first();
+  if (!await option.count()) {
+    option = group.locator('label').filter({ hasText: new RegExp(escaped, 'i') }).first();
+  }
   if (!await option.count()) return false;
   const control = option.locator('input[type="radio"], input[type="checkbox"]').first();
   if (!await control.count()) return false;
@@ -275,19 +316,39 @@ export async function applyFieldMappings(page, mappings, context) {
   for (const mapping of mappings) {
     const matchers = mapping.matchers || [];
     const field = fields.find((candidate) => matchers.some((matcher) => matchesField(candidate, matcher)));
+    const resolved = resolveMappingValue(mapping, context, field);
+    if (resolved === undefined || resolved === null || clean(resolved) === '') {
+      results.push({
+        key: mapping.key,
+        matched: Boolean(field),
+        applied: false,
+        reason: 'value_unresolved',
+        field: field?.label || field?.id,
+      });
+      continue;
+    }
+
     if (!field) {
+      if (mapping.kind === 'select' || mapping.kind === 'radio') {
+        const applied = await applyRadioMapping(page, mapping, resolved);
+        results.push({
+          key: mapping.key,
+          matched: applied,
+          applied,
+          reason: applied ? undefined : 'field_not_found',
+          value: mapping.strategy === 'first_available' ? '__first_available__' : clean(resolved),
+        });
+        continue;
+      }
+
       results.push({ key: mapping.key, matched: false, applied: false, reason: 'field_not_found' });
       continue;
     }
 
-    const resolved = resolveMappingValue(mapping, context, field);
-    if (resolved === undefined || resolved === null || clean(resolved) === '') {
-      results.push({ key: mapping.key, matched: true, applied: false, reason: 'value_unresolved', field: field.label || field.id });
-      continue;
-    }
-
     let applied = false;
-    if (mapping.kind === 'select') {
+    if (field.type === 'radio' || field.type === 'checkbox') {
+      applied = await applyRadioMapping(page, mapping, resolved);
+    } else if (mapping.kind === 'select') {
       applied = await applySelectMapping(page, field, mapping, resolved);
     } else if (mapping.kind === 'radio') {
       applied = await applyRadioMapping(page, mapping, resolved);

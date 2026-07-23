@@ -2,6 +2,49 @@ function clean(value) {
   return String(value || '').trim().replace(/^"|"$/g, '');
 }
 
+function isBooleanLikeAnswer(value) {
+  return /^(yes|no|true|false)$/i.test(clean(value));
+}
+
+function exactQuestionAnswer(question) {
+  const answer = question?.verifiedMappedAnswer || {};
+  const preferred = answer.answer_label ?? answer.value ?? answer.answer;
+  if (typeof preferred === 'boolean') return preferred ? 'Yes' : 'No';
+  const cleaned = clean(preferred);
+  if (/^true$/i.test(cleaned)) return 'Yes';
+  if (/^false$/i.test(cleaned)) return 'No';
+  return cleaned;
+}
+
+function isChoiceLikeQuestion(questionText) {
+  return /(select all that apply|which of the following|how did you hear|are you |will you |do you |have you |did you )/i.test(clean(questionText));
+}
+
+function buildCatalogDrivenGreenhouseMappings(task) {
+  const catalog = Array.isArray(task?.questionCatalog) ? task.questionCatalog : [];
+  return catalog
+    .map((question, index) => {
+      const exactWording = clean(question?.exactWording);
+      const answer = exactQuestionAnswer(question);
+      if (!exactWording || !answer || exactWording.toLowerCase() === 'text') return null;
+
+      const allowedOptions = Array.isArray(question?.allowedOptions)
+        ? question.allowedOptions.map((option) => clean(option)).filter(Boolean)
+        : [];
+      const kind = allowedOptions.length > 0 || isBooleanLikeAnswer(answer) || isChoiceLikeQuestion(exactWording)
+        ? 'select'
+        : 'text';
+
+      return {
+        key: `catalog_${index}`,
+        kind,
+        matchers: [exactWording],
+        value: answer,
+      };
+    })
+    .filter(Boolean);
+}
+
 function digitsOnly(value) {
   return clean(value).replace(/[^0-9]/g, '');
 }
@@ -121,8 +164,12 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
     {
       key: 'country_region',
       kind: 'select',
-      matchers: [/^country$/i, /country or region/i],
-      value: task.candidate.countryRegion || 'United States of America',
+      matchers: [/^country\b/i, /country or region/i],
+      resolve: ({ context, field }) => {
+        const label = clean(field?.label).toLowerCase();
+        if (label.includes('country')) return 'United States +1';
+        return context.candidate.countryRegion || 'United States +1';
+      },
     },
     {
       key: 'preferred_first_name',
@@ -139,7 +186,7 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
     {
       key: 'city',
       kind: 'text',
-      matchers: [/^city$/i, /location \(city\)/i],
+      matchers: [/^city$/i, /^location\s*\(city\)/i, /^location city$/i],
       valueFrom: 'candidate.city',
     },
     {
@@ -148,7 +195,7 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
       matchers: [/^location$/i, /^location\b/i],
       resolve: ({ context, field }) => {
         const label = clean(field?.label).toLowerCase();
-        if (label.includes('city')) return context.candidate.city;
+        if (label.includes('city')) return context.candidate.city || '';
         return [context.candidate.city, context.candidate.stateOrProvince].filter(Boolean).join(', ');
       },
     },
@@ -198,14 +245,31 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
     {
       key: 'sponsorship_now',
       kind: 'select',
-      matchers: [/require immigration sponsorship.*united states/i, /require sponsorship/i],
+      matchers: [
+        /require immigration sponsorship.*united states/i,
+        /require .*sponsorship/i,
+        /employment sponsorship/i,
+        /sponsor.*immigration/i,
+      ],
       valueFrom: 'candidate.sponsorshipNow',
     },
     {
       key: 'sponsorship_future',
       kind: 'select',
-      matchers: [/require immigration sponsorship at any point in the future/i],
+      matchers: [
+        /require immigration sponsorship at any point in the future/i,
+        /will you now or in the future require .*sponsorship/i,
+      ],
       valueFrom: 'candidate.sponsorshipFuture',
+    },
+    {
+      key: 'toast_privacy_acknowledgement',
+      kind: 'radio',
+      matchers: [
+        /toast'?s applicant privacy statement/i,
+        /information i have provided as part of this job application will be processed in accordance with toast/i,
+      ],
+      value: 'I agree',
     },
     {
       key: 'previously_worked_at_employer',
@@ -213,5 +277,6 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
       matchers: [/have you previously worked at samsara/i, /previously been employed at affirm/i, /worked at nice/i],
       resolve: ({ context }) => context.candidate.employerSpecificAnswers?.previouslyWorkedAtEmployer || context.candidate.previouslyWorkedAtEmployer,
     },
+    ...buildCatalogDrivenGreenhouseMappings(task),
   ];
 }

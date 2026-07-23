@@ -4,7 +4,6 @@ import {
   type DailyOperatingCycleStatus,
 } from './career-os-daily-cycle';
 import { canonicalQueueState, careerOsActionMetadata } from './career-os-queue';
-import { duplicateLockKeys } from './career-os-duplicate-lock';
 import {
   applicationMatchesCanonicalOpportunity,
   canonicalOpportunityIdentity,
@@ -15,6 +14,11 @@ import {
   cleanSupabaseEnv,
   getCareerOsSupabaseConfiguration,
 } from './career-os-supabase';
+import {
+  countCanonicalSubmittedApplicationsOnDate,
+  selectCanonicalSubmittedApplications as selectCanonicalSubmittedApplicationsShared,
+  type CanonicalSubmittedApplication,
+} from './career-os-submission-metrics';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -691,7 +695,7 @@ export function summarizeCareerOsStatus(status: CareerOsStatus) {
     postedCompensationRange: salary,
     qualifiedPostedCompensationRange: qualifiedSalary,
     compensationPreferenceLine: `Tomas preferred minimum base salary: ${preferredBase}; optional desired-compensation fields stay blank.`,
-    dailyWorkflowLine: `${status.dailyWorkflow.marketCoverage.rawJobsReviewed} raw source record${status.dailyWorkflow.marketCoverage.rawJobsReviewed === 1 ? '' : 's'} reviewed; ${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified} unique live role${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified === 1 ? '' : 's'} evaluated; ${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new opportunit${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? 'y' : 'ies'} added; ${status.dailyWorkflow.pipelineHealth.applicationsSubmittedToday} submitted today.`,
+    dailyWorkflowLine: `${status.dailyWorkflow.marketCoverage.rawJobsReviewed} raw source record${status.dailyWorkflow.marketCoverage.rawJobsReviewed === 1 ? '' : 's'} reviewed; ${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified} unique live role${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified === 1 ? '' : 's'} evaluated; ${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new opportunit${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? 'y' : 'ies'} added; ${status.applicationExecution.submittedToday} submitted today.`,
   };
 }
 
@@ -1377,11 +1381,8 @@ function buildApplicationExecutionStatus(
   const nextScheduledRun = nextDailyRunText(generatedAt);
   const exactStatuses = evidence.applications.map((application) => classifyApplicationExecution(application, nextScheduledRun));
   const queueStates = countQueueStates(exactStatuses);
-  const attemptedToday = evidence.applications.filter((application) => applicationAttemptedOnDate(application, centralToday)).length;
-  const submittedToday = evidence.applications.filter((application) => {
-    if (!application.confirmation_number && !application.submission_evidence) return false;
-    return centralDateKey(application.updated_at) === centralToday;
-  }).length;
+  const attemptedToday = evidence.applications.filter((application) => applicationAttemptedOnDate(application, evidence.workflowEvents, centralToday)).length;
+  const submittedToday = countCanonicalSubmittedApplicationsOnDate(evidence.applications, generatedAt);
   const latestRun = evidence.automationRuns[0];
   const confirmed = canonicalSubmittedApplications.filter((item) => item.confirmationEvidence).length;
   const submitted = canonicalSubmittedApplications.length;
@@ -1409,28 +1410,43 @@ function buildApplicationExecutionStatus(
   };
 }
 
-function applicationAttemptedOnDate(application: JsonRecord, centralToday: string) {
+const MEANINGFUL_ATTEMPT_EVENT_TYPES = new Set([
+  'browser_worker_waiting_on_tomas',
+  'browser_worker_blocked',
+  'browser_worker_submitted',
+  'browser_worker_confirmed',
+  'submission_confirmed',
+  'resume_upload_completed',
+  'verified_answers_populated',
+  'human_only_gate',
+]);
+
+function applicationAttemptedOnDate(application: JsonRecord, workflowEvents: JsonRecord[], centralToday: string) {
   const state = canonicalExecutionStateForApplication(application);
   if (['qualification_pending', 'discovered', 'qualified', 'package_pending', 'package_ready', 'inactive', 'ineligible', 'duplicate'].includes(state)) {
     return false;
   }
 
+  const applicationId = stringValue(application.id);
+  if (applicationId && workflowEvents.some((event) => {
+    return stringValue(event.application_id) === applicationId
+      && MEANINGFUL_ATTEMPT_EVENT_TYPES.has(stringValue(event.event_type))
+      && centralDateKey(event.occurred_at) === centralToday;
+  })) {
+    return true;
+  }
+
   const raw = asRecord(application.raw_record);
-  const browserWorker = asRecord(raw.browser_worker);
-  const lastReport = asRecord(raw.browser_worker_last_report);
   const activityTimestamps = [
-    raw.queue_updated_at,
     raw.human_step_completed_at,
-    browserWorker.claimed_at,
-    browserWorker.last_heartbeat_at,
-    lastReport.timestamp,
+    raw.blocker_resolved_at,
   ];
 
   if (activityTimestamps.some((value) => centralDateKey(value) === centralToday)) {
     return true;
   }
 
-  return centralDateKey(application.updated_at) === centralToday;
+  return false;
 }
 
 function buildTrustedAutoApplyPolicy(): TrustedAutoApplyPolicyStatus {
@@ -1574,15 +1590,6 @@ type CanonicalOpportunity = {
   sourceOpportunityIds: Set<string>;
   sourceSightings: ReturnType<typeof mergeCanonicalSourceSightings>;
   submitted: boolean;
-};
-
-type CanonicalSubmittedApplication = {
-  application: JsonRecord;
-  confirmationEvidence: boolean;
-  duplicateLocked: boolean;
-  executionState: CanonicalApplicationExecutionState;
-  identityKey: string;
-  manualAttestation: boolean;
 };
 
 function buildAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): AuthoritativeLedgerStatus {
@@ -2473,83 +2480,7 @@ function isGenericCheckpointReason(value: string) {
 }
 
 function selectCanonicalSubmittedApplications(evidence: CareerOsEvidence): CanonicalSubmittedApplication[] {
-  const bestByIdentity = new Map<string, CanonicalSubmittedApplication>();
-
-  for (const application of evidence.applications) {
-    const executionState = canonicalExecutionStateForApplication(application);
-    if (!['confirmed', 'submitted', 'duplicate'].includes(executionState)) continue;
-
-    const confirmationEvidence = hasConfirmationEvidence(application);
-    const manualAttestation = hasManualSubmissionAttestation(application);
-    if (!confirmationEvidence && !manualAttestation) continue;
-
-    const candidate: CanonicalSubmittedApplication = {
-      application,
-      confirmationEvidence,
-      duplicateLocked: executionState === 'duplicate' || asRecord(application.raw_record).duplicate_locked === true,
-      executionState,
-      identityKey: canonicalSubmittedApplicationIdentity(application),
-      manualAttestation,
-    };
-    const existing = bestByIdentity.get(candidate.identityKey);
-    if (!existing || submittedApplicationRank(candidate) > submittedApplicationRank(existing)) {
-      bestByIdentity.set(candidate.identityKey, candidate);
-    }
-  }
-
-  return Array.from(bestByIdentity.values()).sort((left, right) => {
-    const leftUpdated = Date.parse(String(left.application.updated_at || 0)) || 0;
-    const rightUpdated = Date.parse(String(right.application.updated_at || 0)) || 0;
-    return rightUpdated - leftUpdated;
-  });
-}
-
-function canonicalSubmittedApplicationIdentity(application: JsonRecord) {
-  const raw = asRecord(application.raw_record);
-  const keys = duplicateLockKeys({
-    confirmation_number: stringValue(application.confirmation_number) || null,
-    employer: stringValue(application.employer) || null,
-    id: stringValue(application.id) || 'unknown-application',
-    lifecycle_stage: stringValue(application.lifecycle_stage) || null,
-    next_action: stringValue(application.next_action) || null,
-    opportunity_id: stringValue(application.opportunity_id) || null,
-    position: stringValue(application.position) || null,
-    raw_record: raw,
-    submission_evidence: stringValue(application.submission_evidence) || null,
-  });
-
-  if (keys.length) return keys[0];
-
-  return [
-    compactKey(application.employer),
-    normalizeTitle(application.position),
-    normalizeUrl(raw.canonical_url || raw.application_url || raw.job_url || raw.posting_url || ''),
-    compactKey(raw.external_requisition_id || raw.requisition_id || raw.ats_job_id || raw.job_id || raw.token),
-    stringValue(application.id),
-  ].filter(Boolean).join(':');
-}
-
-function hasConfirmationEvidence(application: JsonRecord) {
-  const raw = asRecord(application.raw_record);
-  return Boolean(
-    application.confirmation_number
-    || application.submission_evidence
-    || raw.confirmation_number
-    || raw.confirmation_url
-    || raw.confirmation_page_url
-    || raw.confirmation_text
-    || raw.confirmation_evidence
-    || raw.externally_confirmed === true
-    || raw.user_confirmed_submission === true,
-  );
-}
-
-function submittedApplicationRank(item: CanonicalSubmittedApplication) {
-  if (item.confirmationEvidence && item.executionState === 'confirmed') return 5;
-  if (item.confirmationEvidence) return 4;
-  if (item.manualAttestation && item.executionState === 'submitted') return 3;
-  if (item.manualAttestation) return 2;
-  return 1;
+  return selectCanonicalSubmittedApplicationsShared(evidence.applications);
 }
 
 function reviewQueueItemFromCanonical(item: CanonicalOpportunity): ReviewQueueItem {
