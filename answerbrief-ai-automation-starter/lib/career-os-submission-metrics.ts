@@ -131,6 +131,17 @@ function canonicalSubmissionTimestamp(application: JsonRecord) {
   );
 }
 
+function canonicalSubmissionEvidenceTimestamp(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return String(
+    raw.confirmed_at
+    || raw.confirmation_captured_at
+    || raw.submitted_at
+    || raw.last_submitted_at
+    || '',
+  );
+}
+
 export function selectCanonicalSubmittedApplications(applications: JsonRecord[]): CanonicalSubmittedApplication[] {
   const bestByIdentity = new Map<string, CanonicalSubmittedApplication>();
 
@@ -166,13 +177,13 @@ export function selectCanonicalSubmittedApplications(applications: JsonRecord[])
 export function countCanonicalSubmittedApplicationsOnDate(applications: JsonRecord[], generatedAt: Date) {
   const centralToday = centralDateKey(generatedAt.toISOString());
   return selectCanonicalSubmittedApplications(applications).filter((item) => {
-    return centralDateKey(canonicalSubmissionTimestamp(item.application)) === centralToday;
+    return centralDateKey(canonicalSubmissionEvidenceTimestamp(item.application)) === centralToday;
   }).length;
 }
 
 export function countCanonicalSubmittedApplicationsWithinHours(applications: JsonRecord[], hours: number) {
   return selectCanonicalSubmittedApplications(applications).filter((item) => {
-    const timestamp = canonicalSubmissionTimestamp(item.application);
+    const timestamp = canonicalSubmissionEvidenceTimestamp(item.application);
     if (!timestamp) return false;
     const submittedAt = Date.parse(timestamp);
     if (!Number.isFinite(submittedAt)) return false;

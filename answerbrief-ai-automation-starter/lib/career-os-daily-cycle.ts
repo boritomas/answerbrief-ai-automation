@@ -13,6 +13,10 @@ import {
   type CareerOsDiscoveryPlan,
   type CareerOsSourceCandidate,
 } from './career-os-market-universe';
+import {
+  countCanonicalSubmittedApplicationsOnDate,
+  countCanonicalSubmittedApplicationsWithinHours,
+} from './career-os-submission-metrics';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -1266,7 +1270,7 @@ function buildDailyFunnel(
   const newlyDiscoveredRecords = recordsTouchedToday.filter((record) => recordNewToday(record, centralToday)).length;
   const uniqueRecordsToday = dedupeRawRecords(recordsTouchedToday);
   const exactExecutionStatuses = evidence.applications.map((application) => classifyApplicationExecution(application, nextDailyRunText(new Date())));
-  const submittedToday = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence) && centralDateKey(application.updated_at) === centralToday).length;
+  const submittedToday = countCanonicalSubmittedApplicationsOnDate(evidence.applications, new Date());
 
   return {
     applicationExecutionToday: {
@@ -1532,8 +1536,8 @@ function buildPipelineHealth(
   const submittedTodayFromEvents = submissionEvents.filter((event) => centralDateKey(event.occurred_at) === centralToday).length;
   const submittedThisWeekFromEvents = submissionEvents.filter((event) => isRecentIso(String(event.occurred_at || ''), 24 * 7)).length;
   // Prefer authoritative application evidence; workflow events still cover runs where the event lands before the app row refreshes.
-  const submittedTodayFromApplications = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence) && centralDateKey(application.updated_at) === centralToday).length;
-  const submittedThisWeekFromApplications = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence) && isRecentIso(String(application.updated_at || ''), 24 * 7)).length;
+  const submittedTodayFromApplications = countCanonicalSubmittedApplicationsOnDate(evidence.applications, new Date());
+  const submittedThisWeekFromApplications = countCanonicalSubmittedApplicationsWithinHours(evidence.applications, 24 * 7);
   const submittedToday = Math.max(submittedTodayFromApplications, submittedTodayFromEvents);
   const submittedThisWeek = Math.max(submittedThisWeekFromApplications, submittedThisWeekFromEvents);
   const interviews = evidence.applications.filter((application) => hasAny(String(application.lifecycle_stage || ''), ['interview'])).length
