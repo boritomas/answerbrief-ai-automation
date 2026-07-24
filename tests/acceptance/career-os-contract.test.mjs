@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  clickSubmitControl,
   detectVisibleCaptchaEvidence,
   greenhouseConfirmationDetected,
 } from '../../answerbrief-ai-automation-starter/scripts/lib/career-os-ats-adapters.mjs';
@@ -30,10 +31,214 @@ const profile = readJson(path.join(syntheticRoot, 'candidate-master-profile.json
 const opportunities = readJson(path.join(syntheticRoot, 'opportunities.json'));
 const pilotEvidence = readJson(path.join(syntheticRoot, 'pilot-evidence.json'));
 
+class FakeElement {
+  constructor({ tagName, type = '', text = '', value = '', role = '', title = '', ariaLabel = '', disabled = false, visible = true, inForm = true }) {
+    this.tagName = tagName.toUpperCase();
+    this.type = type;
+    this.textContent = text;
+    this.value = value;
+    this.disabled = disabled;
+    this.visible = visible;
+    this.inForm = inForm;
+    this.clicked = false;
+    this.attributes = new Map(Object.entries({
+      type,
+      value,
+      role,
+      title,
+      'aria-label': ariaLabel,
+    }).filter(([, attributeValue]) => attributeValue !== ''));
+    if (disabled) this.attributes.set('disabled', '');
+  }
+
+  getAttribute(name) {
+    return this.attributes.has(name) ? this.attributes.get(name) : null;
+  }
+
+  getBoundingClientRect() {
+    return this.visible ? { width: 100, height: 32 } : { width: 0, height: 0 };
+  }
+
+  closest(selector) {
+    return selector === 'form' && this.inForm ? {} : null;
+  }
+}
+
+function elementMatchesSelector(element, selector) {
+  const tagName = element.tagName.toLowerCase();
+  if (selector === 'button[type="submit"]') return tagName === 'button' && element.getAttribute('type') === 'submit';
+  if (selector === 'input[type="submit"]') return tagName === 'input' && element.getAttribute('type') === 'submit';
+  if (selector === 'input[type="button"]') return tagName === 'input' && element.getAttribute('type') === 'button';
+  if (selector === '[role="button"]') return element.getAttribute('role') === 'button';
+  if (selector === 'button:not([type="submit"])') return tagName === 'button' && element.getAttribute('type') !== 'submit';
+  return false;
+}
+
+function selectFakeElements(elements, selector) {
+  return selector
+    .split(',')
+    .map((part) => part.trim())
+    .flatMap((part) => elements.filter((element) => elementMatchesSelector(element, part)));
+}
+
+class FakeLocator {
+  constructor(elements) {
+    this.elements = elements;
+  }
+
+  filter({ hasText }) {
+    return new FakeLocator(this.elements.filter((element) => {
+      const text = String(element.textContent || '');
+      return hasText instanceof RegExp ? hasText.test(text) : text.includes(String(hasText || ''));
+    }));
+  }
+
+  first() {
+    return new FakeLocator(this.elements.slice(0, 1));
+  }
+
+  nth(index) {
+    return new FakeLocator(this.elements.slice(index, index + 1));
+  }
+
+  async count() {
+    return this.elements.length;
+  }
+
+  async textContent() {
+    return this.elements[0]?.textContent || '';
+  }
+
+  async isVisible() {
+    return this.elements[0]?.visible !== false;
+  }
+
+  async isEnabled() {
+    return this.elements[0]?.disabled !== true;
+  }
+
+  async click() {
+    if (!this.elements[0]) throw new Error('No element to click');
+    if (this.elements[0].disabled || this.elements[0].visible === false) throw new Error('Element is not clickable');
+    this.elements[0].clicked = true;
+  }
+
+  async evaluateAll(callback, argument) {
+    return callback(this.elements, argument);
+  }
+}
+
+function fakePage(elements) {
+  return {
+    locator(selector) {
+      return new FakeLocator(selectFakeElements(elements, selector));
+    },
+  };
+}
+
 test('real-source adapter contract rejects synthetic as production proof', () => {
   assert.equal(pilotEvidence.environment, 'synthetic');
   assert.notEqual(pilotEvidence.sourceRun.sourceName, '');
   assert.equal(pilotEvidence.productionWarning.includes('must never satisfy production'), true);
+});
+
+test('submit resolver clicks button[type=submit] using visible text', async () => {
+  const submitButton = new FakeElement({
+    tagName: 'button',
+    type: 'submit',
+    text: 'Submit Application',
+  });
+  const result = await clickSubmitControl(fakePage([submitButton]), [/submit application/i]);
+
+  assert.deepEqual(result, {
+    clicked: true,
+    selectorType: 'button[type=submit]',
+    selectorValue: 'Submit Application',
+  });
+  assert.equal(submitButton.clicked, true);
+});
+
+test('submit resolver clicks input[type=submit] using value', async () => {
+  const submitInput = new FakeElement({
+    tagName: 'input',
+    type: 'submit',
+    value: 'Submit Application',
+  });
+  const result = await clickSubmitControl(fakePage([submitInput]), [/submit application/i]);
+
+  assert.deepEqual(result, {
+    clicked: true,
+    selectorType: 'input[type=submit]',
+    selectorValue: 'Submit Application',
+  });
+  assert.equal(submitInput.clicked, true);
+});
+
+test('submit resolver chooses the matching submit input when multiple candidates exist', async () => {
+  const saveDraft = new FakeElement({
+    tagName: 'input',
+    type: 'submit',
+    value: 'Save Draft',
+  });
+  const submitApplication = new FakeElement({
+    tagName: 'input',
+    type: 'submit',
+    value: 'Submit Application',
+  });
+  const result = await clickSubmitControl(fakePage([saveDraft, submitApplication]), [/submit application/i]);
+
+  assert.equal(result.clicked, true);
+  assert.equal(result.selectorType, 'input[type=submit]');
+  assert.equal(result.selectorValue, 'Submit Application');
+  assert.equal(saveDraft.clicked, false);
+  assert.equal(submitApplication.clicked, true);
+});
+
+test('submit resolver returns a structured failure when no submit control matches', async () => {
+  const saveDraft = new FakeElement({
+    tagName: 'button',
+    type: 'submit',
+    text: 'Save Draft',
+  });
+  const result = await clickSubmitControl(fakePage([saveDraft]), [/submit application/i]);
+
+  assert.equal(result.clicked, false);
+  assert.match(result.reason, /No submit control matched/);
+  assert.equal(saveDraft.clicked, false);
+});
+
+test('Greenhouse-style submit input is resolved by value without hasText', async () => {
+  const greenhouseSubmit = new FakeElement({
+    tagName: 'input',
+    type: 'submit',
+    value: 'Submit Application',
+    text: '',
+  });
+  const result = await clickSubmitControl(fakePage([greenhouseSubmit]), [/submit application|submit/i]);
+
+  assert.deepEqual(result, {
+    clicked: true,
+    selectorType: 'input[type=submit]',
+    selectorValue: 'Submit Application',
+  });
+});
+
+test('Greenhouse submit reporting does not claim click completion without a successful click', async () => {
+  const adaptersSource = readFileSync(path.join(repoRoot, 'answerbrief-ai-automation-starter', 'scripts', 'lib', 'career-os-ats-adapters.mjs'), 'utf8');
+  const disabledSubmit = new FakeElement({
+    tagName: 'input',
+    type: 'submit',
+    value: 'Submit Application',
+    disabled: true,
+  });
+  const result = await clickSubmitControl(fakePage([disabledSubmit]), [/submit application/i]);
+
+  assert.equal(result.clicked, false);
+  assert.equal(disabledSubmit.clicked, false);
+  assert.doesNotMatch(adaptersSource, /Submission click completed/);
+  assert.match(adaptersSource, /Submission click executed/);
+  assert.match(adaptersSource, /const input = await resolveSubmitInputByValue\(context, pattern\);/);
+  assert.doesNotMatch(adaptersSource, /input\[type="submit"\][^\n]*hasText/);
 });
 
 test('posting normalization, duplicate prevention, and expired-job rejection work together', () => {

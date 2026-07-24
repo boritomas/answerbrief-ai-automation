@@ -72,29 +72,185 @@ async function selectOptionByText(select, value) {
   return false;
 }
 
-async function clickButton(page, patterns, options = {}) {
+function submitPatternSource(pattern) {
+  return pattern instanceof RegExp ? pattern.source : escapeRegExp(clean(pattern));
+}
+
+function submitPatternLabel(pattern) {
+  return pattern instanceof RegExp ? `/${pattern.source}/${pattern.flags}` : clean(pattern);
+}
+
+async function clickSubmitLocator(locator, selectorType, selectorValue, options = {}) {
+  const count = await locator.count().catch(() => 0);
+  if (!count) {
+    return {
+      clicked: false,
+      reason: `${selectorType} did not resolve to an element.`,
+    };
+  }
+
+  const visible = await locator.isVisible().catch(() => true);
+  const enabled = await locator.isEnabled().catch(() => true);
+  if (!visible || !enabled) {
+    return {
+      clicked: false,
+      reason: `${selectorType} matched "${selectorValue}", but it was not clickable.`,
+      selectorType,
+      selectorValue,
+    };
+  }
+
+  if (options.beforeClick) await options.beforeClick();
+  try {
+    await locator.click();
+    return {
+      clicked: true,
+      selectorType,
+      selectorValue: clean(selectorValue),
+    };
+  } catch (error) {
+    return {
+      clicked: false,
+      reason: `${selectorType} matched "${selectorValue}", but click failed: ${error.message}`,
+      selectorType,
+      selectorValue,
+    };
+  }
+}
+
+async function resolveSubmitInputByValue(context, pattern, selector = 'input[type="submit"]') {
+  const result = await context.locator(selector).evaluateAll((nodes, source) => {
+    const regex = new RegExp(source, 'i');
+    const isVisible = (node) => {
+      const style = typeof window !== 'undefined' && window.getComputedStyle
+        ? window.getComputedStyle(node)
+        : null;
+      if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+      if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return false;
+      const rect = typeof node.getBoundingClientRect === 'function'
+        ? node.getBoundingClientRect()
+        : { width: 1, height: 1 };
+      return rect.width !== 0 || rect.height !== 0;
+    };
+    const isEnabled = (node) => !node.disabled
+      && !(node.getAttribute && node.getAttribute('disabled') !== null)
+      && !(node.getAttribute && node.getAttribute('aria-disabled') === 'true');
+
+    const index = nodes.findIndex((node) => {
+      const value = String((node.getAttribute && node.getAttribute('value')) || node.value || '');
+      return regex.test(value) && isVisible(node) && isEnabled(node);
+    });
+    if (index < 0) return null;
+    const node = nodes[index];
+    return {
+      index,
+      value: String((node.getAttribute && node.getAttribute('value')) || node.value || ''),
+    };
+  }, submitPatternSource(pattern)).catch(() => null);
+
+  if (!result || !Number.isFinite(Number(result.index))) return null;
+  return {
+    locator: context.locator(selector).nth(Number(result.index)),
+    selectorValue: result.value,
+  };
+}
+
+async function resolveSubmitRoleFallback(context, pattern) {
+  const selector = 'button:not([type="submit"]), input[type="button"], [role="button"]';
+  const result = await context.locator(selector).evaluateAll((nodes, source) => {
+    const regex = new RegExp(source, 'i');
+    const normalizedText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
+    const isVisible = (node) => {
+      const style = typeof window !== 'undefined' && window.getComputedStyle
+        ? window.getComputedStyle(node)
+        : null;
+      if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+      if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return false;
+      const rect = typeof node.getBoundingClientRect === 'function'
+        ? node.getBoundingClientRect()
+        : { width: 1, height: 1 };
+      return rect.width !== 0 || rect.height !== 0;
+    };
+    const isEnabled = (node) => !node.disabled
+      && !(node.getAttribute && node.getAttribute('disabled') !== null)
+      && !(node.getAttribute && node.getAttribute('aria-disabled') === 'true');
+    const isSubmitCapable = (node, label) => {
+      const tagName = String(node.tagName || '').toLowerCase();
+      const type = String((node.getAttribute && node.getAttribute('type')) || '').toLowerCase();
+      const role = String((node.getAttribute && node.getAttribute('role')) || '').toLowerCase();
+      const hasSubmitIntent = /submit|apply|continue|next|review/i.test(label);
+      const hasFormRelationship = Boolean(node.closest && node.closest('form'))
+        || Boolean(node.getAttribute && node.getAttribute('form'));
+      return hasSubmitIntent && (
+        hasFormRelationship
+        || tagName === 'button'
+        || role === 'button'
+        || type === 'button'
+      );
+    };
+
+    const index = nodes.findIndex((node) => {
+      const label = normalizedText(
+        (node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('value') || node.getAttribute('title')))
+        || node.value
+        || node.textContent,
+      );
+      return regex.test(label) && isVisible(node) && isEnabled(node) && isSubmitCapable(node, label);
+    });
+    if (index < 0) return null;
+    const node = nodes[index];
+    return {
+      index,
+      value: normalizedText(
+        (node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('value') || node.getAttribute('title')))
+        || node.value
+        || node.textContent,
+      ),
+    };
+  }, submitPatternSource(pattern)).catch(() => null);
+
+  if (!result || !Number.isFinite(Number(result.index))) return null;
+  return {
+    locator: context.locator(selector).nth(Number(result.index)),
+    selectorValue: result.value,
+  };
+}
+
+export async function clickSubmitControl(context, patterns, options = {}) {
+  const failures = [];
   for (const pattern of patterns) {
-    const button = page.locator('button, input[type="submit"], input[type="button"]').filter({ hasText: pattern }).first();
-    if (await button.count()) {
-      if (options.beforeClick) await options.beforeClick();
-      await button.click();
-      return true;
+    const button = context.locator('button[type="submit"]').filter({ hasText: pattern }).first();
+    if (await button.count().catch(() => 0)) {
+      const selectorValue = await button.textContent().catch(() => submitPatternLabel(pattern));
+      const result = await clickSubmitLocator(button, 'button[type=submit]', selectorValue, options);
+      if (result.clicked) return result;
+      failures.push(result.reason);
     }
-    const input = page.locator('input[type="submit"], input[type="button"]').evaluateAll((nodes, source) => {
-      const regex = new RegExp(source, 'i');
-      const found = nodes.find((node) => regex.test(String(node.getAttribute('value') || '')));
-      return found ? String(nodes.indexOf(found)) : '';
-    }, pattern.source).catch(() => '');
+
+    const input = await resolveSubmitInputByValue(context, pattern);
     if (input) {
-      const index = Number(input);
-      if (Number.isFinite(index)) {
-        if (options.beforeClick) await options.beforeClick();
-        await page.locator('input[type="submit"], input[type="button"]').nth(index).click();
-        return true;
-      }
+      const result = await clickSubmitLocator(input.locator, 'input[type=submit]', input.selectorValue, options);
+      if (result.clicked) return result;
+      failures.push(result.reason);
+    }
+
+    const fallback = await resolveSubmitRoleFallback(context, pattern);
+    if (fallback) {
+      const result = await clickSubmitLocator(fallback.locator, 'role/button', fallback.selectorValue, options);
+      if (result.clicked) return result;
+      failures.push(result.reason);
     }
   }
-  return false;
+
+  return {
+    clicked: false,
+    reason: failures.find(Boolean) || `No submit control matched ${patterns.map(submitPatternLabel).join(', ')}.`,
+  };
+}
+
+async function clickButton(page, patterns, options = {}) {
+  const result = await clickSubmitControl(page, patterns, options);
+  return result.clicked;
 }
 
 async function bodyText(page) {
@@ -915,25 +1071,37 @@ const greenhouseAdapter = {
     const refreshedContext = await resolveGreenhouseContext(page);
     if (await detectUnresolvedGreenhouseFields(refreshedContext, page, task, runtime)) return true;
 
-    const submit = refreshedContext.locator('button[type="submit"], input[type="submit"]').filter({ hasText: /submit application|submit/i }).first();
-    if (await submit.count()) {
-      await runtime.assertSafeToSubmit();
-      await runtime.report({ status: 'running', evidenceText: 'Submitting the employer application.' });
-      await Promise.allSettled([
-        page.waitForLoadState('domcontentloaded', { timeout: 20000 }),
-        submit.click(),
-      ]);
+    const submitResult = await clickSubmitControl(refreshedContext, [/submit application|submit/i], {
+      beforeClick: async () => {
+        await runtime.assertSafeToSubmit();
+        await runtime.report({ status: 'running', evidenceText: 'Submitting the employer application.' });
+      },
+    });
+    if (submitResult.clicked) {
+      await page.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => null);
       await page.waitForTimeout(3000);
     }
 
     const confirmedContext = await resolveGreenhouseContext(page);
     if (await captureConfirmation(confirmedContext, page, task, runtime, 'greenhouse')) return true;
 
+    if (!submitResult.clicked) {
+      await runtime.report({
+        status: 'blocked_technical',
+        currentUrl: page.url(),
+        evidenceText: `Greenhouse submit control was not clicked: ${submitResult.reason}`,
+        screenshotPath: await runtime.takeShot('greenhouse-submit-not-found'),
+        details: { submitResult },
+      });
+      return true;
+    }
+
     await runtime.report({
       status: 'waiting_on_tomas',
       currentUrl: page.url(),
-      evidenceText: 'Submission click completed, but no confirmation evidence was detected. Tomas should review the live employer page.',
+      evidenceText: `Submission click executed (${submitResult.selectorType}: ${submitResult.selectorValue}), but no confirmation evidence was detected. Tomas should review the live employer page.`,
       screenshotPath: await runtime.takeShot('greenhouse-after-submit'),
+      details: { submitResult },
     });
     return true;
   },
