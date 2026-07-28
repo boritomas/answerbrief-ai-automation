@@ -337,8 +337,7 @@ async function persistToSupabase(sourceRun, postings) {
   if (postings.length) {
   const postingColumns = [...new Set(
     postings.flatMap((posting) => Object.keys(posting))
-  )].sort();
-
+)].filter((column) => column !== 'deterministic_filter_reason').sort();
   const normalizedPostings = postings.map((posting) =>
     Object.fromEntries(
       postingColumns.map((column) => [
