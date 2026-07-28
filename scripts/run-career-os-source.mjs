@@ -352,12 +352,26 @@ async function persistToSupabase(sourceRun, postings) {
     `Normalized ${normalizedPostings.length} job rows across ${postingColumns.length} columns.`
   );
 
+  const batchSize = 200;
+const totalBatches = Math.ceil(normalizedPostings.length / batchSize);
+
+for (let start = 0; start < normalizedPostings.length; start += batchSize) {
+  const batch = normalizedPostings.slice(start, start + batchSize);
+  const batchNumber = Math.floor(start / batchSize) + 1;
+
+  console.log(
+    `Uploading job batch ${batchNumber}/${totalBatches} (${batch.length} rows).`
+  );
+
   await supabaseUpsert(
     supabaseUrl,
     serviceRoleKey,
     'career_os_job_postings',
-    normalizedPostings
+    batch
   );
+
+  await new Promise((resolve) => setTimeout(resolve, 250));
+}
 }
 }
 
