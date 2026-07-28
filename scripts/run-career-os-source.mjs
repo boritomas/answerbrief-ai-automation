@@ -194,9 +194,19 @@ console.log(JSON.stringify({
   persisted: persist,
 }, null, 2));
 
+async function fetchWithTimeout(url, options, timeoutMs = 30_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchGreenhouseJobs(board) {
   const url = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs?content=true`;
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  const response = await fetchWithTimeout(url, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(`Greenhouse ${board} returned ${response.status}`);
   const payload = await response.json();
   return Array.isArray(payload.jobs) ? payload.jobs : [];
@@ -263,7 +273,7 @@ async function fetchJpmorganOraclePilot(lastCheckedAt, sourceRunId) {
   const seen = new Map();
   for (const query of querySets) {
     const finder = `findReqs;siteNumber=CX_1001,keyword=${query.keyword},selectedCategoriesFacet=${query.selectedCategoriesFacet},selectedLocationsFacet=${query.selectedLocationsFacet},limit=25,offset=0`;
-    const response = await fetch(`https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?finder=${encodeURIComponent(finder)}&expand=requisitionList&onlyData=true`, {
+    const response = await fetchWithTimeout(`https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?finder=${encodeURIComponent(finder)}&expand=requisitionList&onlyData=true`, {
       headers: { accept: 'application/json' },
     });
     if (!response.ok) throw new Error(`Oracle JPMorgan Chase returned ${response.status}`);
@@ -342,21 +352,36 @@ async function persistToSupabase(sourceRun, postings) {
 }
 
 async function supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows) {
-  const response = await fetch(`${supabaseUrl}/rest/v1/${table}?on_conflict=id`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
-    body: JSON.stringify(rows),
-  });
+  const maxAttempts = 3;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetchWithTimeout(`${supabaseUrl}/rest/v1/${table}?on_conflict=id`, {
+        method: 'POST',
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify(rows),
+      }, 30_000);
 
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`Supabase ${table} upsert failed with ${response.status}: ${message.slice(0, 240)}`);
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`Supabase ${table} upsert failed with ${response.status}: ${message.slice(0, 240)}`);
+      }
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts) {
+        const delayMs = attempt * 5_000;
+        console.error(`Supabase ${table} attempt ${attempt} failed (${err.message}) — retrying in ${delayMs}ms`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
   }
+  throw lastError;
 }
 
 function scorePosting(job, description) {
