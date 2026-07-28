@@ -26,7 +26,7 @@ jobs:
           npm install
 
           echo "Running source discovery"
-          node ../scripts/run-career-os-source.mjs --persist
+          node scripts/run-career-os-source.mjs --persist
 
           echo "Checking browser worker health"
           npm run worker:health || true
