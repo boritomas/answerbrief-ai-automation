@@ -8,28 +8,22 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, career-os]
 
     steps:
-      - name: Run Career OS on Mac
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run Career OS source discovery
         shell: bash
         run: |
           set -euo pipefail
-
-          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
-
-          echo "Using runtime: $RUNTIME"
-          test -d "$RUNTIME"
-          cd "$RUNTIME"
-
-          node --version
-          npm --version
-
-          echo "Installing dependencies"
-          npm install
-
-          echo "Running source discovery"
+          cd "$GITHUB_WORKSPACE"
           node scripts/run-career-os-source.mjs --persist
 
-          echo "Checking browser worker health"
+      - name: Run local browser worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          cd "$RUNTIME"
+          npm install
           npm run worker:health || true
-
-          echo "Running one authenticated application cycle"
           npm run worker:run-once
