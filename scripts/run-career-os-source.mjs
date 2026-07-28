@@ -1,5 +1,27 @@
 #!/usr/bin/env node
 import crypto from 'node:crypto';
+import https from 'node:https';
+
+// Configure undici dispatcher so headersTimeout/bodyTimeout are not the 5-minute
+// default that caused UND_ERR_HEADERS_TIMEOUT failures when Supabase is slow.
+let undiciConfigured = false;
+try {
+  const { Agent, setGlobalDispatcher } = await import('node:undici');
+  setGlobalDispatcher(new Agent({
+    connect: { timeout: 60_000 },
+    headersTimeout: 600_000,
+    bodyTimeout: 600_000,
+  }));
+  undiciConfigured = true;
+} catch {
+  // node:undici not available on this Node.js build; https fallback used for Supabase
+}
+
+function log(msg) {
+  process.stderr.write(`[career-os ${new Date().toISOString()}] ${msg}\n`);
+}
+
+log(`undici global dispatcher configured: ${undiciConfigured}`);
 
 const ownerEmail = process.env.CAREER_OS_OWNER_EMAIL || 'tomas@nieves.com';
 const market = argValue('--market', process.env.CAREER_OS_MARKET || 'broader_product_management');
@@ -194,9 +216,22 @@ console.log(JSON.stringify({
   persisted: persist,
 }, null, 2));
 
+async function fetchWithTimeout(url, options, timeoutMs = 30_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchGreenhouseJobs(board) {
   const url = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs?content=true`;
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  log(`greenhouse request board=${board} url=${url}`);
+  const t0 = Date.now();
+  const response = await fetchWithTimeout(url, { headers: { accept: 'application/json' } });
+  log(`greenhouse response board=${board} status=${response.status} elapsed=${Date.now() - t0}ms`);
   if (!response.ok) throw new Error(`Greenhouse ${board} returned ${response.status}`);
   const payload = await response.json();
   return Array.isArray(payload.jobs) ? payload.jobs : [];
@@ -263,9 +298,13 @@ async function fetchJpmorganOraclePilot(lastCheckedAt, sourceRunId) {
   const seen = new Map();
   for (const query of querySets) {
     const finder = `findReqs;siteNumber=CX_1001,keyword=${query.keyword},selectedCategoriesFacet=${query.selectedCategoriesFacet},selectedLocationsFacet=${query.selectedLocationsFacet},limit=25,offset=0`;
-    const response = await fetch(`https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?finder=${encodeURIComponent(finder)}&expand=requisitionList&onlyData=true`, {
+    const oracleUrl = `https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?finder=${encodeURIComponent(finder)}&expand=requisitionList&onlyData=true`;
+    log(`oracle request url=${oracleUrl}`);
+    const oracleT0 = Date.now();
+    const response = await fetchWithTimeout(oracleUrl, {
       headers: { accept: 'application/json' },
     });
+    log(`oracle response status=${response.status} elapsed=${Date.now() - oracleT0}ms`);
     if (!response.ok) throw new Error(`Oracle JPMorgan Chase returned ${response.status}`);
     const payload = await response.json();
     const requisitions = Array.isArray(payload.items) ? payload.items.flatMap((item) => Array.isArray(item.requisitionList) ? item.requisitionList : []) : [];
@@ -342,21 +381,87 @@ async function persistToSupabase(sourceRun, postings) {
 }
 
 async function supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows) {
-  const response = await fetch(`${supabaseUrl}/rest/v1/${table}?on_conflict=id`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
-    body: JSON.stringify(rows),
-  });
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`Supabase ${table} upsert failed with ${response.status}: ${message.slice(0, 240)}`);
+  const endpoint = `${supabaseUrl}/rest/v1/${table}?on_conflict=id`;
+  const payload = JSON.stringify(rows);
+  const payloadBytes = Buffer.byteLength(payload);
+  const maxAttempts = 3;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    log(`supabase upsert attempt=${attempt}/${maxAttempts} table=${table} endpoint=${endpoint} payloadBytes=${payloadBytes}`);
+    const t0 = Date.now();
+    try {
+      // Use plain fetch so the undici global Agent headersTimeout (600s) governs;
+      // AbortController at 30s was unreliable when the event loop was busy.
+      const response = await (undiciConfigured
+        ? fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              apikey: serviceRoleKey,
+              Authorization: `Bearer ${serviceRoleKey}`,
+              'Content-Type': 'application/json',
+              Prefer: 'resolution=merge-duplicates,return=minimal',
+            },
+            body: payload,
+          })
+        : httpsPost(endpoint, serviceRoleKey, payload));
+      const elapsed = Date.now() - t0;
+      const safeHeaders = {};
+      for (const name of ['content-type', 'x-request-id', 'cf-ray', 'x-kong-request-id', 'cache-control', 'vary']) {
+        const val = response.headers?.get?.(name);
+        if (val) safeHeaders[name] = val;
+      }
+      log(`supabase response attempt=${attempt} table=${table} status=${response.status} elapsed=${elapsed}ms headers=${JSON.stringify(safeHeaders)}`);
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`Supabase ${table} upsert failed with ${response.status}: ${message.slice(0, 240)}`);
+      }
+      return;
+    } catch (err) {
+      lastError = err;
+      log(`supabase upsert attempt=${attempt} FAILED table=${table} error=${err.message} code=${err.code || ''}`);
+      if (attempt < maxAttempts) {
+        const delayMs = attempt * 10_000;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
   }
+  throw lastError;
+}
+
+// node:https fallback for environments where undici Agent is unavailable.
+function httpsPost(endpoint, serviceRoleKey, payload) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(endpoint);
+    const req = https.request({
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      timeout: 600_000,
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          headers: { get: (name) => res.headers[name.toLowerCase()] || null },
+          text: () => Promise.resolve(body),
+        });
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('https socket timeout')));
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
 }
 
 function scorePosting(job, description) {
