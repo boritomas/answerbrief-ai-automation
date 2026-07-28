@@ -295,7 +295,6 @@ function normalizeOraclePosting(job, lastCheckedAt, sourceRunId) {
     compensation_text: '',
     canonical_url: `https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/${encodeURIComponent(String(job.Id || ''))}`,
     external_requisition_id: String(job.Id || ''),
-    ats_job_id: String(job.Id || ''),
     job_description: description,
     normalized_description: description.slice(0, 12000),
     normalized_role_level: rolePolicy.normalizedLevel,
@@ -324,7 +323,6 @@ function normalizeOraclePosting(job, lastCheckedAt, sourceRunId) {
     hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
     selected_for_pilot: false,
     status: rolePolicy.excluded ? 'ineligible' : fitScore >= minFitScore ? 'discovered' : 'qualification_pending',
-    ats_platform: 'oracle',
   };
 }
 
