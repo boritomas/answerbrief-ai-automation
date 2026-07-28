@@ -377,8 +377,10 @@ async function supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows) {
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(`Supabase ${table} upsert failed with ${response.status}: ${message.slice(0, 240)}`);
-  }
+console.error("Status:", response.status);
+console.error("Headers:", Object.fromEntries(response.headers.entries()));
+console.error("Body:", message);
+throw new Error(`Supabase ${table} upsert failed with ${response.status}`);  }
 }
 
 function scorePosting(job, description) {
