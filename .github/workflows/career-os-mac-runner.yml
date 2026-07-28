@@ -11,10 +11,59 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Load local Career OS environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          RUNTIME="$HOME/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          ENV_FILE="$RUNTIME/.env.local"
+
+          test -f "$ENV_FILE" || { echo "Career OS .env.local file not found at $ENV_FILE"; exit 1; }
+          echo "Found Career OS env file: $ENV_FILE"
+
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+            if [[ "$line" =~ ^[[:space:]]*export[[:space:]]+ ]]; then
+              line="${line#export }"
+            fi
+            [[ "$line" != *"="* ]] && continue
+
+            key="${line%%=*}"
+            value="${line#*=}"
+
+            key="$(echo "$key" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+            [[ -z "$key" ]] && continue
+
+            {
+              echo "$key<<__EOF__"
+              echo "$value"
+              echo "__EOF__"
+            } >> "$GITHUB_ENV"
+          done < "$ENV_FILE"
+
+          echo "Exported environment variable names from .env.local:"
+          awk -F= '
+            /^[[:space:]]*#/ {next}
+            /^[[:space:]]*$/ {next}
+            {
+              line=$0
+              sub(/\r$/, "", line)
+              sub(/^[[:space:]]*export[[:space:]]+/, "", line)
+              if (index(line, "=") > 0) {
+                key=line
+                sub(/=.*/, "", key)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+                if (length(key) > 0) print "- " key
+              }
+            }
+          ' "$ENV_FILE"
+
+          grep -qE '^[[:space:]]*(export[[:space:]]+)?SUPABASE_URL=' "$ENV_FILE" || { echo "Missing required SUPABASE_URL in .env.local"; exit 1; }
+          grep -qE '^[[:space:]]*(export[[:space:]]+)?SUPABASE_SERVICE_ROLE_KEY=' "$ENV_FILE" || { echo "Missing required SUPABASE_SERVICE_ROLE_KEY in .env.local"; exit 1; }
+
       - name: Run Career OS source discovery
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         shell: bash
         run: |
           set -euo pipefail
