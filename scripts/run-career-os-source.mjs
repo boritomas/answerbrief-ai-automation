@@ -196,7 +196,7 @@ console.log(JSON.stringify({
 
 async function fetchGreenhouseJobs(board) {
   const url = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs?content=true`;
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  const response = await fetchWithRetry(url, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(`Greenhouse ${board} returned ${response.status}`);
   const payload = await response.json();
   return Array.isArray(payload.jobs) ? payload.jobs : [];
@@ -263,7 +263,7 @@ async function fetchJpmorganOraclePilot(lastCheckedAt, sourceRunId) {
   const seen = new Map();
   for (const query of querySets) {
     const finder = `findReqs;siteNumber=CX_1001,keyword=${query.keyword},selectedCategoriesFacet=${query.selectedCategoriesFacet},selectedLocationsFacet=${query.selectedLocationsFacet},limit=25,offset=0`;
-    const response = await fetch(`https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?finder=${encodeURIComponent(finder)}&expand=requisitionList&onlyData=true`, {
+    const response = await fetchWithRetry(`https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?finder=${encodeURIComponent(finder)}&expand=requisitionList&onlyData=true`, {
       headers: { accept: 'application/json' },
     });
     if (!response.ok) throw new Error(`Oracle JPMorgan Chase returned ${response.status}`);
@@ -328,6 +328,51 @@ function normalizeOraclePosting(job, lastCheckedAt, sourceRunId) {
   };
 }
 
+const FETCH_TIMEOUT_MS = 60_000;
+const FETCH_MAX_ATTEMPTS = 4; // 1 initial + 3 retries
+
+function isTransientFetchError(err) {
+  if (!err) return false;
+  const msg = String(err.message || err).toLowerCase();
+  const code = String(err.code || err.cause?.code || '').toUpperCase();
+  return (
+    code === 'UND_ERR_HEADERS_TIMEOUT' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNRESET' ||
+    code === 'ECONNREFUSED' ||
+    msg.includes('fetch failed') ||
+    msg.includes('headers timeout') ||
+    msg.includes('network timeout') ||
+    err.name === 'AbortError'
+  );
+}
+
+async function fetchWithRetry(url, options = {}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= FETCH_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const t0 = Date.now();
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      const elapsed = Date.now() - t0;
+      console.log(`[fetchWithRetry] attempt=${attempt} status=${response.status} elapsed=${elapsed}ms url=${url.slice(0, 80)}`);
+      return response;
+    } catch (err) {
+      const elapsed = Date.now() - t0;
+      lastErr = err;
+      console.warn(`[fetchWithRetry] attempt=${attempt} failed elapsed=${elapsed}ms error="${err.message}" url=${url.slice(0, 80)}`);
+      if (!isTransientFetchError(err) || attempt === FETCH_MAX_ATTEMPTS) break;
+      const delay = Math.min(1000 * 2 ** (attempt - 1), 16_000);
+      console.log(`[fetchWithRetry] retrying in ${delay}ms (attempt ${attempt + 1}/${FETCH_MAX_ATTEMPTS})…`);
+      await new Promise((r) => setTimeout(r, delay));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
+}
+
 async function persistToSupabase(sourceRun, postings) {
   const supabaseUrl = cleanEnv(process.env.SUPABASE_URL);
   const serviceRoleKey = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -342,7 +387,7 @@ async function persistToSupabase(sourceRun, postings) {
 }
 
 async function supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows) {
-  const response = await fetch(`${supabaseUrl}/rest/v1/${table}?on_conflict=id`, {
+  const response = await fetchWithRetry(`${supabaseUrl}/rest/v1/${table}?on_conflict=id`, {
     method: 'POST',
     headers: {
       apikey: serviceRoleKey,
