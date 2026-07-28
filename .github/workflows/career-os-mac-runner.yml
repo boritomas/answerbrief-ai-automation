@@ -1,0 +1,35 @@
+name: Career OS Mac Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  career-os:
+    runs-on: [self-hosted, macOS, ARM64, career-os]
+
+    steps:
+      - name: Run Career OS on Mac
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+
+          echo "Using runtime: $RUNTIME"
+          test -d "$RUNTIME"
+          cd "$RUNTIME"
+
+          node --version
+          npm --version
+
+          echo "Installing dependencies"
+          npm install
+
+          echo "Running source discovery"
+          node ../scripts/run-career-os-source.mjs --persist
+
+          echo "Checking browser worker health"
+          npm run worker:health || true
+
+          echo "Running one authenticated application cycle"
+          npm run worker:run-once
