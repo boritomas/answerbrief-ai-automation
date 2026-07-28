@@ -112,11 +112,11 @@ const sourceRun = {
       active_qualified_minimum: 15,
     },
     compensation_policy: {
-      preferred_minimum_base_salary_usd: 250000,
+      preferred_minimum_base_salary_usd: 200000,
       open_to_higher_compensation: true,
       open_to_negotiation: true,
       optional_compensation_fields: 'leave_blank',
-      required_base_salary: 'use_approved_250000_base_strategy_where_appropriate',
+      required_base_salary: 'use_approved_200000_base_strategy_where_appropriate',
       required_total_compensation: 'pause_pending_tomas_approved_total_compensation_target',
       never_treat_base_and_total_compensation_as_equivalent: true,
       never_invent_bonus_equity_commission_or_total_compensation: true,
