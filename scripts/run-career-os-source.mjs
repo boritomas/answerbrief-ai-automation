@@ -337,8 +337,30 @@ async function persistToSupabase(sourceRun, postings) {
 
   await supabaseUpsert(supabaseUrl, serviceRoleKey, 'career_os_source_runs', sourceRun);
   if (postings.length) {
-    await supabaseUpsert(supabaseUrl, serviceRoleKey, 'career_os_job_postings', postings);
-  }
+  const postingColumns = [...new Set(
+    postings.flatMap((posting) => Object.keys(posting))
+  )].sort();
+
+  const normalizedPostings = postings.map((posting) =>
+    Object.fromEntries(
+      postingColumns.map((column) => [
+        column,
+        posting[column] === undefined ? null : posting[column],
+      ])
+    )
+  );
+
+  console.log(
+    `Normalized ${normalizedPostings.length} job rows across ${postingColumns.length} columns.`
+  );
+
+  await supabaseUpsert(
+    supabaseUrl,
+    serviceRoleKey,
+    'career_os_job_postings',
+    normalizedPostings
+  );
+}
 }
 
 async function supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows) {
