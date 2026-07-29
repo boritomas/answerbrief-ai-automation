@@ -1,11 +1,19 @@
 name: Career OS Mac Runner
 
 on:
+  schedule:
+    # Runs shortly after the production Career OS daily cron queues eligible work.
+    - cron: '20 12 * * *'
   workflow_dispatch:
+
+concurrency:
+  group: career-os-mac-runner
+  cancel-in-progress: false
 
 jobs:
   career-os:
     runs-on: [self-hosted, macOS, ARM64, career-os]
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
