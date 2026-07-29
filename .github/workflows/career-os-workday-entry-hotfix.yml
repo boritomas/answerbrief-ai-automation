@@ -1,0 +1,114 @@
+name: Career OS Workday Entry Hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/career-os-workday-entry-hotfix.yml'
+      - 'answerbrief-ai-automation-starter/scripts/patch-career-os-workday-entry.mjs'
+  workflow_dispatch:
+
+concurrency:
+  group: career-os-workday-entry-hotfix
+  cancel-in-progress: false
+
+jobs:
+  patch-and-validate:
+    runs-on: [self-hosted, macOS, ARM64, career-os]
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Patch live Workday adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          node "$GITHUB_WORKSPACE/answerbrief-ai-automation-starter/scripts/patch-career-os-workday-entry.mjs" "$RUNTIME"
+          grep -q "CAREER_OS_WORKDAY_ENTRY_FLOW_V1" "$RUNTIME/scripts/lib/career-os-ats-adapters.mjs"
+          node --check "$RUNTIME/scripts/lib/career-os-ats-adapters.mjs"
+
+      - name: Build live Career OS runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          cd "$RUNTIME"
+          npm install
+          npm run build
+
+      - name: Start local Career OS API
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          cd "$RUNTIME"
+          PORT=3310
+          while lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do
+            PORT=$((PORT + 1))
+          done
+          BASE_URL="http://127.0.0.1:${PORT}"
+          SERVER_LOG="$RUNTIME/.career-os-browser-worker/workday-hotfix-api-${PORT}.log"
+          APP_BASE_URL="$BASE_URL" NEXT_PUBLIC_BASE_URL="$BASE_URL" npm run start -- --hostname 127.0.0.1 --port "$PORT" > "$SERVER_LOG" 2>&1 &
+          SERVER_PID=$!
+          echo "CAREER_OS_HOTFIX_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "CAREER_OS_HOTFIX_API_PID=$SERVER_PID" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent "$BASE_URL/api/career-os/health" >/dev/null; then
+              echo "Career OS hotfix API ready at $BASE_URL"
+              exit 0
+            fi
+            if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+              echo "Career OS hotfix API exited before becoming ready."
+              tail -n 80 "$SERVER_LOG" || true
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Career OS hotfix API did not become ready in time."
+          tail -n 80 "$SERVER_LOG" || true
+          exit 1
+
+      - name: Validate worker and process ready Workday tasks
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          cd "$RUNTIME"
+          export APP_BASE_URL="${CAREER_OS_HOTFIX_BASE_URL}"
+          export NEXT_PUBLIC_BASE_URL="${CAREER_OS_HOTFIX_BASE_URL}"
+          npm run worker:health || true
+          node ./scripts/career-os-browser-companion.mjs run-batch --limit 3
+          npm run worker:health || true
+
+      - name: Write validation report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          REPORT_DIR="$RUNTIME/.career-os-browser-worker/reports"
+          REPORT_FILE="$REPORT_DIR/workday-hotfix-$(date -u '+%Y%m%dT%H%M%SZ').md"
+          mkdir -p "$REPORT_DIR"
+          cd "$RUNTIME"
+          node "$GITHUB_WORKSPACE/answerbrief-ai-automation-starter/scripts/career-os-run-report.mjs" --markdown | tee "$REPORT_FILE"
+          echo "Report saved on this Mac: $REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
+          cat "$REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stop local Career OS API
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${CAREER_OS_HOTFIX_API_PID:-}" ] && kill -0 "$CAREER_OS_HOTFIX_API_PID" >/dev/null 2>&1; then
+            kill "$CAREER_OS_HOTFIX_API_PID" || true
+          fi
+          if [ -n "${CAREER_OS_HOTFIX_BASE_URL:-}" ]; then
+            PORT="${CAREER_OS_HOTFIX_BASE_URL##*:}"
+            PORT="${PORT%%/*}"
+            for pid in $(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true); do
+              kill "$pid" || true
+            done
+          fi
