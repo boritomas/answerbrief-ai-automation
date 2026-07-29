@@ -299,20 +299,38 @@ async function workerGet(route) {
 }
 
 async function workerPost(route, body, options = {}) {
-  const response = await fetch(new URL(route, baseUrl), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${workerToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    if (options.allowConflict && response.status === 409) return json;
-    throw new Error(`${route} failed with ${response.status}: ${json.error || json.message || 'unknown error'}`);
+  const attempts = options.retryTransient === false ? 1 : 4;
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(new URL(route, baseUrl), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${workerToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (options.allowConflict && response.status === 409) return json;
+        const message = `${route} failed with ${response.status}: ${json.error || json.message || 'unknown error'}`;
+        if (!isTransientWorkerApiFailure(response.status) || attempt === attempts) throw new Error(message);
+        lastError = new Error(message);
+      } else {
+        return json;
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) break;
+    }
+    await delay(Math.min(15000, 1000 * attempt * attempt));
   }
-  return json;
+  throw lastError instanceof Error ? lastError : new Error(`${route} failed`);
+}
+
+function isTransientWorkerApiFailure(status) {
+  return status === 404 || status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
 async function ensureResumeFile(task) {

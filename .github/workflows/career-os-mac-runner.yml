@@ -98,13 +98,14 @@ jobs:
           RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
           cd "$RUNTIME"
           npm install
+          npm run build
           PORT=3210
           while lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do
             PORT=$((PORT + 1))
           done
           BASE_URL="http://127.0.0.1:${PORT}"
           SERVER_LOG="$RUNTIME/.career-os-browser-worker/local-api-${PORT}.log"
-          APP_BASE_URL="$BASE_URL" NEXT_PUBLIC_BASE_URL="$BASE_URL" npm run dev -- --hostname 127.0.0.1 --port "$PORT" > "$SERVER_LOG" 2>&1 &
+          APP_BASE_URL="$BASE_URL" NEXT_PUBLIC_BASE_URL="$BASE_URL" npm run start -- --hostname 127.0.0.1 --port "$PORT" > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
           echo "CAREER_OS_LOCAL_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
           echo "CAREER_OS_LOCAL_API_PID=$SERVER_PID" >> "$GITHUB_ENV"
@@ -156,7 +157,7 @@ jobs:
           }
           BASE_URL="${CAREER_OS_LOCAL_BASE_URL:-http://127.0.0.1:3210}"
           CRON_SECRET_VALUE="$(read_env CRON_SECRET)"
-          curl --max-time 600 --fail --silent --show-error \
+          curl --max-time 1200 --fail --silent --show-error \
             --header "Authorization: Bearer ${CRON_SECRET_VALUE}" \
             "${BASE_URL%/}/api/career-os/daily-run"
 
