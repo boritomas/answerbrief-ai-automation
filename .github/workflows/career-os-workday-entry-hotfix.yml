@@ -20,7 +20,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  hosted-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Validate tracked hotfix inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f answerbrief-ai-automation-starter/scripts/patch-career-os-workday-entry.mjs
+          test -f answerbrief-ai-automation-starter/scripts/career-os-run-report.mjs
+          node --check answerbrief-ai-automation-starter/scripts/patch-career-os-workday-entry.mjs
+          node --check answerbrief-ai-automation-starter/scripts/career-os-run-report.mjs
+          echo "Hosted preflight passed. Waiting for the labeled self-hosted Mac runner." >> "$GITHUB_STEP_SUMMARY"
+
   patch-and-validate:
+    needs: hosted-preflight
     runs-on: [self-hosted, macOS, ARM64, career-os]
     timeout-minutes: 35
 
