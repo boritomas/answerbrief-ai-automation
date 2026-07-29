@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
       submittedApplications: before.submittedApplications,
       waitingOnTomas: before.waitingOnTomas,
     },
-    dailyCycle,
+    dailyCycle: compactDailyCycleForResponse(dailyCycle),
     discovery: {
       errors: discovery.errors,
       postingsAccepted: discovery.postingsAccepted,
@@ -72,6 +72,27 @@ export async function GET(request: NextRequest) {
     },
     queueProcessor,
   });
+}
+
+function compactDailyCycleForResponse(dailyCycle: Awaited<ReturnType<typeof buildDailyOperatingCycleStatus>>) {
+  return {
+    actionQueueStatus: dailyCycle.actionQueueStatus,
+    applicationAutomationStatus: dailyCycle.applicationAutomationStatus,
+    applicationResponseTrackingStatus: dailyCycle.applicationResponseTrackingStatus,
+    dailyReportStatus: dailyCycle.dailyReportStatus,
+    immediateQueueProcessor: dailyCycle.immediateQueueProcessor,
+    dailyFunnel: {
+      applicationExecutionToday: dailyCycle.dailyFunnel.applicationExecutionToday,
+      qualificationToday: dailyCycle.dailyFunnel.qualificationToday,
+      rawActivityToday: dailyCycle.dailyFunnel.rawActivityToday,
+    },
+    pipelineHealth: {
+      readyForAutomation: dailyCycle.pipelineHealth.readyForAutomation,
+      waitingOnTomas: dailyCycle.pipelineHealth.waitingOnTomas,
+      applicationsSubmittedToday: dailyCycle.pipelineHealth.applicationsSubmittedToday,
+      totalSubmitted: dailyCycle.pipelineHealth.totalSubmitted,
+    },
+  };
 }
 
 async function runSubmissionQueueAfterDiscovery(ownerEmail: string): Promise<QueueProcessorResult | { errors: string[]; skipped: true; trigger: 'cron' }> {
