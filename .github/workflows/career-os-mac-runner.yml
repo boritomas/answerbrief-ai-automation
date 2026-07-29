@@ -35,44 +35,6 @@ jobs:
           echo "Found Career OS env file: $ENV_FILE"
           echo "CAREER_OS_RUN_STARTED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
 
-          while IFS= read -r line || [ -n "$line" ]; do
-            line="${line%$'\r'}"
-            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-            if [[ "$line" =~ ^[[:space:]]*export[[:space:]]+ ]]; then
-              line="${line#export }"
-            fi
-            [[ "$line" != *"="* ]] && continue
-
-            key="${line%%=*}"
-            value="${line#*=}"
-
-            key="$(echo "$key" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
-            [[ -z "$key" ]] && continue
-
-            {
-              echo "$key<<__EOF__"
-              echo "$value"
-              echo "__EOF__"
-            } >> "$GITHUB_ENV"
-          done < "$ENV_FILE"
-
-          echo "Exported environment variable names from .env.local:"
-          awk -F= '
-            /^[[:space:]]*#/ {next}
-            /^[[:space:]]*$/ {next}
-            {
-              line=$0
-              sub(/\r$/, "", line)
-              sub(/^[[:space:]]*export[[:space:]]+/, "", line)
-              if (index(line, "=") > 0) {
-                key=line
-                sub(/=.*/, "", key)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
-                if (length(key) > 0) print "- " key
-              }
-            }
-          ' "$ENV_FILE"
-
           grep -qE '^[[:space:]]*(export[[:space:]]+)?SUPABASE_URL=' "$ENV_FILE" || { echo "Missing required SUPABASE_URL in .env.local"; exit 1; }
           grep -qE '^[[:space:]]*(export[[:space:]]+)?SUPABASE_SERVICE_ROLE_KEY=' "$ENV_FILE" || { echo "Missing required SUPABASE_SERVICE_ROLE_KEY in .env.local"; exit 1; }
           grep -qE '^[[:space:]]*(export[[:space:]]+)?CRON_SECRET=' "$ENV_FILE" || { echo "Missing required CRON_SECRET in .env.local"; exit 1; }
@@ -81,16 +43,121 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          set +x
+          ENV_FILE="$HOME/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.env.local"
+          read_env() {
+            local key="$1"
+            awk -v key="$key" '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              {
+                line=$0
+                sub(/\r$/, "", line)
+                sub(/^[[:space:]]*export[[:space:]]+/, "", line)
+                split(line, parts, "=")
+                candidate=parts[1]
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", candidate)
+                if (candidate == key) {
+                  sub(/^[^=]*=/, "", line)
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                  gsub(/^"|"$/, "", line)
+                  gsub(/^'\''|'\''$/, "", line)
+                  print line
+                  exit
+                }
+              }
+            ' "$ENV_FILE"
+          }
+          export SUPABASE_URL="$(read_env SUPABASE_URL)"
+          export SUPABASE_SERVICE_ROLE_KEY="$(read_env SUPABASE_SERVICE_ROLE_KEY)"
+          export CAREER_OS_OWNER_EMAIL="$(read_env CAREER_OS_OWNER_EMAIL)"
+          export CAREER_OS_MARKET="$(read_env CAREER_OS_MARKET)"
+          export CAREER_OS_SOURCE_BOARDS="$(read_env CAREER_OS_SOURCE_BOARDS)"
+          export CAREER_OS_MIN_FIT_SCORE="$(read_env CAREER_OS_MIN_FIT_SCORE)"
+          export CAREER_OS_INVOKED_BY="github-actions-mac-runner"
           cd "$GITHUB_WORKSPACE"
           node scripts/run-career-os-source.mjs --persist
 
-      - name: Run Career OS daily cycle
+      - name: Run LinkedIn Jobs discovery
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          BASE_URL="${APP_BASE_URL:-${NEXT_PUBLIC_BASE_URL:-https://www.answer-brief.com}}"
-          curl --fail --silent --show-error \
-            --header "Authorization: Bearer ${CRON_SECRET}" \
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          cd "$RUNTIME"
+          node ./scripts/career-os-linkedin-discovery.mjs \
+            --from-cdp \
+            --launch-controlled \
+            --tuned-search \
+            --persist
+
+      - name: Start local Career OS API
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          cd "$RUNTIME"
+          npm install
+          PORT=3210
+          while lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do
+            PORT=$((PORT + 1))
+          done
+          BASE_URL="http://127.0.0.1:${PORT}"
+          SERVER_LOG="$RUNTIME/.career-os-browser-worker/local-api-${PORT}.log"
+          APP_BASE_URL="$BASE_URL" NEXT_PUBLIC_BASE_URL="$BASE_URL" npm run dev -- --hostname 127.0.0.1 --port "$PORT" > "$SERVER_LOG" 2>&1 &
+          SERVER_PID=$!
+          echo "CAREER_OS_LOCAL_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "CAREER_OS_LOCAL_API_PID=$SERVER_PID" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent "$BASE_URL/api/career-os/health" >/dev/null; then
+              echo "Career OS local API ready at $BASE_URL"
+              exit 0
+            fi
+            if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+              echo "Career OS local API exited before becoming ready."
+              tail -n 80 "$SERVER_LOG" || true
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Career OS local API did not become ready in time."
+          tail -n 80 "$SERVER_LOG" || true
+          exit 1
+
+      - name: Run Career OS daily cycle
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          ENV_FILE="$HOME/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.env.local"
+          read_env() {
+            local key="$1"
+            awk -v key="$key" '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              {
+                line=$0
+                sub(/\r$/, "", line)
+                sub(/^[[:space:]]*export[[:space:]]+/, "", line)
+                split(line, parts, "=")
+                candidate=parts[1]
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", candidate)
+                if (candidate == key) {
+                  sub(/^[^=]*=/, "", line)
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                  gsub(/^"|"$/, "", line)
+                  gsub(/^'\''|'\''$/, "", line)
+                  print line
+                  exit
+                }
+              }
+            ' "$ENV_FILE"
+          }
+          BASE_URL="${CAREER_OS_LOCAL_BASE_URL:-http://127.0.0.1:3210}"
+          CRON_SECRET_VALUE="$(read_env CRON_SECRET)"
+          curl --max-time 600 --fail --silent --show-error \
+            --header "Authorization: Bearer ${CRON_SECRET_VALUE}" \
             "${BASE_URL%/}/api/career-os/daily-run"
 
       - name: Run local browser worker batch
@@ -99,7 +166,8 @@ jobs:
           set -euo pipefail
           RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
           cd "$RUNTIME"
-          npm install
+          export APP_BASE_URL="${CAREER_OS_LOCAL_BASE_URL:-http://127.0.0.1:3210}"
+          export NEXT_PUBLIC_BASE_URL="${CAREER_OS_LOCAL_BASE_URL:-http://127.0.0.1:3210}"
           npm run worker:health || true
           node ./scripts/career-os-browser-companion.mjs run-batch --limit "${CAREER_OS_WORKER_BATCH_LIMIT:-5}"
           npm run worker:health || true
@@ -120,3 +188,12 @@ jobs:
             echo "Report saved on this Mac: $REPORT_FILE"
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stop local Career OS API
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${CAREER_OS_LOCAL_API_PID:-}" ] && kill -0 "$CAREER_OS_LOCAL_API_PID" >/dev/null 2>&1; then
+            kill "$CAREER_OS_LOCAL_API_PID" || true
+          fi

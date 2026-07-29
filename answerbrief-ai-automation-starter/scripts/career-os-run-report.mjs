@@ -117,7 +117,7 @@ function printMarkdown(input) {
   console.log(`- Currently blocked/waiting: ${input.summary.currentlyBlockedOrWaiting}`);
   printTable('Submitted / Confirmed This Run', input.submittedThisRun, ['employer', 'role', 'status', 'evidence', 'updated']);
   printTable('Submitted / Confirmed Today', input.submittedToday, ['employer', 'role', 'status', 'evidence', 'updated']);
-  printTable('High-Fit Opportunities This Run', input.highFitPostingsThisRun, ['employer', 'role', 'fit', 'status', 'updated']);
+  printTable('High-Fit Opportunities This Run', input.highFitPostingsThisRun, ['source', 'employer', 'role', 'fit', 'status', 'updated']);
   printTable('Queued / Ready Now', input.queuedNow, ['employer', 'role', 'status', 'updated', 'note']);
   printTable('Blocked / Waiting Now', input.blockedNow, ['employer', 'role', 'status', 'updated', 'note']);
   printTable('Rejections Imported This Run', input.rejectedThisRun, ['employer', 'role', 'status', 'updated', 'note']);
@@ -152,6 +152,7 @@ function applicationSummary(row) {
 function postingSummary(row) {
   const raw = asRecord(row.raw_record);
   return {
+    source: clean(raw.source_label || raw.source || row.source || raw.ats || 'career_os'),
     employer: clean(row.company || row.employer || raw.company || raw.employer),
     role: truncate(clean(row.title || row.position || raw.title || raw.job_title), 90),
     fit: fitScore(row),
