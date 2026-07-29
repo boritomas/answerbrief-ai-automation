@@ -110,6 +110,7 @@ jobs:
           SERVER_PID=$!
           echo "CAREER_OS_LOCAL_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
           echo "CAREER_OS_LOCAL_API_PID=$SERVER_PID" >> "$GITHUB_ENV"
+          echo "CAREER_OS_LOCAL_API_LOG=$SERVER_LOG" >> "$GITHUB_ENV"
           for attempt in $(seq 1 60); do
             if curl --fail --silent "$BASE_URL/api/career-os/health" >/dev/null; then
               echo "Career OS local API ready at $BASE_URL"
@@ -203,6 +204,7 @@ jobs:
           APP_BASE_URL="$BASE_URL" NEXT_PUBLIC_BASE_URL="$BASE_URL" npm run start -- --hostname 127.0.0.1 --port "$PORT" > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
           echo "CAREER_OS_LOCAL_API_PID=$SERVER_PID" >> "$GITHUB_ENV"
+          echo "CAREER_OS_LOCAL_API_LOG=$SERVER_LOG" >> "$GITHUB_ENV"
           for attempt in $(seq 1 60); do
             if curl --fail --silent "$BASE_URL/api/career-os/health" >/dev/null; then
               echo "Career OS local API restarted at $BASE_URL"
@@ -242,11 +244,26 @@ jobs:
           mkdir -p "$REPORT_DIR"
           cd "$RUNTIME"
           node "$GITHUB_WORKSPACE/answerbrief-ai-automation-starter/scripts/career-os-run-report.mjs" --markdown | tee "$REPORT_FILE"
+          echo "CAREER_OS_RUN_REPORT_FILE=$REPORT_FILE" >> "$GITHUB_ENV"
           {
             echo ""
             echo "Report saved on this Mac: $REPORT_FILE"
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Career OS diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: career-os-run-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ env.CAREER_OS_RUN_REPORT_FILE }}
+            ${{ env.CAREER_OS_LOCAL_API_LOG }}
+            /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.career-os-browser-worker/**/*.png
+            /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.career-os-browser-worker/**/*.html
+            /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.career-os-browser-worker/**/*.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Stop local Career OS API
         if: always()
