@@ -1,2 +1,2 @@
-triggered_at=2026-07-29T21:30:00Z
-reason=validate-workday-entry-flow-v2-and-account-checkpoint-classification
+triggered_at=2026-07-29T21:45:00Z
+reason=run-workday-v2-validation-with-diagnostics-artifact
