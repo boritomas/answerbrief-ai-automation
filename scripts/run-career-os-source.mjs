@@ -335,9 +335,32 @@ async function persistToSupabase(sourceRun, postings) {
 
   await supabaseUpsert(supabaseUrl, serviceRoleKey, 'career_os_source_runs', sourceRun);
   if (postings.length) {
-  const postingColumns = [...new Set(
-    postings.flatMap((posting) => Object.keys(posting))
-)].filter((column) => column !== 'deterministic_filter_reason').sort();
+ const postingColumns = [
+  'id',
+  'source_run_id',
+  'owner_email',
+  'company',
+  'title',
+  'location',
+  'work_arrangement',
+  'compensation_min_usd',
+  'compensation_max_usd',
+  'compensation_text',
+  'canonical_url',
+  'external_requisition_id',
+  'job_description',
+  'normalized_description',
+  'posting_validation_status',
+  'last_checked_at',
+  'raw_record',
+  'fit_score',
+  'ats_analysis',
+  'ai_readiness_analysis',
+  'recruiter_intelligence',
+  'hiring_manager_evidence_matrix',
+  'selected_for_pilot',
+  'status',
+];
   const normalizedPostings = postings.map((posting) =>
     Object.fromEntries(
       postingColumns.map((column) => [
