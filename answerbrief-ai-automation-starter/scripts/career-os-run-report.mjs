@@ -80,8 +80,8 @@ const report = {
   highFitPostingsThisRun: highFitRunPostings.slice(0, 20).map(postingSummary),
   submittedThisRun: submittedThisRun.slice(0, 30).map(applicationSummary),
   submittedToday: submittedToday.slice(0, 30).map(applicationSummary),
-  queuedNow: queuedNow.slice(0, 20).map(applicationSummary),
-  blockedNow: blockedNow.slice(0, 20).map(applicationSummary),
+  queuedNow: queuedNow.map(applicationSummary),
+  blockedNow: blockedNow.map(applicationSummary),
   rejectedThisRun: rejectedThisRun.slice(0, 20).map(applicationSummary),
 };
 
@@ -130,7 +130,8 @@ function printMarkdown(input) {
   printTable('Submitted / Confirmed Today', input.submittedToday, ['employer', 'role', 'status', 'evidence', 'updated']);
   printTable('High-Fit Opportunities This Run', input.highFitPostingsThisRun, ['source', 'employer', 'role', 'fit', 'status', 'updated']);
   printTable('Queued / Ready Now', input.queuedNow, ['employer', 'role', 'status', 'updated', 'note']);
-  printTable('Blocked / Waiting Now', input.blockedNow, ['employer', 'role', 'status', 'updated', 'note']);
+  printBlockedSummary(input.blockedNow);
+  printTable('Blocked / Waiting Now', input.blockedNow, ['category', 'employer', 'role', 'status', 'updated', 'note']);
   printTable('Rejections Imported This Run', input.rejectedThisRun, ['employer', 'role', 'status', 'updated', 'note']);
 }
 
@@ -151,6 +152,7 @@ function printTable(title, rows, columns) {
 function applicationSummary(row) {
   const raw = asRecord(row.raw_record);
   return {
+    category: blockedCategory(row),
     employer: clean(row.employer || raw.company || raw.employer),
     role: truncate(clean(row.position || raw.job_title || raw.title), 90),
     status: applicationStatus(row),
@@ -158,6 +160,32 @@ function applicationSummary(row) {
     updated: clean(row.updated_at).slice(0, 19),
     note: truncate(clean(row.next_action || raw.production_outcome || raw.execution_status || raw.application_status), 120),
   };
+}
+
+function printBlockedSummary(rows) {
+  console.log('');
+  console.log('## Blocked / Waiting Summary');
+  if (!rows.length) {
+    console.log('None.');
+    return;
+  }
+  const counts = new Map();
+  for (const row of rows) counts.set(row.category, (counts.get(row.category) || 0) + 1);
+  for (const [category, count] of Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+    console.log(`- ${category}: ${count}`);
+  }
+}
+
+function blockedCategory(row) {
+  const text = applicationText(row);
+  if (/worker\/report failed|unknown error|500/.test(text)) return 'Technical report/save blocker';
+  if (/location_not_verified/.test(text)) return 'Needs location/work-policy verification';
+  if (/compensation/.test(text)) return 'Needs compensation decision';
+  if (/password|account|sign-?in|session|login|verification|verify|captcha|mfa|security code|bot verification/.test(text)) return 'Needs account/sign-in or verification';
+  if (/legal|privacy|terms|certify|attestation|acknowledge/.test(text)) return 'Needs legal/privacy/attestation answer';
+  if (/unsupported|page state|not recognized|step budget|loop|redirect|returned|selector|control mapping/.test(text)) return 'Technical ATS/browser blocker';
+  if (/inactive|ineligible|closed|removed|no longer available/.test(text)) return 'Inactive/ineligible';
+  return 'Needs role-specific answer or review';
 }
 
 function sourceRunSummary(row) {
