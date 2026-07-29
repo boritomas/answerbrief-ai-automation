@@ -20,58 +20,71 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Unauthorized Career OS daily cron invocation.' }, { status: 401 });
   }
 
-  const before = await getCareerOsStatus();
-  const discovery = await runDailyGreenhouseDiscovery(before.evidence.ownerEmail, before.evidence);
-  const queueProcessor = await runSubmissionQueueAfterDiscovery(before.evidence.ownerEmail);
-  const afterDiscovery = await getCareerOsStatus();
-  const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, {
-    activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
-    duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
-    inactive: afterDiscovery.inactive,
-    ineligible: afterDiscovery.ineligible,
-    inProgress: afterDiscovery.inProgress,
-    readyForAutomation: afterDiscovery.readyForAutomation,
-    releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
-    submittedApplications: afterDiscovery.submittedApplications,
-    totalPackages: afterDiscovery.totalPackages,
-    totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
-    waitingOnTomas: afterDiscovery.waitingOnTomas,
-  });
-  const persisted = await persistDailyCycleReport(afterDiscovery.evidence.ownerEmail, dailyCycle, {
-    activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
-    duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
-    inactive: afterDiscovery.inactive,
-    ineligible: afterDiscovery.ineligible,
-    inProgress: afterDiscovery.inProgress,
-    readyForAutomation: afterDiscovery.readyForAutomation,
-    releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
-    submittedApplications: afterDiscovery.submittedApplications,
-    totalPackages: afterDiscovery.totalPackages,
-    totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
-    waitingOnTomas: afterDiscovery.waitingOnTomas,
-  }, discovery);
+  let before: Awaited<ReturnType<typeof getCareerOsStatus>> | undefined;
+  let discovery: Awaited<ReturnType<typeof runDailyGreenhouseDiscovery>> | undefined;
+  let queueProcessor: Awaited<ReturnType<typeof runSubmissionQueueAfterDiscovery>> | undefined;
 
-  return NextResponse.json({
-    ok: true,
-    before: {
-      activeQualifiedOpportunities: before.activeQualifiedOpportunities,
-      submittedApplications: before.submittedApplications,
-      waitingOnTomas: before.waitingOnTomas,
-    },
-    dailyCycle: compactDailyCycleForResponse(dailyCycle),
-    discovery: {
-      errors: discovery.errors,
-      postingsAccepted: discovery.postingsAccepted,
-      postingsPersisted: discovery.postingsPersisted,
-      postingsReviewed: discovery.postingsReviewed,
-      sourceRunId: discovery.sourceRun.id,
-    },
-    persisted: {
-      automationRunId: persisted.automationRun.id,
-      dailyReportId: persisted.report.id,
-    },
-    queueProcessor,
-  });
+  try {
+    before = await getCareerOsStatus();
+    discovery = await runDailyGreenhouseDiscovery(before.evidence.ownerEmail, before.evidence);
+    queueProcessor = await runSubmissionQueueAfterDiscovery(before.evidence.ownerEmail);
+
+    const afterDiscovery = await getCareerOsStatus();
+    const releaseMetrics = {
+      activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
+      duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
+      inactive: afterDiscovery.inactive,
+      ineligible: afterDiscovery.ineligible,
+      inProgress: afterDiscovery.inProgress,
+      readyForAutomation: afterDiscovery.readyForAutomation,
+      releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
+      submittedApplications: afterDiscovery.submittedApplications,
+      totalPackages: afterDiscovery.totalPackages,
+      totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
+      waitingOnTomas: afterDiscovery.waitingOnTomas,
+    };
+    const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, releaseMetrics);
+    const persisted = await persistDailyCycleReport(afterDiscovery.evidence.ownerEmail, dailyCycle, releaseMetrics, discovery);
+
+    return NextResponse.json({
+      ok: true,
+      before: compactStatusForResponse(before),
+      dailyCycle: compactDailyCycleForResponse(dailyCycle),
+      discovery: compactDiscoveryForResponse(discovery),
+      persisted: {
+        automationRunId: persisted.automationRun.id,
+        dailyReportId: persisted.report.id,
+      },
+      queueProcessor,
+    });
+  } catch (error) {
+    return NextResponse.json({
+      ok: false,
+      status: 'daily_cycle_completed_with_error',
+      error: errorMessage(error),
+      before: before ? compactStatusForResponse(before) : null,
+      discovery: discovery ? compactDiscoveryForResponse(discovery) : null,
+      queueProcessor: queueProcessor || null,
+    });
+  }
+}
+
+function compactStatusForResponse(status: Awaited<ReturnType<typeof getCareerOsStatus>>) {
+  return {
+    activeQualifiedOpportunities: status.activeQualifiedOpportunities,
+    submittedApplications: status.submittedApplications,
+    waitingOnTomas: status.waitingOnTomas,
+  };
+}
+
+function compactDiscoveryForResponse(discovery: Awaited<ReturnType<typeof runDailyGreenhouseDiscovery>>) {
+  return {
+    errors: discovery.errors,
+    postingsAccepted: discovery.postingsAccepted,
+    postingsPersisted: discovery.postingsPersisted,
+    postingsReviewed: discovery.postingsReviewed,
+    sourceRunId: discovery.sourceRun.id,
+  };
 }
 
 function compactDailyCycleForResponse(dailyCycle: Awaited<ReturnType<typeof buildDailyOperatingCycleStatus>>) {
@@ -93,6 +106,10 @@ function compactDailyCycleForResponse(dailyCycle: Awaited<ReturnType<typeof buil
       totalSubmitted: dailyCycle.pipelineHealth.totalSubmitted,
     },
   };
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Career OS daily cycle failed.';
 }
 
 async function runSubmissionQueueAfterDiscovery(ownerEmail: string): Promise<QueueProcessorResult | { errors: string[]; skipped: true; trigger: 'cron' }> {
