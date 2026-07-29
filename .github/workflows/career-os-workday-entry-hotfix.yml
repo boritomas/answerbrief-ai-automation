@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
           node "$GITHUB_WORKSPACE/answerbrief-ai-automation-starter/scripts/patch-career-os-workday-entry.mjs" "$RUNTIME"
-          grep -q "CAREER_OS_WORKDAY_ENTRY_FLOW_V1" "$RUNTIME/scripts/lib/career-os-ats-adapters.mjs"
+          grep -q "CAREER_OS_WORKDAY_ENTRY_FLOW_V2" "$RUNTIME/scripts/lib/career-os-ats-adapters.mjs"
           node --check "$RUNTIME/scripts/lib/career-os-ats-adapters.mjs"
 
       - name: Build live Career OS runtime
