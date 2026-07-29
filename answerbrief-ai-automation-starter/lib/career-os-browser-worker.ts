@@ -386,7 +386,11 @@ export async function browserWorkerHealth(ownerEmail: string) {
     `select=id,employer,position,lifecycle_stage,next_action,raw_record,updated_at,confirmation_number,submission_evidence&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=updated_at.desc`,
   ) as QueueApplication[];
 
-  const eligible = applications.filter((application) => isBrowserWorkerEligible(application, undefined)).length;
+  const eligibleBeforeProductionGate = applications.filter((application) => isBrowserWorkerEligible(application, undefined)).length;
+  const eligible = applications.filter((application) => {
+    if (!isBrowserWorkerEligible(application, undefined)) return false;
+    return productionClaimGate(application, applications).ok;
+  }).length;
   const running = applications.filter((application) => {
     const raw = asRecord(application.raw_record);
     return cleanEnv(raw.execution_engine) === 'playwright_local_companion' && cleanEnv(asRecord(raw.browser_worker).status) === 'running';
@@ -395,6 +399,7 @@ export async function browserWorkerHealth(ownerEmail: string) {
   return {
     configured: browserWorkerConfigured(),
     eligible,
+    productionGateBlocked: Math.max(0, eligibleBeforeProductionGate - eligible),
     running,
   };
 }
