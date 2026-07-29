@@ -22,7 +22,7 @@ if (!supabaseUrl || !serviceRoleKey) {
   process.exit(1);
 }
 
-const [applications, postings] = await Promise.all([
+const [applications, postings, sourceRuns] = await Promise.all([
   selectRows('career_os_applications', {
     owner_email: `eq.${ownerEmail}`,
     order: 'updated_at.desc',
@@ -35,10 +35,17 @@ const [applications, postings] = await Promise.all([
     select: '*',
     limit: '500',
   }),
+  selectRows('career_os_source_runs', {
+    owner_email: `eq.${ownerEmail}`,
+    order: 'executed_at.desc.nullslast,created_at.desc.nullslast',
+    select: '*',
+    limit: '100',
+  }),
 ]);
 
 const runApplications = applications.filter(applicationTouchedInWindow);
 const runPostings = postings.filter(postingTouchedInWindow);
+const runSourceRuns = sourceRuns.filter(sourceRunTouchedInWindow);
 const submittedThisRun = runApplications.filter(isSubmittedApplication);
 const submittedToday = applications.filter((row) => touchedSince(row, startOfLocalDayMs())).filter(isSubmittedApplication);
 const submittedAll = applications.filter(isSubmittedApplication);
@@ -60,6 +67,7 @@ const report = {
   summary: {
     postingsDiscoveredOrRefreshedThisRun: runPostings.length,
     highFitPostingsThisRun: highFitRunPostings.length,
+    sourceRunsThisRun: runSourceRuns.length,
     applicationsTouchedThisRun: runApplications.length,
     submittedOrConfirmedThisRun: submittedThisRun.length,
     submittedOrConfirmedToday: submittedToday.length,
@@ -68,6 +76,7 @@ const report = {
     currentlyQueuedOrReady: queuedNow.length,
     currentlyBlockedOrWaiting: blockedNow.length,
   },
+  sourceRunsThisRun: runSourceRuns.slice(0, 20).map(sourceRunSummary),
   highFitPostingsThisRun: highFitRunPostings.slice(0, 20).map(postingSummary),
   submittedThisRun: submittedThisRun.slice(0, 30).map(applicationSummary),
   submittedToday: submittedToday.slice(0, 30).map(applicationSummary),
@@ -108,6 +117,7 @@ function printMarkdown(input) {
   console.log('## Summary');
   console.log(`- Opportunities discovered/refreshed this run: ${input.summary.postingsDiscoveredOrRefreshedThisRun}`);
   console.log(`- High-fit opportunities this run: ${input.summary.highFitPostingsThisRun}`);
+  console.log(`- Source runs this run: ${input.summary.sourceRunsThisRun}`);
   console.log(`- Applications touched this run: ${input.summary.applicationsTouchedThisRun}`);
   console.log(`- Submitted/confirmed this run: ${input.summary.submittedOrConfirmedThisRun}`);
   console.log(`- Submitted/confirmed today: ${input.summary.submittedOrConfirmedToday}`);
@@ -115,6 +125,7 @@ function printMarkdown(input) {
   console.log(`- Rejections imported this run: ${input.summary.rejectedThisRun}`);
   console.log(`- Currently queued/ready: ${input.summary.currentlyQueuedOrReady}`);
   console.log(`- Currently blocked/waiting: ${input.summary.currentlyBlockedOrWaiting}`);
+  printTable('Source Runs This Run', input.sourceRunsThisRun, ['source', 'status', 'reviewed', 'accepted', 'skipped', 'updated', 'note']);
   printTable('Submitted / Confirmed This Run', input.submittedThisRun, ['employer', 'role', 'status', 'evidence', 'updated']);
   printTable('Submitted / Confirmed Today', input.submittedToday, ['employer', 'role', 'status', 'evidence', 'updated']);
   printTable('High-Fit Opportunities This Run', input.highFitPostingsThisRun, ['source', 'employer', 'role', 'fit', 'status', 'updated']);
@@ -146,6 +157,27 @@ function applicationSummary(row) {
     evidence: row.confirmation_number || row.submission_evidence || raw.confirmation_url ? 'yes' : 'status',
     updated: clean(row.updated_at).slice(0, 19),
     note: truncate(clean(row.next_action || raw.production_outcome || raw.execution_status || raw.application_status), 120),
+  };
+}
+
+function sourceRunSummary(row) {
+  const searchConfig = asRecord(row.search_config);
+  const errors = Array.isArray(searchConfig.errors) ? searchConfig.errors.map(clean).filter(Boolean) : [];
+  const topHoldReasons = Array.isArray(searchConfig.top_hold_reasons)
+    ? searchConfig.top_hold_reasons.map((reason) => {
+        if (typeof reason === 'string') return reason;
+        const record = asRecord(reason);
+        return [record.reason, record.count].map(clean).filter(Boolean).join(': ');
+      }).filter(Boolean)
+    : [];
+  return {
+    source: truncate(clean(row.source_name || row.source_type || searchConfig.source), 70),
+    status: clean(row.status || 'unknown'),
+    reviewed: numberValue(row.number_reviewed, 0),
+    accepted: numberValue(row.number_accepted, 0),
+    skipped: numberValue(row.number_skipped, 0),
+    updated: clean(row.executed_at || row.updated_at || row.created_at).slice(0, 19),
+    note: truncate(errors.join('; ') || topHoldReasons.join('; '), 120),
   };
 }
 
@@ -233,6 +265,17 @@ function postingTouchedInWindow(row) {
     row.created_at,
     raw.last_checked_at,
     raw.updated_at,
+  ].map(clean).filter(Boolean).some((value) => {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) && parsed >= windowStartMs;
+  });
+}
+
+function sourceRunTouchedInWindow(row) {
+  return [
+    row.executed_at,
+    row.updated_at,
+    row.created_at,
   ].map(clean).filter(Boolean).some((value) => {
     const parsed = Date.parse(value);
     return Number.isFinite(parsed) && parsed >= windowStartMs;
