@@ -62,6 +62,7 @@ jobs:
           SERVER_PID=$!
           echo "CAREER_OS_HOTFIX_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
           echo "CAREER_OS_HOTFIX_API_PID=$SERVER_PID" >> "$GITHUB_ENV"
+          echo "CAREER_OS_HOTFIX_API_LOG=$SERVER_LOG" >> "$GITHUB_ENV"
           for attempt in $(seq 1 60); do
             if curl --fail --silent "$BASE_URL/api/career-os/health" >/dev/null; then
               echo "Career OS hotfix API ready at $BASE_URL"
@@ -105,12 +106,17 @@ jobs:
           echo "Report saved on this Mac: $REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
           cat "$REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload validation report
+      - name: Upload Workday diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: career-os-workday-hotfix-report-${{ github.run_id }}
-          path: ${{ env.CAREER_OS_HOTFIX_REPORT_FILE }}
+          name: career-os-workday-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ env.CAREER_OS_HOTFIX_REPORT_FILE }}
+            ${{ env.CAREER_OS_HOTFIX_API_LOG }}
+            /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.career-os-browser-worker/**/*.png
+            /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.career-os-browser-worker/**/*.html
+            /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.career-os-browser-worker/**/*.json
           if-no-files-found: warn
           retention-days: 14
 
