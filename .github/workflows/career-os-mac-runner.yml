@@ -17,6 +17,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, career-os]
     timeout-minutes: 90
     env:
+      CAREER_OS_DAILY_RUN_MAX_SECONDS: 1800
       CAREER_OS_WORKER_BATCH_LIMIT: 5
 
     steps:
@@ -157,9 +158,66 @@ jobs:
           }
           BASE_URL="${CAREER_OS_LOCAL_BASE_URL:-http://127.0.0.1:3210}"
           CRON_SECRET_VALUE="$(read_env CRON_SECRET)"
-          curl --max-time 1200 --fail --silent --show-error \
-            --header "Authorization: Bearer ${CRON_SECRET_VALUE}" \
-            "${BASE_URL%/}/api/career-os/daily-run"
+          CURL_CONFIG="$(mktemp "${RUNNER_TEMP:-/tmp}/career-os-daily-curl.XXXXXX")"
+          trap 'rm -f "$CURL_CONFIG"' EXIT
+          chmod 600 "$CURL_CONFIG"
+          {
+            printf 'max-time = "%s"\n' "${CAREER_OS_DAILY_RUN_MAX_SECONDS:-1800}"
+            printf 'fail\n'
+            printf 'silent\n'
+            printf 'show-error\n'
+            printf 'header = "Authorization: Bearer %s"\n' "$CRON_SECRET_VALUE"
+            printf 'url = "%s"\n' "${BASE_URL%/}/api/career-os/daily-run"
+          } > "$CURL_CONFIG"
+          if curl --config "$CURL_CONFIG"; then
+            :
+          else
+            status="$?"
+            echo "CAREER_OS_LOCAL_API_RESTART_REQUIRED=1" >> "$GITHUB_ENV"
+            echo "Career OS daily cycle did not complete cleanly; local API will be restarted before the browser worker."
+            exit "$status"
+          fi
+
+      - name: Restart local Career OS API after daily-cycle timeout
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${CAREER_OS_LOCAL_API_RESTART_REQUIRED:-0}" != "1" ]; then
+            echo "Daily cycle completed cleanly; local API restart not needed."
+            exit 0
+          fi
+          RUNTIME="/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter"
+          BASE_URL="${CAREER_OS_LOCAL_BASE_URL:-http://127.0.0.1:3210}"
+          PORT="${BASE_URL##*:}"
+          PORT="${PORT%%/*}"
+          cd "$RUNTIME"
+          if [ -n "${CAREER_OS_LOCAL_API_PID:-}" ] && kill -0 "$CAREER_OS_LOCAL_API_PID" >/dev/null 2>&1; then
+            kill "$CAREER_OS_LOCAL_API_PID" || true
+            sleep 2
+          fi
+          for pid in $(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true); do
+            kill "$pid" || true
+          done
+          SERVER_LOG="$RUNTIME/.career-os-browser-worker/local-api-${PORT}.log"
+          APP_BASE_URL="$BASE_URL" NEXT_PUBLIC_BASE_URL="$BASE_URL" npm run start -- --hostname 127.0.0.1 --port "$PORT" > "$SERVER_LOG" 2>&1 &
+          SERVER_PID=$!
+          echo "CAREER_OS_LOCAL_API_PID=$SERVER_PID" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent "$BASE_URL/api/career-os/health" >/dev/null; then
+              echo "Career OS local API restarted at $BASE_URL"
+              exit 0
+            fi
+            if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+              echo "Career OS local API exited before becoming ready after restart."
+              tail -n 80 "$SERVER_LOG" || true
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Career OS local API did not become ready after restart."
+          tail -n 80 "$SERVER_LOG" || true
+          exit 1
 
       - name: Run local browser worker batch
         shell: bash
@@ -197,4 +255,14 @@ jobs:
           set -euo pipefail
           if [ -n "${CAREER_OS_LOCAL_API_PID:-}" ] && kill -0 "$CAREER_OS_LOCAL_API_PID" >/dev/null 2>&1; then
             kill "$CAREER_OS_LOCAL_API_PID" || true
+          fi
+          if [ -n "${CAREER_OS_LOCAL_BASE_URL:-}" ]; then
+            BASE_URL="$CAREER_OS_LOCAL_BASE_URL"
+            PORT="${BASE_URL##*:}"
+            PORT="${PORT%%/*}"
+            for pid in $(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true); do
+              kill "$pid" || true
+            done
+          else
+            echo "Career OS local API base URL was not set; listener cleanup skipped."
           fi
