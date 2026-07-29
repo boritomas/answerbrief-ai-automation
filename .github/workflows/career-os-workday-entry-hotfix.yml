@@ -101,8 +101,18 @@ jobs:
           mkdir -p "$REPORT_DIR"
           cd "$RUNTIME"
           node "$GITHUB_WORKSPACE/answerbrief-ai-automation-starter/scripts/career-os-run-report.mjs" --markdown | tee "$REPORT_FILE"
+          echo "CAREER_OS_HOTFIX_REPORT_FILE=$REPORT_FILE" >> "$GITHUB_ENV"
           echo "Report saved on this Mac: $REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
           cat "$REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: career-os-workday-hotfix-report-${{ github.run_id }}
+          path: ${{ env.CAREER_OS_HOTFIX_REPORT_FILE }}
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Stop local Career OS API
         if: always()
