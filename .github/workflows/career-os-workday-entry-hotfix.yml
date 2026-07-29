@@ -7,6 +7,12 @@ on:
       - '.github/workflows/career-os-workday-entry-hotfix.yml'
       - '.github/workflows/.career-os-workday-entry-hotfix-trigger'
       - 'answerbrief-ai-automation-starter/scripts/patch-career-os-workday-entry.mjs'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/career-os-workday-entry-hotfix.yml'
+      - '.github/workflows/.career-os-workday-entry-hotfix-trigger'
+      - 'answerbrief-ai-automation-starter/scripts/patch-career-os-workday-entry.mjs'
   workflow_dispatch:
 
 concurrency:
