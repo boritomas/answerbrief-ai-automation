@@ -45,6 +45,19 @@ if (mode === 'run-once') {
   process.exit(0);
 }
 
+if (mode === 'run-batch') {
+  const limit = boundedPositiveInteger(argValue('--limit', process.env.CAREER_OS_WORKER_BATCH_LIMIT || '5'), 5, 25);
+  let claimed = 0;
+  let attempts = 0;
+  for (; attempts < limit; attempts += 1) {
+    const didClaim = await claimAndRunTask();
+    if (!didClaim) break;
+    claimed += 1;
+  }
+  console.log(JSON.stringify({ attempts: attempts + (attempts < limit ? 1 : 0), claimed, limit }, null, 2));
+  process.exit(0);
+}
+
 if (mode === 'start') {
   while (true) {
     try {
@@ -335,4 +348,16 @@ function cssEscape(value) {
 
 function clean(value) {
   return String(value || '').trim().replace(/^"|"$/g, '');
+}
+
+function argValue(name, fallback = '') {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return fallback;
+  return process.argv[index + 1] || fallback;
+}
+
+function boundedPositiveInteger(value, fallback, max) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
 }
