@@ -2,6 +2,7 @@ import { getCareerOsStatus, summarizeCareerOsStatus, type CareerOsStatus } from 
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
 import { buildCandidateProfile, type CandidateProfile } from '@/lib/career-os-candidate-profile';
 import { ApplicationActionControl, ReviewQueueActionControl } from './action-controls';
+import GuidedCareerOsPage from './guided/page';
 import { HashScroll } from './hash-scroll';
 
 export const dynamic = 'force-dynamic';
@@ -106,7 +107,9 @@ export default async function CareerOsPage(
   { searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> },
 ) {
   const params = searchParams ? await searchParams : {};
-  const activeView = firstQueryValue(params.view) || 'home';
+  const requestedView = firstQueryValue(params.view);
+  if (!requestedView) return <GuidedCareerOsPage />;
+  const activeView = requestedView || 'home';
   const status = await getCareerOsStatus();
   const trust = status.operationalTrust;
   const outcomeIntelligence = status.outcomeIntelligence;

@@ -3486,7 +3486,7 @@ async function supabaseSelectAll(
   table: string,
   query: string,
   pageSize = 1000,
-  maxRows = 10000,
+  maxRows = 1000,
 ): Promise<JsonRecord[]> {
   const rows: JsonRecord[] = [];
 

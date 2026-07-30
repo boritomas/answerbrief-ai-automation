@@ -36,7 +36,7 @@ export default async function GuidedCareerOsPage() {
           <a href="#matches" style={styles.navLink}>Best Matches</a>
           <a href="#applications" style={styles.navLink}>Applications</a>
           <a href="#interviews" style={styles.navLink}>Interviews</a>
-          <a href="/career-os" style={styles.navLink}>Detailed View</a>
+          <a href="/career-os?view=detailed" style={styles.navLink}>Detailed View</a>
         </nav>
       </header>
 
@@ -89,14 +89,14 @@ export default async function GuidedCareerOsPage() {
             </div>
           ))}
         </div>
-        <a href="/career-os#applications" style={styles.secondaryButton}>View Application Progress</a>
+        <a href="/career-os?view=detailed#applications" style={styles.secondaryButton}>View Application Progress</a>
       </section>
 
       <section id="interviews" style={styles.section}>
         <p style={styles.eyebrow}>INTERVIEW CENTER</p>
         <h2 style={styles.sectionTitle}>Be ready when the opportunity comes</h2>
         <p style={styles.muted}>Your resume, company research, STAR stories, and interview preparation will be kept together in one place.</p>
-        <a href="/career-os#interviews" style={styles.secondaryButton}>Open Interview Center</a>
+        <a href="/career-os?view=detailed#interviews" style={styles.secondaryButton}>Open Interview Center</a>
       </section>
     </main>
   );
