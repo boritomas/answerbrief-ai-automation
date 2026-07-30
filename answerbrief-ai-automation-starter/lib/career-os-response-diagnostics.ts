@@ -163,6 +163,87 @@ export function buildSmallStatusPayload(bundle: StatusBundle) {
   };
 }
 
+export function buildOperationalStatusPayload(bundle: StatusBundle) {
+  const { status } = bundle;
+  return {
+    ok: status.environment === 'production' && !status.blocker,
+    mode: status.productionEvidenceReady ? 'live' : status.environment,
+    environment: status.environment,
+    generatedAt: status.generatedAt,
+    blocker: status.blocker || null,
+    summary: bundle.payload.summary,
+    deployment: status.evidence.deployment,
+    counts: {
+      activeOpportunities: status.activeOpportunities,
+      activeQualifiedOpportunities: status.activeQualifiedOpportunities,
+      archivedOpportunities: status.archivedOpportunities,
+      humanOnlyGates: status.humanOnlyGates,
+      inProgress: status.inProgress,
+      readyForAutomation: status.readyForAutomation,
+      remainingQualifiedApplications: status.remainingQualifiedApplications,
+      reviewQueueCount: status.reviewQueueCount,
+      submittedApplications: status.submittedApplications,
+      totalUniqueOpportunities: status.totalUniqueOpportunities,
+      waitingOnTomas: status.waitingOnTomas,
+      worthApplyingToday: status.worthApplyingToday,
+    },
+    data: {
+      applications: status.evidence.applications.length,
+      artifacts: status.evidence.artifacts.length,
+      automationRuns: status.evidence.automationRuns.length,
+      jobPostings: status.evidence.jobPostings.length,
+      opportunities: status.evidence.seededOpportunities.length,
+      sourceRuns: status.evidence.sourceRuns.length,
+      tasks: status.evidence.tasks.length,
+      workflowEvents: status.evidence.workflowEvents.length,
+    },
+    latestSourceRun: status.evidence.latestSourceRun ? {
+      accepted: status.evidence.latestSourceRun.number_accepted,
+      executedAt: status.evidence.latestSourceRun.executed_at,
+      id: status.evidence.latestSourceRun.id,
+      reviewed: status.evidence.latestSourceRun.number_reviewed,
+      status: status.evidence.latestSourceRun.status,
+    } : null,
+    applicationExecution: {
+      attemptedToday: status.applicationExecution.attemptedToday,
+      confirmed: status.applicationExecution.confirmed,
+      failedWithError: status.applicationExecution.failedWithError,
+      nextScheduledRun: status.applicationExecution.nextScheduledRun,
+      queueStates: status.applicationExecution.queueStates,
+      runningNow: status.applicationExecution.runningNow,
+      submitted: status.applicationExecution.submitted,
+      submittedToday: status.applicationExecution.submittedToday,
+      technicallyBlocked: status.applicationExecution.technicallyBlocked,
+      waitingOnTomas: status.applicationExecution.waitingOnTomas,
+    },
+    workdayFirst: {
+      mode: status.workdayFirst.mode,
+      phaseTwoWorkdayBlockers: status.workdayFirst.phaseTwoWorkdayBlockers,
+      plainEnglish: status.workdayFirst.plainEnglish,
+      workdayReadyToProcess: status.workdayFirst.workdayReadyToProcess,
+      workdaySubmitted: status.workdayFirst.workdaySubmitted,
+      workdayWaitingOnHumanCode: status.workdayFirst.workdayWaitingOnHumanCode,
+      workdayWaitingOnMissingAnswer: status.workdayFirst.workdayWaitingOnMissingAnswer,
+    },
+    dailyWorkflow: {
+      status: status.dailyWorkflow.status,
+      dailySchedule: status.dailyWorkflow.dailySchedule,
+      marketCoverage: status.dailyWorkflow.marketCoverage,
+      dailyFunnel: status.dailyWorkflow.dailyFunnel,
+      pipelineHealth: status.dailyWorkflow.pipelineHealth,
+    },
+    compensationPolicy: status.compensationPolicy,
+    globalLifecycle: status.globalLifecycle,
+    operationalTrust: {
+      confidenceScore: status.operationalTrust.trustReport.confidenceScore,
+      unsupportedClaimsRemoved: status.operationalTrust.trustReport.unsupportedClaimsRemoved,
+      verifiedOpportunities: status.operationalTrust.trustReport.verifiedOpportunities,
+      verifiedSubmittedApplications: status.operationalTrust.trustReport.verifiedSubmittedApplications,
+    },
+    productionEvidenceReady: status.productionEvidenceReady,
+  };
+}
+
 export function buildPingPayload() {
   return {
     buildTimestamp: new Date().toISOString(),
