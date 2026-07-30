@@ -16,6 +16,7 @@ const legacyBridge = loadTsModule('lib/ats/legacy-adapter-bridge.ts');
 const greenhouse = loadTsModule('lib/ats/adapters/greenhouse.ts');
 const unsupported = loadTsModule('lib/ats/adapters/unsupported.ts');
 const workday = loadTsModule('lib/ats/adapters/workday.ts');
+const dashboard = loadTsModule('lib/career-os-dashboard.ts');
 
 const capabilityKeys = [
   'supportsResumeUpload',
@@ -549,4 +550,140 @@ test('legacy bridge keeps matches and execute shape compatible', async () => {
 
   const unsupportedBridge = legacyBridge.createLegacyAdapterBridge(unsupported.unsupportedAtsAdapter);
   assert.equal(unsupportedBridge.matches({ ...greenhouseTask, applicationUrl: 'https://jobs.example.com/1', platform: 'unknown' }), true);
+});
+
+test('dashboard explains zero submissions in plain language', () => {
+  const explanation = dashboard.zeroSubmissionExplanation({
+    blockers: 2,
+    packagesPreparedToday: 0,
+    rolesReviewedToday: 4,
+  });
+
+  assert.match(explanation, /No confirmed submission was recorded today/i);
+  assert.match(explanation, /2 verified human-only blockers/i);
+});
+
+test('dashboard blocker classification requires structured evidence', () => {
+  assert.equal(dashboard.classifyStructuredBlocker({
+    id: 'captcha-app',
+    lifecycle_stage: 'waiting_on_tomas_browser_worker',
+    next_action: 'Complete CAPTCHA',
+    raw_record: {
+      blocker_type: 'captcha_required',
+      execution_status: 'waiting_on_tomas',
+    },
+  }, []), 'CAPTCHA');
+
+  assert.equal(dashboard.classifyStructuredBlocker({
+    id: 'generic-verification',
+    lifecycle_stage: 'qualified',
+    next_action: 'Review application',
+    raw_record: {
+      note: 'verification requested',
+    },
+  }, []), null);
+});
+
+test('dashboard interview classification requires verified evidence', () => {
+  const verified = dashboard.hasVerifiedInterviewEvidence({
+    id: 'interview-app',
+    lifecycle_stage: 'qualified',
+    next_action: 'Prepare next step',
+    raw_record: {},
+  }, [{
+    application_id: 'interview-app',
+    event_type: 'interview_scheduled',
+    occurred_at: '2026-07-30T15:00:00.000Z',
+    status: 'scheduled',
+  }]);
+
+  const unverified = dashboard.hasVerifiedInterviewEvidence({
+    id: 'keyword-only-app',
+    lifecycle_stage: 'qualified',
+    next_action: 'Recruiter mentioned interview loops in a note',
+    raw_record: {},
+  }, []);
+
+  assert.equal(verified, true);
+  assert.equal(unverified, false);
+});
+
+test('dashboard opportunity status comes from persisted workflow state', () => {
+  const status = dashboard.opportunityStage({
+    id: 'posting-1',
+    raw_record: {},
+    status: 'active',
+  }, {
+    id: 'app-queued',
+    lifecycle_stage: 'qualified_pending_application',
+    next_action: 'Queued after human step',
+    raw_record: {
+      execution_status: 'queued',
+    },
+    updated_at: '2026-07-30T12:00:00.000Z',
+  }, [], undefined);
+
+  assert.equal(status, 'Ready to apply');
+});
+
+test('dashboard omits unsupported fake opportunity actions', () => {
+  const actions = dashboard.buildOpportunityActions({
+    application: undefined,
+    blocker: undefined,
+    canonicalUrl: '',
+    opportunityId: 'opportunity-123',
+  });
+
+  assert.deepEqual(actions, [{
+    href: '#fit-analysis-opportunity-123',
+    label: 'View fit analysis',
+  }]);
+});
+
+test('dashboard does not synthesize next actions without queue records', () => {
+  const actions = dashboard.buildNextActions([{
+    id: 'submitted-app',
+    lifecycle_stage: 'submitted',
+    next_action: 'Wait for employer response',
+    raw_record: {
+      execution_status: 'submitted',
+    },
+  }], 'Jul 30, 4:00 PM');
+
+  assert.deepEqual(actions, []);
+});
+
+test('dashboard canonical counts avoid duplicate submitted records', () => {
+  const model = dashboard.buildDashboardModel({
+    applications: [
+      {
+        confirmation_number: 'ABC-123',
+        employer: 'Acme',
+        id: 'app-1',
+        position: 'VP Product',
+        raw_record: {
+          confirmed_at: '2026-07-30T14:00:00.000Z',
+        },
+        updated_at: '2026-07-30T14:00:00.000Z',
+      },
+      {
+        confirmation_number: 'ABC-123',
+        employer: 'Acme',
+        id: 'app-duplicate',
+        position: 'VP Product',
+        raw_record: {
+          confirmed_at: '2026-07-30T14:05:00.000Z',
+        },
+        updated_at: '2026-07-30T14:05:00.000Z',
+      },
+    ],
+    automationRuns: [],
+    now: new Date('2026-07-30T20:00:00.000Z'),
+    postings: [],
+    reports: [],
+    workflowEvents: [],
+  });
+
+  assert.equal(model.totalSubmitted, 1);
+  assert.equal(model.submittedToday, 1);
 });

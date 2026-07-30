@@ -11,17 +11,27 @@ export function loadTsModule(relativePath) {
   return loadTsFile(path.resolve(appRoot, relativePath));
 }
 
+function resolveModulePath(filePath) {
+  if (fs.existsSync(filePath)) return filePath;
+  if (filePath.endsWith('.ts')) return filePath;
+  const tsPath = `${filePath}.ts`;
+  if (fs.existsSync(tsPath)) return tsPath;
+  throw new Error(`Unable to resolve module: ${filePath}`);
+}
+
 function loadTsFile(filePath) {
-  const resolved = filePath.endsWith('.ts') ? filePath : `${filePath}.ts`;
+  const resolved = resolveModulePath(filePath);
   if (moduleCache.has(resolved)) return moduleCache.get(resolved).exports;
   const source = fs.readFileSync(resolved, 'utf8');
+  const transpileFileName = resolved.endsWith('.mjs') ? `${resolved}.ts` : resolved;
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
+      allowJs: true,
       esModuleInterop: true,
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2020,
     },
-    fileName: resolved,
+    fileName: transpileFileName,
   }).outputText;
   const module = { exports: {} };
   moduleCache.set(resolved, module);

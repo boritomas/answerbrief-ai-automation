@@ -77,6 +77,9 @@ function hasConfirmationEvidence(application: JsonRecord) {
 
 function canonicalSubmittedApplicationIdentity(application: JsonRecord) {
   const raw = asRecord(application.raw_record);
+  const confirmationNumber = compactKey(application.confirmation_number || raw.confirmation_number);
+  if (confirmationNumber) return `confirmation:${confirmationNumber}`;
+
   const keys = duplicateLockKeys({
     confirmation_number: stringValue(application.confirmation_number) || null,
     employer: stringValue(application.employer) || null,
