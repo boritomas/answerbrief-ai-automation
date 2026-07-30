@@ -23,6 +23,7 @@ function loadTsFile(filePath) {
   const resolved = resolveModulePath(filePath);
   if (moduleCache.has(resolved)) return moduleCache.get(resolved).exports;
   const source = fs.readFileSync(resolved, 'utf8');
+  const transpileFileName = resolved.endsWith('.mjs') ? `${resolved}.ts` : resolved;
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       allowJs: true,
@@ -30,7 +31,7 @@ function loadTsFile(filePath) {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2020,
     },
-    fileName: resolved,
+    fileName: transpileFileName,
   }).outputText;
   const module = { exports: {} };
   moduleCache.set(resolved, module);
