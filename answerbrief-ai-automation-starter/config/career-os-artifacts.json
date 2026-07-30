@@ -1,9 +1,60 @@
 {
   "schemaVersion": "career-os-artifact-registry-v1",
-  "updatedAt": "2026-07-29T00:00:00Z",
+  "updatedAt": "2026-07-29T22:00:00-05:00",
   "candidateId": "tomas-nieves",
   "defaults": {
     "canonicalResumeId": "resume-executive-v3",
     "coverLetterPolicy": "generate_role_specific_when_requested_or_high_value",
     "requireApprovedEvidence": true,
     "allowUnverifiedClaims": false
+  },
+  "artifacts": [
+    {
+      "id": "resume-executive-v3",
+      "type": "resume",
+      "name": "Tomas Nieves Executive Product Resume v3",
+      "version": "3.0.0",
+      "status": "approved",
+      "canonical": true,
+      "formats": {
+        "docx": "artifacts/canonical/Tomas_Nieves_Executive_Product_Resume_v3.docx",
+        "pdf": "artifacts/canonical/Tomas_Nieves_Executive_Product_Resume_v3.pdf"
+      },
+      "selection": {
+        "defaultFor": [
+          "executive_product_management",
+          "digital_transformation",
+          "customer_experience",
+          "platform_leadership",
+          "telecommunications"
+        ],
+        "minimumFitScore": 0
+      },
+      "evidencePolicy": {
+        "approvedOnly": true,
+        "allowUnverifiedClaims": false
+      }
+    },
+    {
+      "id": "cover-letter-verizon-r-1097912-v3",
+      "type": "cover_letter",
+      "name": "Verizon Senior Director R-1097912 Cover Letter v3",
+      "version": "3.0.0",
+      "status": "approved",
+      "canonical": false,
+      "jobScope": {
+        "employer": "Verizon",
+        "requisitionId": "R-1097912",
+        "roleFamily": "executive_product_management"
+      },
+      "formats": {
+        "docx": "artifacts/job-specific/verizon-r-1097912/Tomas_Nieves_Verizon_Senior_Director_Cover_Letter_v3.docx",
+        "pdf": "artifacts/job-specific/verizon-r-1097912/Tomas_Nieves_Verizon_Senior_Director_Cover_Letter_v3.pdf"
+      },
+      "generationPolicy": {
+        "useOnlyForExactRequisition": true,
+        "otherwiseGenerateFromCareerCase": true
+      }
+    }
+  ]
+}
