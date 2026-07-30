@@ -28,10 +28,10 @@ export async function GET() {
   ] = await Promise.all([
     safeSelect('career_os_daily_operating_reports', `select=id,generated_at,payload,prepared_for_review,auto_apply_eligible,blocked,opportunities_reviewed&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=generated_at.desc&limit=1`, diagnostics),
     safeSelect('career_os_automation_runs', `select=id,status,started_at,finished_at,summary&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=started_at.desc&limit=5`, diagnostics),
-    safeSelect('career_os_applications', `select=id,employer,position,lifecycle_stage,next_action,confirmation_number,submission_evidence,updated_at,raw_record,browser_worker,opportunity_id&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=updated_at.desc&limit=500`, diagnostics),
+    safeSelect('career_os_applications', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=updated_at.desc&limit=500`, diagnostics),
     safeSelect('career_os_job_postings', `select=id,company,title,status,posting_validation_status,fit_score,updated_at,last_checked_at&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=fit_score.desc.nullslast,last_checked_at.desc&limit=500`, diagnostics),
-    safeSelect('career_os_opportunities', `select=id,status,company,title,fit_score,updated_at&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=updated_at.desc&limit=500`, diagnostics),
-    safeSelect('career_os_tasks', `select=id,status,task_type,employer,application_id,updated_at&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=updated_at.desc&limit=100`, diagnostics),
+    safeSelect('career_os_opportunities', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=updated_at.desc&limit=500`, diagnostics),
+    safeSelect('career_os_tasks', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=updated_at.desc&limit=100`, diagnostics),
     safeSelect('career_os_artifacts', `select=id,artifact_type,approval_status,validation_status,application_id,opportunity_id,created_at&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=created_at.desc&limit=200`, diagnostics),
     safeWorkerHealth(ownerEmail, diagnostics),
   ]);

@@ -1,28 +1,13 @@
 import type { CSSProperties } from 'react';
-import { getCareerOsStatus } from '@/lib/career-os-status';
+import { careerOsSelectRows } from '@/lib/career-os-supabase';
 
 export const dynamic = 'force-dynamic';
 
 type JsonRecord = Record<string, unknown>;
 
 export default async function GuidedCareerOsPage() {
-  const status = await getCareerOsStatus();
-  const trust = status.operationalTrust;
-  const applications = status.evidence.applications as JsonRecord[];
-  const artifacts = status.evidence.artifacts as JsonRecord[];
-
-  const submitted = trust.verifiedCounts.submitted || 0;
-  const interviews = trust.verifiedCounts.interviews || 0;
-  const needsAttention = trust.verifiedCounts.reviewQueue || 0;
-  const qualified = applications.filter((item) => text(item.lifecycle_stage).includes('qualified')).length;
-  const ready = applications.filter((item) => {
-    const stage = text(item.lifecycle_stage);
-    return stage.includes('package_ready') || stage.includes('queued');
-  }).length;
-  const resumeReady = artifacts.some((item) => {
-    const type = text(item.artifact_type);
-    return type.includes('resume') && text(item.approval_status).includes('approved');
-  });
+  const snapshot = await getGuidedSnapshot();
+  const { interviews, needsAttention, qualified, ready, resumeReady, submitted } = snapshot;
 
   const calmMessage = needsAttention
     ? `Career OS is handling the search. ${needsAttention} item${needsAttention === 1 ? '' : 's'} need your attention.`
@@ -112,6 +97,71 @@ function ProgressCard({ label, value, detail, href }: { label: string; value: nu
 
 function text(value: unknown) {
   return typeof value === 'string' ? value.toLowerCase() : '';
+}
+
+async function getGuidedSnapshot() {
+  const ownerEmail = String(process.env.CAREER_OS_OWNER_EMAIL || 'tomas@nieves.com').trim().replace(/^"|"$/g, '');
+  const [dailyReports, artifacts] = await Promise.all([
+    safeSelect('career_os_daily_operating_reports', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=generated_at.desc&limit=1`),
+    safeSelect('career_os_artifacts', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=created_at.desc&limit=200`),
+  ]);
+  const dailyReport = dailyReports[0] || {};
+  const payload = asRecord(dailyReport.payload);
+  const release = asRecord(payload.release_progress_20260719);
+  const cycle = asRecord(payload.daily_operating_cycle);
+  const pipelineHealth = asRecord(cycle.pipelineHealth);
+  const marketCoverage = asRecord(cycle.marketCoverage);
+
+  return {
+    interviews: numberValue(pipelineHealth.interviews),
+    needsAttention: firstPositiveNumber(
+      release.waiting_on_tomas,
+      pipelineHealth.waitingOnTomas,
+      dailyReport.prepared_for_review,
+    ),
+    qualified: firstPositiveNumber(
+      release.active_qualified_opportunities,
+      marketCoverage.qualifiedMatches,
+    ),
+    ready: firstPositiveNumber(
+      release.ready_for_automation,
+      pipelineHealth.readyForAutomation,
+      dailyReport.auto_apply_eligible,
+    ),
+    resumeReady: artifacts.some((item) => {
+      const type = text(item.artifact_type);
+      return type.includes('resume') && (text(item.approval_status).includes('approved') || text(item.validation_status).includes('passed'));
+    }),
+    submitted: firstPositiveNumber(
+      release.submitted_applications,
+      pipelineHealth.totalSubmitted,
+    ),
+  };
+}
+
+async function safeSelect(table: string, query: string): Promise<JsonRecord[]> {
+  try {
+    return await careerOsSelectRows(table, query);
+  } catch {
+    return [];
+  }
+}
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function firstPositiveNumber(...values: unknown[]) {
+  for (const value of values) {
+    const number = numberValue(value);
+    if (number > 0) return number;
+  }
+  return 0;
+}
+
+function numberValue(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
 }
 
 const styles: Record<string, CSSProperties> = {
