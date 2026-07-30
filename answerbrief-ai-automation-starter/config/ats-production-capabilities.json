@@ -1,0 +1,193 @@
+{
+  "version": "career-os-ats-production-capabilities-2026-07-24",
+  "generatedAt": "2026-07-24T00:00:00.000Z",
+  "defaultDailyLimit": 5,
+  "defaultGreenhouseSubmitCanaryLimit": 1,
+  "executionModes": [
+    "inspect_only",
+    "assisted_apply",
+    "workday_single_canary",
+    "workday_first_submit",
+    "submit_enabled"
+  ],
+  "outcomeStatuses": [
+    "submitted_confirmed",
+    "completed_waiting_for_user",
+    "inspected_assisted",
+    "waiting_for_sign_in",
+    "waiting_for_account_creation",
+    "waiting_for_email_code",
+    "waiting_for_email_verification",
+    "waiting_for_user_decision",
+    "waiting_for_manual_upload",
+    "assisted_in_progress",
+    "review_ready",
+    "submission_uncertain",
+    "unsupported_workday_state",
+    "duplicate_skipped",
+    "unsupported_manual_required",
+    "retryable_failure",
+    "terminal_failure",
+    "not_qualified",
+    "deferred_phase_two_greenhouse",
+    "canary_stopped"
+  ],
+  "decisionQueueCategories": [
+    "salary",
+    "sponsorship",
+    "relocation",
+    "legal",
+    "arbitration",
+    "background",
+    "demographic",
+    "disability",
+    "veteran",
+    "conflict",
+    "criminal",
+    "unknown",
+    "low_confidence",
+    "login",
+    "account",
+    "email_code",
+    "email_verification",
+    "identity",
+    "resume_upload",
+    "review",
+    "mfa",
+    "captcha"
+  ],
+  "adapters": {
+    "greenhouse": {
+      "supported": true,
+      "capabilityTier": "production_submit_guarded",
+      "implementationStatus": "deferred_phase_two_greenhouse",
+      "allowedModes": [
+        "inspect_only"
+      ],
+      "defaultOutcomeWhenBlocked": "deferred_phase_two_greenhouse",
+      "submitPolicy": {
+        "submitEnabled": false,
+        "deferredForPhase": "phase_two_greenhouse",
+        "requiresExplicitMode": true,
+        "requiresRunAuthorization": true,
+        "requiresCanaryApplicationId": true,
+        "requiresSubmitSafetyCheck": true,
+        "requiresVisibleSubmitControl": true,
+        "requiresVerifiedClick": true,
+        "requiresConfirmationEvidence": true,
+        "maxSubmitEnabledCanaryPerDay": 1
+      },
+      "humanDecisionTriggers": [
+        "captcha",
+        "login",
+        "account",
+        "mfa",
+        "salary",
+        "sponsorship",
+        "relocation",
+        "legal",
+        "arbitration",
+        "background",
+        "demographic",
+        "disability",
+        "veteran",
+        "conflict",
+        "criminal",
+        "unknown",
+        "low_confidence"
+      ]
+    },
+    "workday": {
+      "supported": true,
+      "capabilityTier": "production_single_canary_assisted",
+      "implementationStatus": "workday_first_controlled",
+      "allowedModes": [
+        "inspect_only",
+        "assisted_apply",
+        "workday_single_canary",
+        "workday_first_submit"
+      ],
+      "defaultOutcomeWhenBlocked": "completed_waiting_for_user",
+      "submitPolicy": {
+        "submitEnabled": true,
+        "rejectSubmitEnabled": true,
+        "requiresExplicitMode": true,
+        "requiresCanaryId": false,
+        "requiresCanaryIdForModes": ["workday_single_canary"],
+        "requiresCanaryUrlOrTaskUrl": false,
+        "requiresCanaryUrlOrTaskUrlForModes": ["workday_single_canary"],
+        "requiresUnambiguousTenantAndJob": true,
+        "requiresDuplicateFree": true,
+        "requiresExistingSessionForLiveInspection": true,
+        "mayFillAuthorizedNonSensitiveFields": true,
+        "mustStopBeforeSubmit": false,
+        "broadSubmissionDisabled": false,
+        "maxAutomatedSteps": 20,
+        "finalSubmitRequiresReviewApproval": false,
+        "finalSubmitApprovalEnv": "CAREER_OS_WORKDAY_SUBMIT_APPROVAL",
+        "standingAuthorizationMode": "workday_first_submit"
+      },
+      "humanDecisionTriggers": [
+        "captcha",
+        "login",
+        "account",
+        "email_code",
+        "email_verification",
+        "identity",
+        "mfa",
+        "salary",
+        "sponsorship",
+        "relocation",
+        "legal",
+        "arbitration",
+        "background",
+        "demographic",
+        "disability",
+        "veteran",
+        "conflict",
+        "criminal",
+        "unknown",
+        "low_confidence"
+      ]
+    },
+    "unsupported": {
+      "supported": false,
+      "capabilityTier": "manual_only",
+      "implementationStatus": "unsupported",
+      "allowedModes": [
+        "inspect_only"
+      ],
+      "defaultOutcomeWhenBlocked": "unsupported_manual_required",
+      "submitPolicy": {
+        "submitEnabled": false,
+        "rejectSubmitEnabled": true,
+        "mustStopBeforeSubmit": true
+      },
+      "humanDecisionTriggers": [
+        "unknown",
+        "low_confidence"
+      ]
+    }
+  },
+  "claimPolicy": {
+    "requiresQualified": true,
+    "requiresDuplicateFree": true,
+    "requiresActiveHttpUrl": true,
+    "supportedAutomationPlatforms": [
+      "workday"
+    ],
+    "submitEnabledPlatforms": [
+      "workday"
+    ],
+    "assistedOnlyPlatforms": [
+      "greenhouse"
+    ],
+    "workdaySingleCanaryMode": "workday_single_canary",
+    "workdayFirstMode": "workday_first_submit",
+    "workdayBroadSubmissionDisabled": false,
+    "forbiddenAdapters": [
+      "oracle",
+      "greenhouse"
+    ]
+  }
+}

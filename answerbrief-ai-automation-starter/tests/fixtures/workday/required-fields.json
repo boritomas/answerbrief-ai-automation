@@ -1,0 +1,9 @@
+{
+  "scenarioName": "required_fields",
+  "expectedWorkdayState": "PERSONAL_INFORMATION",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "expectedRequiredFields": ["Legal First Name", "Legal Last Name", "Email Address", "Phone Number", "City", "State or Province", "Postal Code"],
+  "notes": ["Synthetic required field set for deterministic mapping."]
+}

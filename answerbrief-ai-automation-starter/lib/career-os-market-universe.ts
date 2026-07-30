@@ -23,9 +23,10 @@ export type CareerOsDiscoveryPlan = {
   oracleSources: CareerOsSourceCandidate[];
   sourceCandidates: CareerOsSourceCandidate[];
   sourceRegistry: string[];
+  workdaySources: CareerOsSourceCandidate[];
 };
 
-export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-management-market-2026-07-22-v4';
+export const CAREER_OS_MARKET_UNIVERSE_VERSION = 'broader-product-management-market-2026-07-27-v5-workday-source-expansion';
 
 export const CAREER_OS_SOURCE_REGISTRY = [
   'Greenhouse official board API',
@@ -75,10 +76,19 @@ export const CAREER_OS_ROLE_PRIORITIES = [
   'Product Strategy Director',
 ];
 
+const PHASE_ONE_DEFERRED_WORKDAY_EMPLOYERS = new Set([
+  'capital one',
+  'cisco',
+  'mastercard',
+  'newfold digital',
+  'yahoo',
+  'zendesk',
+]);
+
 const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('AT&T', 'company_hosted', 'U.S. wireless and telecom carriers', 'telecom carrier', 100),
-  source('T-Mobile', 'company_hosted', 'U.S. wireless and telecom carriers', 'telecom carrier', 99),
-  source('Verizon', 'workday', 'U.S. wireless and telecom carriers', 'telecom carrier', 98),
+  source('T-Mobile', 'workday', 'U.S. wireless and telecom carriers', 'telecom carrier', 99, undefined, true, 'https://tmobile.wd1.myworkdayjobs.com/en-US/External'),
+  source('Verizon', 'workday', 'U.S. wireless and telecom carriers', 'telecom carrier', 98, undefined, true, 'https://verizon.wd12.myworkdayjobs.com/en-US/frontier_career_site'),
   source('UScellular', 'workday', 'U.S. wireless and telecom carriers', 'regional wireless carrier', 92),
   source('Dish Wireless', 'company_hosted', 'U.S. wireless and telecom carriers', 'wireless carrier', 90),
   source('Boost Mobile', 'company_hosted', 'U.S. wireless and telecom carriers', 'MVNO', 86),
@@ -86,7 +96,7 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('C Spire', 'company_hosted', 'U.S. wireless and telecom carriers', 'regional wireless carrier', 80),
   source('Comcast', 'company_hosted', 'broadband, fiber, cable, and internet providers', 'broadband and cable', 96),
   source('Charter Communications / Spectrum', 'company_hosted', 'broadband, fiber, cable, and internet providers', 'broadband and cable', 95),
-  source('Cox Communications', 'workday', 'broadband, fiber, cable, and internet providers', 'broadband and cable', 94),
+  source('Cox Communications', 'workday', 'broadband, fiber, cable, and internet providers', 'broadband and cable', 94, undefined, true, 'https://cox.wd1.myworkdayjobs.com/en-US/Cox_External_Career_Site_1'),
   source('Altice USA / Optimum', 'company_hosted', 'broadband, fiber, cable, and internet providers', 'broadband and cable', 88),
   source('Frontier Communications', 'workday', 'broadband, fiber, cable, and internet providers', 'fiber broadband', 92),
   source('Lumen Technologies', 'company_hosted', 'broadband, fiber, cable, and internet providers', 'fiber and enterprise connectivity', 91),
@@ -149,7 +159,7 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Talkdesk', 'greenhouse', 'cloud communications, contact center, and customer experience', 'contact center', 82, 'talkdesk'),
   source('ServiceNow', 'smartrecruiters', 'enterprise SaaS and digital transformation', 'enterprise workflow platform', 86),
   source('Box', 'greenhouse', 'enterprise SaaS and digital transformation', 'enterprise content cloud and AI platform', 80, 'boxinc'),
-  source('Salesforce', 'company_hosted', 'enterprise SaaS and digital transformation', 'CRM and AI platform', 84),
+  source('Salesforce', 'workday', 'enterprise SaaS and digital transformation', 'CRM and AI platform', 84, undefined, true, 'https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site'),
   source('Microsoft', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
   source('Google Cloud', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
   source('Amazon Web Services', 'company_hosted', 'enterprise SaaS and digital transformation', 'cloud and AI platform', 84),
@@ -166,21 +176,23 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Stripe', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'payments platform', 76, 'stripe'),
   source('Block', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'commerce and payments platform', 76, 'block'),
   source('Marqeta', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'card issuing and payments platform', 76, 'marqeta'),
-  source('PayPal', 'workday', 'payments, digital commerce, and adjacent platforms', 'payments platform', 74),
+  source('PayPal', 'workday', 'payments, digital commerce, and adjacent platforms', 'payments platform', 77, undefined, true, 'https://paypal.wd1.myworkdayjobs.com/en-US/jobs'),
   source('Toast', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'restaurant commerce platform', 82, 'toast'),
   source('Affirm', 'greenhouse', 'payments, digital commerce, and adjacent platforms', 'fintech platform', 82, 'affirm'),
   source('MongoDB', 'greenhouse', 'enterprise SaaS and digital transformation', 'database platform', 80, 'mongodb'),
-  source('Adobe', 'company_hosted', 'enterprise SaaS and digital transformation', 'digital experience platform', 76),
+  source('Adobe', 'workday', 'enterprise SaaS and digital transformation', 'digital experience platform', 84, undefined, true, 'https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced'),
+  source('Workday', 'workday', 'enterprise SaaS and digital transformation', 'enterprise workflow and AI platform', 86, undefined, true, 'https://workday.wd5.myworkdayjobs.com/en-US/Workday'),
+  source('NVIDIA', 'workday', 'enterprise SaaS and digital transformation', 'AI infrastructure and platform', 88, undefined, true, 'https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite'),
   source('Intuit', 'company_hosted', 'payments, digital commerce, and adjacent platforms', 'financial software platform', 74),
   source('Capital One', 'workday', 'payments, digital commerce, and adjacent platforms', 'financial platform', 74),
   source('JPMorgan Chase', 'oracle', 'banking, payments, and enterprise platforms', 'banking and payments platform', 97, undefined, true, 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs'),
-  source('Bank of America', 'workday', 'banking, payments, and enterprise platforms', 'banking platform', 79),
-  source('Wells Fargo', 'workday', 'banking, payments, and enterprise platforms', 'banking platform', 78),
+  source('Bank of America', 'workday', 'banking, payments, and enterprise platforms', 'banking platform', 79, undefined, true, 'https://ghr.wd1.myworkdayjobs.com/en-US/Lateral-US'),
+  source('Wells Fargo', 'workday', 'banking, payments, and enterprise platforms', 'banking platform', 78, undefined, true, 'https://wf.wd1.myworkdayjobs.com/en-US/WellsFargoJobs'),
   source('Citi', 'workday', 'banking, payments, and enterprise platforms', 'banking platform', 77),
   source('Fidelity', 'company_hosted', 'banking, payments, and enterprise platforms', 'financial platform', 76),
   source('Charles Schwab', 'workday', 'banking, payments, and enterprise platforms', 'financial platform', 75),
-  source('USAA', 'workday', 'banking, payments, and enterprise platforms', 'insurance and financial platform', 78),
-  source('PayPal', 'workday', 'banking, payments, and enterprise platforms', 'payments platform', 77),
+  source('USAA', 'workday', 'banking, payments, and enterprise platforms', 'insurance and financial platform', 78, undefined, true, 'https://usaa.wd1.myworkdayjobs.com/en-US/USAAJOBSWD'),
+  source('PayPal', 'workday', 'banking, payments, and enterprise platforms', 'payments platform', 77, undefined, true, 'https://paypal.wd1.myworkdayjobs.com/en-US/jobs'),
   source('Visa', 'company_hosted', 'banking, payments, and enterprise platforms', 'payments platform', 76),
   source('Mastercard', 'workday', 'banking, payments, and enterprise platforms', 'payments platform', 76),
   source('American Express', 'company_hosted', 'payments, digital commerce, and adjacent platforms', 'payments platform', 72),
@@ -200,9 +212,9 @@ const BASELINE_SOURCE_CANDIDATES: CareerOsSourceCandidate[] = [
   source('Target', 'company_hosted', 'retail and commerce platforms', 'retail platform', 71),
   source('Home Depot', 'company_hosted', 'retail and commerce platforms', 'retail platform', 71),
   source('Lowe’s', 'company_hosted', 'retail and commerce platforms', 'retail platform', 71),
-  source('CVS Health', 'workday', 'healthcare technology and consumer platforms', 'healthcare platform', 72),
+  source('CVS Health', 'workday', 'healthcare technology and consumer platforms', 'healthcare platform', 72, undefined, true, 'https://cvshealth.wd1.myworkdayjobs.com/en-US/CVS_Health_Careers'),
   source('UnitedHealth Group', 'workday', 'healthcare technology and consumer platforms', 'healthcare platform', 72),
-  source('Accenture', 'workday', 'consulting and transformation', 'consulting and digital transformation', 74),
+  source('Accenture', 'workday', 'consulting and transformation', 'consulting and digital transformation', 74, undefined, true, 'https://accenture.wd103.myworkdayjobs.com/en-US/AccentureCareers'),
   source('Deloitte', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 74),
   source('PwC', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 72),
   source('EY', 'company_hosted', 'consulting and transformation', 'consulting and digital transformation', 72),
@@ -250,6 +262,13 @@ export function buildCareerOsDiscoveryPlan(input: {
   const applicationBoards = extractGreenhouseBoardsFromRecords(input.applications || []);
   const postingBoards = extractGreenhouseBoardsFromRecords(input.jobPostings || []);
   const workflowBoards = extractGreenhouseBoardsFromRecords(input.workflowEvents || []);
+  const dynamicWorkdaySources = uniqueWorkdaySources([
+    ...extractWorkdaySourcesFromRecords(input.applications || []),
+    ...extractWorkdaySourcesFromRecords(input.jobPostings || []),
+    ...extractWorkdaySourcesFromRecords(input.workflowEvents || []),
+    ...extractWorkdaySourcesFromRecords(input.platformProfiles || []),
+    ...extractWorkdaySourcesFromRecords(input.employerRecords || []),
+  ]);
   const dynamicBoardCandidates = uniqueStrings([
     ...previousBoards,
     ...profileBoards,
@@ -260,9 +279,12 @@ export function buildCareerOsDiscoveryPlan(input: {
     ...(input.extraGreenhouseBoards || []),
   ]).map((board) => source(companyNameFromBoard(board), 'greenhouse', 'dynamic employer discovery', 'official Greenhouse source', 74, board, true));
   const sourceCandidates = dedupeSourceCandidates(BASELINE_SOURCE_CANDIDATES.concat(dynamicBoardCandidates))
+    .concat(dynamicWorkdaySources)
     .sort((a, b) => b.priority - a.priority || a.employer.localeCompare(b.employer));
   const oracleSources = sourceCandidates
     .filter((candidate) => candidate.supported && candidate.ats === 'oracle');
+  const workdaySources = uniqueWorkdaySources(sourceCandidates
+    .filter((candidate) => candidate.supported && candidate.ats === 'workday' && candidate.sourceUrl));
   const greenhouseBoards = uniqueStrings(sourceCandidates
     .filter((candidate) => candidate.supported && candidate.ats === 'greenhouse' && candidate.board)
     .map((candidate) => candidate.board || ''));
@@ -270,7 +292,7 @@ export function buildCareerOsDiscoveryPlan(input: {
   return {
     coverageSummary: {
       discoveryMode: 'broad_dynamic_supported_source_plan',
-      supportedOfficialSources: greenhouseBoards.length + oracleSources.length,
+      supportedOfficialSources: greenhouseBoards.length + oracleSources.length + workdaySources.length,
       totalEmployerCandidates: sourceCandidates.length,
       unsupportedSourceCandidates: sourceCandidates.filter((candidate) => !candidate.supported).length,
     },
@@ -279,6 +301,7 @@ export function buildCareerOsDiscoveryPlan(input: {
     oracleSources,
     sourceCandidates,
     sourceRegistry: CAREER_OS_SOURCE_REGISTRY,
+    workdaySources,
   };
 }
 
@@ -339,6 +362,89 @@ function extractGreenhouseBoardsFromRecords(records: JsonRecord[]) {
     }
   }
   return uniqueStrings(boards);
+}
+
+function extractWorkdaySourcesFromRecords(records: JsonRecord[]) {
+  const sources: CareerOsSourceCandidate[] = [];
+  for (const record of records) {
+    const raw = asRecord(record.raw_record);
+    const metadata = asRecord(record.metadata);
+    const values = [
+      record.canonical_url,
+      record.application_url,
+      record.evidence_url,
+      record.source_url,
+      record.job_url,
+      raw.canonical_url,
+      raw.application_url,
+      raw.job_url,
+      raw.source_url,
+      raw.confirmation_url,
+      metadata.canonical_url,
+      metadata.application_url,
+      metadata.evidence_url,
+      metadata.source_url,
+    ];
+    for (const value of values) {
+      const parsed = workdaySourceFromValue(value);
+      if (!parsed) continue;
+      const employer = String(record.employer || record.company || raw.company || parsed.employer);
+      if (PHASE_ONE_DEFERRED_WORKDAY_EMPLOYERS.has(compactKey(employer))) continue;
+      sources.push(source(
+        employer,
+        'workday',
+        'dynamic Workday employer discovery',
+        String(raw.source_business_type || record.source_business_type || 'official Workday source'),
+        82,
+        undefined,
+        true,
+        parsed.sourceUrl,
+      ));
+    }
+  }
+  return sources;
+}
+
+function uniqueWorkdaySources(sources: CareerOsSourceCandidate[]) {
+  const seen = new Map<string, CareerOsSourceCandidate>();
+  for (const candidate of sources) {
+    const sourceUrl = String(candidate.sourceUrl || '').trim();
+    if (!sourceUrl) continue;
+    const key = normalizeWorkdaySourceUrl(sourceUrl);
+    if (!key) continue;
+    const normalized = { ...candidate, sourceUrl: key, supported: true };
+    const existing = seen.get(key);
+    if (!existing || normalized.priority > existing.priority) seen.set(key, normalized);
+  }
+  return Array.from(seen.values());
+}
+
+function workdaySourceFromValue(value: unknown) {
+  const sourceUrl = normalizeWorkdaySourceUrl(value);
+  if (!sourceUrl) return null;
+  const host = new URL(sourceUrl).hostname.toLowerCase();
+  const tenant = host.replace(/\.myworkdayjobs\.com$/i, '');
+  return {
+    employer: companyNameFromBoard(tenant.replace(/\.wd\d+$/i, '')),
+    sourceUrl,
+  };
+}
+
+function normalizeWorkdaySourceUrl(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text || !/myworkdayjobs\.com/i.test(text)) return '';
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return '';
+  }
+  if (!/^https?:$/i.test(url.protocol)) return '';
+  const segments = decodeURIComponent(url.pathname).split('/').map((segment) => segment.trim()).filter(Boolean);
+  const localeIndex = segments.findIndex((segment) => /^[a-z]{2}-[A-Z]{2}$/i.test(segment));
+  const site = localeIndex >= 0 ? segments[localeIndex + 1] : segments[0];
+  if (!site || /^(job|apply|userhome)$/i.test(site)) return '';
+  return `${url.origin}/en-US/${encodeURIComponent(site)}`;
 }
 
 function greenhouseBoardFromValue(value: unknown) {

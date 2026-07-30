@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Workday Fixture - Application Questions</title>
+  </head>
+  <body>
+    <main data-workday-state="APPLICATION_QUESTIONS" data-fixture-scenario="application_questions">
+      <h1>Application Questions</h1>
+      <section data-section="application_questions">
+        <select data-ats-field id="sponsorship" name="sponsorship" data-label="Will you require sponsorship now or in the future?" required data-section="application_questions" data-canonical="sponsorship_now" data-sensitive="sponsorship">
+          <option value="">Select one</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+        <input data-ats-field id="salary" name="salary" data-label="Desired compensation" required data-section="application_questions" data-canonical="salary_expectation" data-sensitive="salary" data-authorization="explicit_user_required">
+        <select data-ats-field id="relocation" name="relocation" data-label="Willing to relocate?" required data-section="application_questions" data-canonical="relocation" data-sensitive="relocation" data-user-decision="required">
+          <option value="">Select one</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+          <option value="Maybe">Maybe</option>
+        </select>
+        <input data-ats-field id="previousEmployer1" name="previousEmployer1" data-label="Previous Employer" data-section="work_experience" data-repeated-section="work_experience" data-repeat-index="1" data-canonical="previous_employer">
+        <input data-ats-field id="hiddenToken" name="hiddenToken" data-label="Internal token" data-section="system" data-visible="false" value="fixture-token">
+      </section>
+    </main>
+  </body>
+</html>

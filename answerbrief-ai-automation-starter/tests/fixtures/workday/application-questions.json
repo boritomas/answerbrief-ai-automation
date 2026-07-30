@@ -1,0 +1,11 @@
+{
+  "scenarioName": "application_questions",
+  "expectedWorkdayState": "APPLICATION_QUESTIONS",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "expectedRequiredFields": ["Will you require sponsorship now or in the future?", "Desired compensation", "Willing to relocate?"],
+  "expectedUserGates": ["SALARY_DECISION_REQUIRED", "RELOCATION_DECISION_REQUIRED"],
+  "expectedFailureClassification": "SENSITIVE_FIELD_REQUIRES_USER",
+  "notes": ["Synthetic dynamic question page with sensitive user-decision gates and repeated-section context."]
+}

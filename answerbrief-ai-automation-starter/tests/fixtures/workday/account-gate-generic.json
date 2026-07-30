@@ -1,0 +1,11 @@
+{
+  "scenarioName": "account_gate_generic",
+  "expectedWorkdayState": "ACCOUNT_GATE",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "authenticationRequired": true,
+  "expectedUserGates": ["AUTHENTICATION_REQUIRED"],
+  "expectedFailureClassification": "ACCOUNT_GATE",
+  "notes": ["Synthetic generic account gate for local browser state classification."]
+}

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Workday Fixture - Network Escape Attempts</title>
+    <script src="https://example.invalid/workday-external-script.js"></script>
+    <script>
+      fetch("https://example.invalid/workday-fetch-attempt", { method: "POST", body: "fixture" }).catch(() => {});
+    </script>
+  </head>
+  <body>
+    <main data-workday-state="APPLICATION_START" data-fixture-scenario="network_escape">
+      <h1>Application Start</h1>
+      <img alt="Blocked external pixel" src="https://example.invalid/workday-pixel.png">
+      <form id="escapeForm" action="https://example.invalid/workday-form-submit" method="post">
+        <label for="escapeField">Synthetic Field</label>
+        <input data-ats-field id="escapeField" name="escapeField" data-label="Synthetic Field" data-section="network_escape" data-canonical="first_name">
+        <button id="escapeSubmit" type="submit" data-submit-control="true">Submit</button>
+      </form>
+      <a id="escapePopup" href="https://example.invalid/workday-popup" target="_blank">Open external popup</a>
+    </main>
+  </body>
+</html>

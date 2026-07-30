@@ -4,6 +4,7 @@ import {
   type DailyOperatingCycleStatus,
 } from './career-os-daily-cycle';
 import { canonicalQueueState, careerOsActionMetadata } from './career-os-queue';
+import { duplicateLockKeys } from './career-os-duplicate-lock';
 import {
   applicationMatchesCanonicalOpportunity,
   canonicalOpportunityIdentity,
@@ -15,15 +16,22 @@ import {
   getCareerOsSupabaseConfiguration,
 } from './career-os-supabase';
 import {
-  countCanonicalSubmittedApplicationsOnDate,
-  selectCanonicalSubmittedApplications as selectCanonicalSubmittedApplicationsShared,
-  type CanonicalSubmittedApplication,
-} from './career-os-submission-metrics';
+  buildOutcomeIntelligence,
+  type OutcomeIntelligence,
+} from '../scripts/lib/career-os-quality-layer.mjs';
+import {
+  COMPENSATION_FLOOR_USD,
+  classifyCompensationPolicy,
+} from '../scripts/lib/career-os-compensation-policy.mjs';
+import {
+  classifyPhaseTwoWorkdayBlocker,
+  type PhaseTwoWorkdayBacklogItem,
+} from '../scripts/lib/career-os-phase-two-blockers.mjs';
 
 type JsonRecord = Record<string, unknown>;
 
 const AUTO_APPLY_THRESHOLD = 85;
-const REVIEW_QUEUE_THRESHOLD = 60;
+const REVIEW_QUEUE_THRESHOLD = 65;
 
 export type CareerOsStatus = {
   environment: 'production' | 'snapshot' | 'unconfigured';
@@ -69,6 +77,7 @@ export type CareerOsStatus = {
   qualificationTiers: QualificationTierPolicy;
   reviewQueue: ReviewQueueStatus;
   dailyWorkflow: DailyOperatingCycleStatus;
+  workdayFirst: WorkdayFirstStatus;
   nextAction?: {
     label: string;
     reason: string;
@@ -89,6 +98,40 @@ export type CareerOsStatus = {
   blocker?: string;
   evidence: CareerOsEvidence;
   verificationRows: VerificationRow[];
+  outcomeIntelligence: OutcomeIntelligence;
+};
+
+export type WorkdayFirstStatus = {
+  mode: 'workday_first';
+  plainEnglish: string;
+  workdayReadyToProcess: number;
+  workdaySubmitted: number;
+  workdayWaitingOnHumanCode: number;
+  workdayWaitingOnMissingAnswer: number;
+  phaseTwoWorkdayBlockers: number;
+  phaseTwoWorkdayBacklog: PhaseTwoWorkdayBacklogItem[];
+  greenhouseDeferred: number;
+  unsupportedAtsDeferred: number;
+  duplicatesSkipped: number;
+  rejectedOrClosedRoles: number;
+  linkedinFeedCardsInspected: number;
+  linkedinFeedJobsCaptured: number;
+  linkedinFeedJobsClicked: number;
+  linkedinEmployerApplyLinksResolved: number;
+  linkedinJobsDiscovered: number;
+  linkedinResolvedToWorkday: number;
+  linkedinEasyApplyDeferred: number;
+  linkedinGreenhouseDeferred: number;
+  linkedinRejectedByQualityGate: number;
+  linkedinCompBelowFloorReject: number;
+  linkedinCompNearFloorReview: number;
+  linkedinCompUnknownStrongFit: number;
+  linkedinQueuedToWorkday: number;
+  linkedinWorkdayApplicationsAttempted: number;
+  linkedinWorkdayApplicationsSubmitted: number;
+  linkedinSearchLocationsUsed: string[];
+  linkedinSearchTermsUsed: string[];
+  linkedinTopHoldReasons: Array<{ count: number; reason: string }>;
 };
 
 export type QualificationTier = 'archive' | 'auto_apply' | 'tomas_review';
@@ -164,9 +207,9 @@ export type DiscoveryTruthStatus = {
 };
 
 export type QualificationTierPolicy = {
-  archiveRange: '0-59';
+  archiveRange: '0-64';
   autoApplyRange: '85-100';
-  reviewQueueRange: '60-84';
+  reviewQueueRange: '65-84';
   autoApplyThreshold: 85;
 };
 
@@ -695,7 +738,8 @@ export function summarizeCareerOsStatus(status: CareerOsStatus) {
     postedCompensationRange: salary,
     qualifiedPostedCompensationRange: qualifiedSalary,
     compensationPreferenceLine: `Tomas preferred minimum base salary: ${preferredBase}; optional desired-compensation fields stay blank.`,
-    dailyWorkflowLine: `${status.dailyWorkflow.marketCoverage.rawJobsReviewed} raw source record${status.dailyWorkflow.marketCoverage.rawJobsReviewed === 1 ? '' : 's'} reviewed; ${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified} unique live role${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified === 1 ? '' : 's'} evaluated; ${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new opportunit${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? 'y' : 'ies'} added; ${status.applicationExecution.submittedToday} submitted today.`,
+    dailyWorkflowLine: `${status.dailyWorkflow.marketCoverage.rawJobsReviewed} raw source record${status.dailyWorkflow.marketCoverage.rawJobsReviewed === 1 ? '' : 's'} reviewed; ${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified} unique live role${status.dailyWorkflow.dailyFunnel.qualificationToday.activeAndVerified === 1 ? '' : 's'} evaluated; ${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday} new opportunit${status.dailyWorkflow.pipelineHealth.newOpportunitiesToday === 1 ? 'y' : 'ies'} added; ${status.dailyWorkflow.pipelineHealth.applicationsSubmittedToday} submitted today.`,
+    outcomeLine: status.outcomeIntelligence.plainEnglish,
   };
 }
 
@@ -737,9 +781,15 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     compensationPreference.preferredMinimumBaseSalaryUsd,
   );
   const dailyWorkflow = buildDailyOperatingCycleStatus(evidence, canonicalRelease);
+  const workdayFirst = buildWorkdayFirstStatus(evidence);
   const employmentModel = buildEmploymentModel(evidence);
   const atsEmploymentMapper = buildAtsEmploymentMapperStatus(evidence, employmentModel);
   const verificationRows = buildVerificationRows(evidence, supabaseConnected, dailyWorkflow, duplicateSafety);
+  const outcomeIntelligence = buildOutcomeIntelligence({
+    applications: evidence.applications,
+    artifacts: evidence.artifacts,
+    workflowEvents: evidence.workflowEvents,
+  });
   const operationalTrust = buildOperationalTrustStatus(
     evidence,
     buildCanonicalOpportunityList(evidence, compensationPreference.preferredMinimumBaseSalaryUsd),
@@ -788,14 +838,15 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
     releaseCompletionPercentage: canonicalRelease.releaseCompletionPercentage,
     actionableProgressPercentage: canonicalRelease.actionableProgressPercentage,
     qualificationTiers: {
-      archiveRange: '0-59',
+      archiveRange: '0-64',
       autoApplyRange: '85-100',
-      reviewQueueRange: '60-84',
+      reviewQueueRange: '65-84',
       autoApplyThreshold: AUTO_APPLY_THRESHOLD,
     },
     reviewQueue,
     dailyWorkflow,
-    nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates, applicationExecution, authoritativeLedger),
+    workdayFirst,
+    nextAction: buildNextAction(evidence, openTasks, openHumanOnlyGates, applicationExecution),
     employmentModel,
     atsEmploymentMapper,
     authoritativeLedger,
@@ -809,6 +860,7 @@ function normalizeStatus(evidence: CareerOsEvidence, supabaseConnected: boolean)
         : undefined,
     evidence,
     verificationRows,
+    outcomeIntelligence,
   };
 }
 
@@ -959,16 +1011,9 @@ function buildNextAction(
   openTasks: JsonRecord[],
   openHumanOnlyGates: JsonRecord[],
   applicationExecution: ApplicationExecutionStatus,
-  authoritativeLedger: AuthoritativeLedgerStatus,
 ) {
-  const activeBlockerApplicationIds = new Set(
-    authoritativeLedger.rows
-      .filter((row) => row.outcome === 'waiting_on_tomas' || row.outcome === 'technical_blocker')
-      .map((row) => stringValue(row.linkedApplicationId))
-      .filter(Boolean),
-  );
-  const applicationBlocker = applicationExecution.exactStatuses.find((item) => item.applicationId && activeBlockerApplicationIds.has(item.applicationId) && item.canonicalExecutionState === 'waiting_on_tomas')
-    || applicationExecution.exactStatuses.find((item) => item.applicationId && activeBlockerApplicationIds.has(item.applicationId) && item.canonicalExecutionState === 'blocked_technical');
+  const applicationBlocker = applicationExecution.exactStatuses.find((item) => item.canonicalExecutionState === 'waiting_on_tomas')
+    || applicationExecution.exactStatuses.find((item) => item.canonicalExecutionState === 'blocked_technical');
 
   if (applicationBlocker) {
     return {
@@ -1317,6 +1362,45 @@ function normalizedPlatformName(value: unknown) {
   return String(value || '').trim().toLowerCase();
 }
 
+function atsPlatformForRecord(record: JsonRecord) {
+  const raw = asRecord(record.raw_record);
+  const text = [
+    record.source,
+    record.platform,
+    record.ats_platform,
+    record.canonical_url,
+    record.application_url,
+    record.evidence_url,
+    record.job_url,
+    raw.platform,
+    raw.ats_platform,
+    raw.canonical_url,
+    raw.application_url,
+    raw.job_url,
+    raw.source_url,
+    raw.confirmation_url,
+  ].map(stringValue).join(' ').toLowerCase();
+  if (/greenhouse/.test(text)) return 'greenhouse';
+  if (/workday|myworkdayjobs|phenom|careers\.cisco\.com/.test(text)) return 'workday';
+  return 'unsupported';
+}
+
+function applicationHasSubmissionEvidence(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return Boolean(
+    application.confirmation_number
+    || application.submission_evidence
+    || raw.production_outcome === 'submitted_confirmed'
+    || raw.externally_submitted === true
+    || raw.externally_confirmed === true
+  );
+}
+
+function applicationStatusText(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return `${application.lifecycle_stage || ''} ${application.next_action || ''} ${raw.blocker_type || ''} ${raw.execution_status || ''} ${raw.production_outcome || ''} ${raw.reason_not_submitted || ''} ${JSON.stringify(raw.browser_worker_last_report || {})}`.toLowerCase();
+}
+
 function buildSalaryRange(jobs: JsonRecord[]) {
   const ranges = jobs
     .map((job) => ({
@@ -1388,8 +1472,11 @@ function buildApplicationExecutionStatus(
   const nextScheduledRun = nextDailyRunText(generatedAt);
   const exactStatuses = evidence.applications.map((application) => classifyApplicationExecution(application, nextScheduledRun));
   const queueStates = countQueueStates(exactStatuses);
-  const attemptedToday = evidence.applications.filter((application) => applicationAttemptedOnDate(application, evidence.workflowEvents, centralToday)).length;
-  const submittedToday = countCanonicalSubmittedApplicationsOnDate(evidence.applications, generatedAt);
+  const attemptedToday = evidence.applications.filter((application) => applicationAttemptedOnDate(application, centralToday)).length;
+  const submittedToday = evidence.applications.filter((application) => {
+    if (!application.confirmation_number && !application.submission_evidence) return false;
+    return centralDateKey(application.updated_at) === centralToday;
+  }).length;
   const latestRun = evidence.automationRuns[0];
   const confirmed = canonicalSubmittedApplications.filter((item) => item.confirmationEvidence).length;
   const submitted = canonicalSubmittedApplications.length;
@@ -1417,43 +1504,176 @@ function buildApplicationExecutionStatus(
   };
 }
 
-const MEANINGFUL_ATTEMPT_EVENT_TYPES = new Set([
-  'browser_worker_waiting_on_tomas',
-  'browser_worker_blocked',
-  'browser_worker_submitted',
-  'browser_worker_confirmed',
-  'submission_confirmed',
-  'resume_upload_completed',
-  'verified_answers_populated',
-  'human_only_gate',
-]);
+function buildWorkdayFirstStatus(evidence: CareerOsEvidence): WorkdayFirstStatus {
+  const applications = evidence.applications;
+  const workdayApplications = applications.filter((application) => atsPlatformForRecord(application) === 'workday');
+  const phaseTwoWorkdayBacklog = workdayApplications
+    .map((application) => classifyPhaseTwoWorkdayBlocker(application))
+    .filter((item): item is PhaseTwoWorkdayBacklogItem => Boolean(item));
+  const phaseTwoApplicationIds = new Set(phaseTwoWorkdayBacklog.map((item) => item.applicationId).filter(Boolean));
+  const greenhouseApplications = applications.filter((application) => atsPlatformForRecord(application) === 'greenhouse');
+  const unsupportedApplications = applications.filter((application) => {
+    const platform = atsPlatformForRecord(application);
+    return platform !== 'workday' && platform !== 'greenhouse';
+  });
+  const workdayReadyToProcess = workdayApplications.filter((application) => ['queued', 'package_ready', 'qualified'].includes(canonicalQueueState(application))).length;
+  const workdaySubmitted = workdayApplications.filter((application) => applicationHasSubmissionEvidence(application)).length;
+  const workdayWaitingOnHumanCode = workdayApplications.filter((application) => {
+    if (phaseTwoApplicationIds.has(stringValue(application.id))) return false;
+    const text = applicationStatusText(application);
+    return canonicalQueueState(application) === 'waiting_on_tomas'
+      && hasAnyStatus(text, ['email_code', 'email verification', 'security code', 'mfa', 'captcha', 'verification code', 'sign_in', 'sign in', 'account_creation']);
+  }).length;
+  const workdayWaitingOnMissingAnswer = workdayApplications.filter((application) => {
+    if (phaseTwoApplicationIds.has(stringValue(application.id))) return false;
+    const text = applicationStatusText(application);
+    return canonicalQueueState(application) === 'waiting_on_tomas'
+      && !hasAnyStatus(text, ['email_code', 'email verification', 'security code', 'mfa', 'captcha', 'verification code', 'sign_in', 'sign in', 'account_creation']);
+  }).length;
+  const greenhouseDeferred = greenhouseApplications.filter((application) => !applicationHasSubmissionEvidence(application)).length;
+  const unsupportedAtsDeferred = unsupportedApplications.filter((application) => !applicationHasSubmissionEvidence(application)).length;
+  const duplicatesSkipped = applications.filter((application) => canonicalQueueState(application) === 'duplicate').length;
+  const rejectedOrClosedApplications = applications.filter((application) => ['inactive', 'ineligible', 'failed'].includes(canonicalQueueState(application))).length;
+  const rejectedOrClosedPostings = evidence.jobPostings.filter((posting) => {
+    const text = `${posting.status || ''} ${posting.posting_validation_status || ''} ${posting.deterministic_filter_reason || ''}`.toLowerCase();
+    return hasAnyStatus(text, ['inactive', 'closed', 'expired', 'unavailable', 'poor_fit', 'below_target', 'ineligible']);
+  }).length;
+  const rejectedOrClosedRoles = Math.max(rejectedOrClosedApplications, rejectedOrClosedPostings);
+  const linkedinPostings = evidence.jobPostings.filter((posting) => isLinkedInDiscoveryStatusRecord(posting));
+  const linkedinPostingIds = new Set(linkedinPostings.map((posting) => stringValue(posting.id)).filter(Boolean));
+  const linkedinRawRecords = linkedinPostings.map((posting) => asRecord(posting.raw_record));
+  const linkedinApplications = applications.filter((application) => {
+    const raw = asRecord(application.raw_record);
+    return isLinkedInDiscoveryStatusRecord(application)
+      || linkedinPostingIds.has(stringValue(raw.canonical_job_posting_id));
+  });
+  const linkedinDestination = (record: JsonRecord) => stringValue(asRecord(record.raw_record).destination_classification);
+  const linkedinJobsDiscovered = linkedinPostings.length;
+  const linkedinFeedCardsInspected = Math.max(0, ...linkedinRawRecords.map((record) => numberValue(record.feed_cards_inspected)));
+  const linkedinFeedJobsCaptured = linkedinJobsDiscovered;
+  const linkedinFeedJobsClicked = linkedinRawRecords.filter((record) => Boolean(record.detail_opened)).length;
+  const linkedinEmployerApplyLinksResolved = linkedinRawRecords.filter((record) => Boolean(stringValue(record.employer_apply_url))).length;
+  const linkedinResolvedToWorkday = linkedinPostings.filter((posting) => linkedinDestination(posting) === 'workday_resolved').length;
+  const linkedinEasyApplyDeferred = linkedinPostings.filter((posting) => linkedinDestination(posting) === 'linkedin_easy_apply_deferred').length;
+  const linkedinGreenhouseDeferred = linkedinPostings.filter((posting) => linkedinDestination(posting) === 'greenhouse_resolved_deferred').length;
+  const linkedinCompPolicyCount = (status: string) => linkedinRawRecords.filter((record) => stringValue(record.compensation_policy_status) === status).length;
+  const linkedinCompBelowFloorReject = linkedinCompPolicyCount('comp_below_floor_reject');
+  const linkedinCompNearFloorReview = linkedinCompPolicyCount('comp_near_floor_review');
+  const linkedinCompUnknownStrongFit = linkedinCompPolicyCount('comp_unknown_strong_fit');
+  const linkedinSearchTermsUsed = uniqueStrings(linkedinRawRecords.map((record) => stringValue(record.linkedin_search_term))).slice(0, 12);
+  const linkedinSearchLocationsUsed = uniqueStrings(linkedinRawRecords.map((record) => stringValue(record.linkedin_search_location))).slice(0, 8);
+  const linkedinHoldReasonCounts = new Map<string, number>();
+  const linkedinRejectedByQualityGate = linkedinPostings.filter((posting) => {
+    const raw = asRecord(posting.raw_record);
+    const risks = asRecord(posting.ats_analysis).risks;
+    if (Array.isArray(risks)) {
+      risks.map(stringValue).filter(Boolean).forEach((risk) => {
+        linkedinHoldReasonCounts.set(risk, (linkedinHoldReasonCounts.get(risk) || 0) + 1);
+      });
+    }
+    const text = `${posting.status || ''} ${raw.quality_gate_status || ''} ${Array.isArray(risks) ? risks.join(' ') : risks || ''}`;
+    return hasAnyStatus(text, [
+      'poor_fit',
+      'quality_review',
+      'requires_tailored_cover_letter',
+      'below_target',
+      'compensation_below',
+      'comp_below_floor_reject',
+      'comp_near_floor_review',
+      'comp_unknown_hold',
+      'comp_not_posted',
+      'comp_parse_uncertain',
+    ]);
+  }).length;
+  const linkedinTopHoldReasons = Array.from(linkedinHoldReasonCounts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 6)
+    .map(([reason, count]) => ({ count, reason }));
+  const linkedinQueuedToWorkday = linkedinPostings.filter((posting) => stringValue(asRecord(posting.raw_record).linkedin_routing) === 'queued_to_workday').length;
+  const linkedinWorkdayApplicationsAttempted = linkedinApplications.filter((application) => {
+    const state = canonicalQueueState(application);
+    return !['discovered', 'qualification_pending', 'qualified', 'package_pending', 'package_ready', 'queued'].includes(state);
+  }).length;
+  const linkedinWorkdayApplicationsSubmitted = linkedinApplications.filter((application) => applicationHasSubmissionEvidence(application)).length;
+  const linkedinHoldSentence = linkedinTopHoldReasons.length
+    ? ` Top LinkedIn hold reasons: ${linkedinTopHoldReasons.map((item) => `${item.reason} (${item.count})`).join(', ')}.`
+    : '';
+  const linkedinSearchSentence = linkedinSearchTermsUsed.length
+    ? ` Tuned LinkedIn searches used: ${linkedinSearchTermsUsed.slice(0, 4).join('; ')}${linkedinSearchTermsUsed.length > 4 ? '; plus more' : ''}.`
+    : '';
+  const linkedinCompSentence = linkedinJobsDiscovered
+    ? ` Compensation gate: ${linkedinCompBelowFloorReject} below $200K, ${linkedinCompNearFloorReview} near-floor review, ${linkedinCompUnknownStrongFit} unknown-comp strong fit.`
+    : '';
+  const linkedinSentence = linkedinJobsDiscovered
+    ? ` LinkedIn discovery inspected ${linkedinFeedCardsInspected || linkedinJobsDiscovered} feed card${(linkedinFeedCardsInspected || linkedinJobsDiscovered) === 1 ? '' : 's'}, captured ${linkedinJobsDiscovered} role${linkedinJobsDiscovered === 1 ? '' : 's'}, opened ${linkedinFeedJobsClicked}, resolved ${linkedinResolvedToWorkday} to Workday, queued ${linkedinQueuedToWorkday}, held ${linkedinRejectedByQualityGate} by quality gate, and deferred ${linkedinEasyApplyDeferred + linkedinGreenhouseDeferred} non-Workday item${linkedinEasyApplyDeferred + linkedinGreenhouseDeferred === 1 ? '' : 's'}.${linkedinCompSentence}${linkedinHoldSentence}${linkedinSearchSentence}`
+    : '';
+  const phaseTwoSentence = phaseTwoWorkdayBacklog.length
+    ? ` I parked ${phaseTwoWorkdayBacklog.length} recurring Workday blocker${phaseTwoWorkdayBacklog.length === 1 ? '' : 's'} in Phase 2 so they do not stop Phase 1 production.`
+    : '';
+  const plainEnglish = `Good morning, Tomas. Career OS is in interview-conversion mode: submit fewer, stronger applications that can pass ATS/recruiter screening. I found ${workdayReadyToProcess} qualified Workday role${workdayReadyToProcess === 1 ? '' : 's'} ready to process, submitted ${workdaySubmitted} Workday application${workdaySubmitted === 1 ? '' : 's'}, and placed ${workdayWaitingOnHumanCode + workdayWaitingOnMissingAnswer} item${workdayWaitingOnHumanCode + workdayWaitingOnMissingAnswer === 1 ? '' : 's'} in your review queue only where a true human action is required.${phaseTwoSentence}${linkedinSentence}`;
 
-function applicationAttemptedOnDate(application: JsonRecord, workflowEvents: JsonRecord[], centralToday: string) {
+  return {
+    mode: 'workday_first',
+    plainEnglish,
+    workdayReadyToProcess,
+    workdaySubmitted,
+    workdayWaitingOnHumanCode,
+    workdayWaitingOnMissingAnswer,
+    phaseTwoWorkdayBlockers: phaseTwoWorkdayBacklog.length,
+    phaseTwoWorkdayBacklog,
+    greenhouseDeferred,
+    unsupportedAtsDeferred,
+    duplicatesSkipped,
+    rejectedOrClosedRoles,
+    linkedinFeedCardsInspected,
+    linkedinFeedJobsCaptured,
+    linkedinFeedJobsClicked,
+    linkedinEmployerApplyLinksResolved,
+    linkedinJobsDiscovered,
+    linkedinResolvedToWorkday,
+    linkedinEasyApplyDeferred,
+    linkedinGreenhouseDeferred,
+    linkedinRejectedByQualityGate,
+    linkedinCompBelowFloorReject,
+    linkedinCompNearFloorReview,
+    linkedinCompUnknownStrongFit,
+    linkedinQueuedToWorkday,
+    linkedinWorkdayApplicationsAttempted,
+    linkedinWorkdayApplicationsSubmitted,
+    linkedinSearchLocationsUsed,
+    linkedinSearchTermsUsed,
+    linkedinTopHoldReasons,
+  };
+}
+
+function isLinkedInDiscoveryStatusRecord(record: JsonRecord) {
+  const raw = asRecord(record.raw_record);
+  return stringValue(raw.source_label) === 'linkedin_discovery'
+    || Boolean(stringValue(raw.linkedin_job_url));
+}
+
+function applicationAttemptedOnDate(application: JsonRecord, centralToday: string) {
   const state = canonicalExecutionStateForApplication(application);
   if (['qualification_pending', 'discovered', 'qualified', 'package_pending', 'package_ready', 'inactive', 'ineligible', 'duplicate'].includes(state)) {
     return false;
   }
 
-  const applicationId = stringValue(application.id);
-  if (applicationId && workflowEvents.some((event) => {
-    return stringValue(event.application_id) === applicationId
-      && MEANINGFUL_ATTEMPT_EVENT_TYPES.has(stringValue(event.event_type))
-      && centralDateKey(event.occurred_at) === centralToday;
-  })) {
-    return true;
-  }
-
   const raw = asRecord(application.raw_record);
+  const browserWorker = asRecord(raw.browser_worker);
+  const lastReport = asRecord(raw.browser_worker_last_report);
   const activityTimestamps = [
+    raw.queue_updated_at,
     raw.human_step_completed_at,
-    raw.blocker_resolved_at,
+    browserWorker.claimed_at,
+    browserWorker.last_heartbeat_at,
+    lastReport.timestamp,
   ];
 
   if (activityTimestamps.some((value) => centralDateKey(value) === centralToday)) {
     return true;
   }
 
-  return false;
+  return centralDateKey(application.updated_at) === centralToday;
 }
 
 function buildTrustedAutoApplyPolicy(): TrustedAutoApplyPolicyStatus {
@@ -1599,6 +1819,15 @@ type CanonicalOpportunity = {
   submitted: boolean;
 };
 
+type CanonicalSubmittedApplication = {
+  application: JsonRecord;
+  confirmationEvidence: boolean;
+  duplicateLocked: boolean;
+  executionState: CanonicalApplicationExecutionState;
+  identityKey: string;
+  manualAttestation: boolean;
+};
+
 function buildAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): AuthoritativeLedgerStatus {
   const canonical = buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd);
   const profileReady = missingFactsConsolidated(evidence);
@@ -1674,13 +1903,6 @@ function includeCanonicalOpportunityInLedger(item: CanonicalOpportunity) {
   return reviewDecision !== 'none';
 }
 
-function isPolicyExcludedOpportunity(item: NormalizedOpportunity) {
-  const raw = asRecord(item.raw.raw_record);
-  const normalizedRoleLevel = stringValue(item.normalizedRoleLevel);
-  const deterministicFilterReason = stringValue(item.raw.deterministic_filter_reason || raw.deterministic_filter_reason);
-  return normalizedRoleLevel.startsWith('excluded_') || deterministicFilterReason.startsWith('excluded_');
-}
-
 function authoritativeLedgerRowForCanonical(
   item: CanonicalOpportunity,
   evidence: CareerOsEvidence,
@@ -1705,16 +1927,14 @@ function authoritativeLedgerRowForCanonical(
   const confirmationEvidence = item.applications.some((application) => confirmedApplicationIds.has(stringValue(application.id)));
   const currentRunId = canonicalOpportunitySourceRunId(item, evidence);
   const reviewDecision = normalizedReviewDecision(asRecord(item.preferredRecord.raw.raw_record).review_decision);
-  const policyExcluded = isPolicyExcludedOpportunity(item.preferredRecord);
-  const needsTomas = !policyExcluded && (relatedTasks.length > 0 || queueStates.includes('waiting_on_tomas') || item.releaseState === 'waiting_on_tomas' || item.releaseState === 'tomas_review');
-  const technicalBlocked = !policyExcluded && queueStates.some((state) => ['blocked_technical', 'running', 'retry_scheduled', 'failed'].includes(state));
+  const needsTomas = relatedTasks.length > 0 || queueStates.includes('waiting_on_tomas') || item.releaseState === 'waiting_on_tomas' || item.releaseState === 'tomas_review';
+  const technicalBlocked = queueStates.some((state) => ['blocked_technical', 'running', 'retry_scheduled', 'failed'].includes(state));
   const outcome = determineLedgerOutcome({
     atsSupportState,
     duplicateLock,
     needsTomas,
     packageState,
     postingLiveState,
-    policyExcluded,
     releaseState: item.releaseState,
     reviewDecision,
     submissionEvidence,
@@ -1863,7 +2083,6 @@ function determineLedgerOutcome(input: {
   needsTomas: boolean;
   packageState: AuthoritativeLedgerRow['packageState'];
   postingLiveState: AuthoritativeLedgerRow['postingLiveState'];
-  policyExcluded: boolean;
   releaseState: CanonicalOpportunity['releaseState'];
   reviewDecision: ReviewQueueItem['reviewDecision'];
   submissionEvidence: boolean;
@@ -1872,7 +2091,6 @@ function determineLedgerOutcome(input: {
   if (input.submissionEvidence) return 'submitted';
   if (input.duplicateLock) return 'duplicate';
   if (input.postingLiveState === 'stale') return 'stale';
-  if (input.policyExcluded) return 'rejected';
   if (input.reviewDecision === 'skip' || input.reviewDecision === 'reject_similar') return 'rejected';
   if (input.atsSupportState === 'unsupported') return 'unsupported_ats';
   if (input.needsTomas) return 'waiting_on_tomas';
@@ -2035,7 +2253,6 @@ function qualificationTierForOpportunity(item: NormalizedOpportunity, preferredM
   const reviewDecision = normalizedReviewDecision(raw.review_decision);
   if (isInactiveStatus(item.status) || isInactiveStatus(item.postingValidationStatus)) return 'archive';
   if (reviewDecision === 'skip' || reviewDecision === 'reject_similar') return 'archive';
-  if (isPolicyExcludedOpportunity(item)) return 'archive';
   if (item.status.startsWith('ineligible')) return 'archive';
   if (preferredMinimumBaseSalaryUsd && item.compensationMaxUsd > 0 && item.compensationMaxUsd < preferredMinimumBaseSalaryUsd && !hasTotalCompensationEvidence(item.compensationText)) return 'archive';
   if (item.score >= AUTO_APPLY_THRESHOLD) return 'auto_apply';
@@ -2058,10 +2275,6 @@ function classifyReleaseState(
 ): CanonicalOpportunity['releaseState'] {
   const applicationStates = applications.map((application) => canonicalQueueState(application));
   if (applicationStates.some((state) => state === 'confirmed' || state === 'submitted' || state === 'duplicate')) return 'submitted';
-  if (qualificationTier === 'archive') {
-    if (className === 'ineligible') return 'ineligible';
-    return 'inactive';
-  }
   if (applicationStates.some((state) => state === 'waiting_on_tomas')) return 'waiting_on_tomas';
   if (applicationStates.some((state) => state === 'blocked_technical' || state === 'running' || state === 'retry_scheduled' || state === 'failed')) return 'in_progress';
   if (applicationStates.some((state) => state === 'queued' || state === 'package_ready' || state === 'qualified')) return 'ready_for_automation';
@@ -2503,7 +2716,83 @@ function isGenericCheckpointReason(value: string) {
 }
 
 function selectCanonicalSubmittedApplications(evidence: CareerOsEvidence): CanonicalSubmittedApplication[] {
-  return selectCanonicalSubmittedApplicationsShared(evidence.applications);
+  const bestByIdentity = new Map<string, CanonicalSubmittedApplication>();
+
+  for (const application of evidence.applications) {
+    const executionState = canonicalExecutionStateForApplication(application);
+    if (!['confirmed', 'submitted', 'duplicate'].includes(executionState)) continue;
+
+    const confirmationEvidence = hasConfirmationEvidence(application);
+    const manualAttestation = hasManualSubmissionAttestation(application);
+    if (!confirmationEvidence && !manualAttestation) continue;
+
+    const candidate: CanonicalSubmittedApplication = {
+      application,
+      confirmationEvidence,
+      duplicateLocked: executionState === 'duplicate' || asRecord(application.raw_record).duplicate_locked === true,
+      executionState,
+      identityKey: canonicalSubmittedApplicationIdentity(application),
+      manualAttestation,
+    };
+    const existing = bestByIdentity.get(candidate.identityKey);
+    if (!existing || submittedApplicationRank(candidate) > submittedApplicationRank(existing)) {
+      bestByIdentity.set(candidate.identityKey, candidate);
+    }
+  }
+
+  return Array.from(bestByIdentity.values()).sort((left, right) => {
+    const leftUpdated = Date.parse(String(left.application.updated_at || 0)) || 0;
+    const rightUpdated = Date.parse(String(right.application.updated_at || 0)) || 0;
+    return rightUpdated - leftUpdated;
+  });
+}
+
+function canonicalSubmittedApplicationIdentity(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const keys = duplicateLockKeys({
+    confirmation_number: stringValue(application.confirmation_number) || null,
+    employer: stringValue(application.employer) || null,
+    id: stringValue(application.id) || 'unknown-application',
+    lifecycle_stage: stringValue(application.lifecycle_stage) || null,
+    next_action: stringValue(application.next_action) || null,
+    opportunity_id: stringValue(application.opportunity_id) || null,
+    position: stringValue(application.position) || null,
+    raw_record: raw,
+    submission_evidence: stringValue(application.submission_evidence) || null,
+  });
+
+  if (keys.length) return keys[0];
+
+  return [
+    compactKey(application.employer),
+    normalizeTitle(application.position),
+    normalizeUrl(raw.canonical_url || raw.application_url || raw.job_url || raw.posting_url || ''),
+    compactKey(raw.external_requisition_id || raw.requisition_id || raw.ats_job_id || raw.job_id || raw.token),
+    stringValue(application.id),
+  ].filter(Boolean).join(':');
+}
+
+function hasConfirmationEvidence(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  return Boolean(
+    application.confirmation_number
+    || application.submission_evidence
+    || raw.confirmation_number
+    || raw.confirmation_url
+    || raw.confirmation_page_url
+    || raw.confirmation_text
+    || raw.confirmation_evidence
+    || raw.externally_confirmed === true
+    || raw.user_confirmed_submission === true,
+  );
+}
+
+function submittedApplicationRank(item: CanonicalSubmittedApplication) {
+  if (item.confirmationEvidence && item.executionState === 'confirmed') return 5;
+  if (item.confirmationEvidence) return 4;
+  if (item.manualAttestation && item.executionState === 'submitted') return 3;
+  if (item.manualAttestation) return 2;
+  return 1;
 }
 
 function reviewQueueItemFromCanonical(item: CanonicalOpportunity): ReviewQueueItem {
@@ -2617,15 +2906,23 @@ function arrayValue(value: unknown) {
   return Array.isArray(value) ? value : [];
 }
 
-function compensationPolicyClass(record: Record<string, unknown>, preferredMinimumBaseSalaryUsd?: number) {
+function compensationPolicyClass(record: Record<string, unknown>, _preferredMinimumBaseSalaryUsd?: number) {
   const compensationMaxUsd = numberValue(record.compensationMaxUsd ?? record.compensation_max_usd);
   const compensationText = String(record.compensationText ?? record.compensation_text ?? '');
+  const policy = classifyCompensationPolicy({
+    description: record.job_description || record.normalized_description,
+    maxUsd: compensationMaxUsd,
+    score: record.fit_score || record.match_score,
+    text: compensationText,
+    title: record.title || record.position,
+  });
 
-  if (!preferredMinimumBaseSalaryUsd) return 'unknown';
-  if (!compensationMaxUsd) return 'unknown';
   if (hasTotalCompensationEvidence(compensationText)) return 'total_compensation_exception';
-  if (compensationMaxUsd < preferredMinimumBaseSalaryUsd) return 'below_target';
-  return 'posted_base_meets_policy';
+  if (policy.status === 'comp_meets_floor') return 'posted_base_meets_policy';
+  if (policy.status === 'comp_below_floor_reject' || policy.status === 'comp_near_floor_review') return 'below_target';
+  if (policy.status === 'comp_unknown_strong_fit') return 'unknown_strong_fit';
+  if (!compensationMaxUsd) return 'unknown';
+  return 'unknown';
 }
 
 function hasTotalCompensationEvidence(value: unknown) {
@@ -2907,10 +3204,12 @@ function averageNumber(values: number[]) {
 
 function nextDailyRunText(now: Date) {
   const centralParts = centralDateParts(now);
-  let candidate = new Date(Date.UTC(centralParts.year, centralParts.month - 1, centralParts.day, 12, 0, 0));
-  if (now.getTime() >= candidate.getTime()) {
-    candidate = new Date(candidate.getTime() + 24 * 60 * 60 * 1000);
-  }
+  const candidates = [0, 1].flatMap((dayOffset) => [
+    new Date(Date.UTC(centralParts.year, centralParts.month - 1, centralParts.day + dayOffset, 1, 0, 0)),
+    new Date(Date.UTC(centralParts.year, centralParts.month - 1, centralParts.day + dayOffset, 13, 0, 0)),
+    new Date(Date.UTC(centralParts.year, centralParts.month - 1, centralParts.day + dayOffset, 19, 0, 0)),
+  ]).sort((left, right) => left.getTime() - right.getTime());
+  const candidate = candidates.find((date) => now.getTime() < date.getTime()) || candidates.at(-1) || now;
 
   return `${new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
@@ -2950,11 +3249,9 @@ function buildCompensationPreference(profile?: JsonRecord) {
   const verifiedProfile = profile?.verified_profile as JsonRecord | undefined;
   const strategy = verifiedProfile?.candidate_preferences_strategy as JsonRecord | undefined;
   const compensation = strategy?.compensation_strategy as JsonRecord | undefined;
-  const reusableAnswers = verifiedProfile?.reusable_application_answers as JsonRecord | undefined;
-  const preferredMinimumBaseSalaryUsd = numberValue(compensation?.preferred_minimum_base_salary_usd || reusableAnswers?.preferred_minimum_base_salary_usd);
 
   return {
-    preferredMinimumBaseSalaryUsd: preferredMinimumBaseSalaryUsd || undefined,
+    preferredMinimumBaseSalaryUsd: COMPENSATION_FLOOR_USD,
     openToNegotiation: compensation?.open_to_negotiation === true,
   };
 }

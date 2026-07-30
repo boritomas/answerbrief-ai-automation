@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Workday Fixture - Resume Upload</title>
+  </head>
+  <body>
+    <main data-workday-state="RESUME_UPLOAD" data-fixture-scenario="resume_upload">
+      <h1>My Experience</h1>
+      <section data-section="resume_upload">
+        <label for="resumeUpload">Upload Resume</label>
+        <input
+          data-ats-field
+          data-resume-upload="true"
+          id="resumeUpload"
+          name="resume"
+          type="file"
+          accept=".pdf,.doc,.docx"
+          required
+          data-label="Upload Resume"
+          data-section="resume_upload">
+      </section>
+    </main>
+  </body>
+</html>

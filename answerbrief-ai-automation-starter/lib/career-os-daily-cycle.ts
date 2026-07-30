@@ -14,9 +14,15 @@ import {
   type CareerOsSourceCandidate,
 } from './career-os-market-universe';
 import {
-  countCanonicalSubmittedApplicationsOnDate,
-  countCanonicalSubmittedApplicationsWithinHours,
-} from './career-os-submission-metrics';
+  buildLinkedInSourceStatus,
+  isLinkedInDiscoveryPosting,
+  loadLinkedInDiscoveryRecordsFromEnv,
+  normalizeLinkedInJobRecords,
+} from '../scripts/lib/career-os-linkedin-discovery.mjs';
+import {
+  COMPENSATION_FLOOR_USD,
+  classifyCompensationPolicy,
+} from '../scripts/lib/career-os-compensation-policy.mjs';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -237,7 +243,7 @@ export type DailyOperatingCycleStatus = {
 
 export const DAILY_WORKFLOW_VERSION = 'career-os-daily-cycle-2026-07-22-v5-inline-package-throughput';
 export const DAILY_CRON_PATH = '/api/career-os/daily-run';
-export const DAILY_CRON_SCHEDULE = '0 12 * * *';
+export const DAILY_CRON_SCHEDULE = '0 1,13,19 * * *';
 export const DAILY_TARGET_NEWLY_IDENTIFIED = 20;
 export const DAILY_TARGET_ACTIVE_QUALIFIED = 15;
 export const GLOBAL_DISCOVERY_BATCH_SIZE = 100;
@@ -245,6 +251,14 @@ export const GLOBAL_DISCOVERY_MAX_CONCURRENCY = 4;
 export const GLOBAL_DISCOVERY_RETRY_LIMIT = 2;
 export const GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS = 5000;
 export const FOREGROUND_DISCOVERY_MAX_BOARDS = 20;
+const WORKDAY_RESULTS_PER_SEARCH = 20;
+const WORKDAY_SEARCH_TERMS = [
+  'product manager',
+  'product management',
+  'platform',
+  'customer experience',
+  'strategy',
+];
 
 export const DAILY_DISCOVERY_BOARDS = buildCareerOsDiscoveryPlan().greenhouseBoards;
 const TARGET_ROLE_POLICY_VERSION = 'career-os-role-policy-2026-07-21';
@@ -275,7 +289,12 @@ export const DAILY_OPERATING_CYCLE = {
     'per_employer_and_per_ats_throttling',
     'no_reanalysis_when_posting_fingerprint_unchanged',
   ],
-  discoverySourcesEnabled: CAREER_OS_SOURCE_REGISTRY,
+  discoverySourcesEnabled: [
+    'Workday official career portals',
+    'dynamic Workday employer records discovered from prior source runs and employer knowledge base',
+    'Greenhouse records preserved but deferred for phase two',
+    'unsupported ATS records preserved but deferred',
+  ],
   employerUniverseCovered: CAREER_OS_EMPLOYER_UNIVERSE,
   rolePriorities: CAREER_OS_ROLE_PRIORITIES,
   schedule: {
@@ -285,18 +304,18 @@ export const DAILY_OPERATING_CYCLE = {
     phases: [
       {
         name: 'Morning discovery',
-        outcome: 'official-source discovery, posting freshness, dedupe, Texas eligibility, qualification, and daily opportunity report',
-        timeCentral: '07:00',
+        outcome: 'Workday-first official-source discovery, posting freshness, dedupe, Texas eligibility, qualification, and daily opportunity report',
+        timeCentral: '08:00',
       },
       {
-        name: 'Application processing',
-        outcome: 'package reuse/generation checks, safe automation queueing, confirmation capture, and do-not-retry updates',
-        timeCentral: 'continuous after discovery',
+        name: 'Midday Workday processing',
+        outcome: 'package reuse/generation checks, Workday queueing, safe submission, confirmation capture, and do-not-retry updates',
+        timeCentral: '14:00',
       },
       {
-        name: 'Afternoon status refresh',
-        outcome: 'application response tracking, recruiter/interview status update, and consolidated Tomas action queue refresh',
-        timeCentral: '15:00 checkpoint inside the daily report',
+        name: 'Evening Workday reconciliation',
+        outcome: 'application response tracking, human-gate review, confirmation evidence reconciliation, and dashboard refresh',
+        timeCentral: '20:00',
       },
     ],
   },
@@ -343,7 +362,7 @@ export function buildDailyOperatingCycleStatus(
     verificationRow('Incremental daily discovery', Boolean(dailyAutomationId && sourceCount >= 10 && sourceRunCurrent), sourceCount ? `${sourceCount} official source entries in latest run.` : 'No source boards or registry recorded.'),
     verificationRow('Posting freshness', hasFreshnessPolicy && evidence.jobPostings.some((posting) => Boolean(posting.last_checked_at)), 'Posting last_checked_at and freshness windows are tracked.'),
     verificationRow('Deduplication', releaseMetrics.duplicateRecordsRemoved >= 0 && releaseMetrics.totalUniqueOpportunities <= evidence.jobPostings.length + evidence.seededOpportunities.length, `${releaseMetrics.duplicateRecordsRemoved} duplicate record(s) removed from canonical counts.`),
-    verificationRow('Qualification', releaseMetrics.activeQualifiedOpportunities >= DAILY_TARGET_ACTIVE_QUALIFIED && evidence.jobPostings.some((posting) => numberValue(posting.fit_score) >= 70), `${releaseMetrics.activeQualifiedOpportunities} active qualified opportunity/opportunities.`),
+    verificationRow('Qualification', releaseMetrics.activeQualifiedOpportunities >= DAILY_TARGET_ACTIVE_QUALIFIED && evidence.jobPostings.some((posting) => numberValue(posting.fit_score) >= 65), `${releaseMetrics.activeQualifiedOpportunities} active qualified opportunity/opportunities.`),
     verificationRow('Texas eligibility', Boolean(latestSearchConfig.texas_remote_filter || reportCycle.location_policy), String(latestSearchConfig.texas_remote_filter || reportCycle.location_policy || 'No Texas eligibility policy recorded.')),
     verificationRow('Package reuse', releaseMetrics.totalPackages > 0 && evidence.artifacts.some((artifact) => Boolean(artifact.input_hash || asRecord(artifact.metadata).job_description_fingerprint || asRecord(artifact.metadata).package_fingerprint)), 'Package artifacts preserve input or posting fingerprints where available.'),
     verificationRow('Application checkpoints', evidence.applications.some((application) => Boolean(application.next_action || application.audit_timeline || application.lifecycle_stage)), 'Applications expose next action, lifecycle, or audit timeline checkpoints.'),
@@ -363,7 +382,7 @@ export function buildDailyOperatingCycleStatus(
 
   return {
     actionQueueStatus,
-    autonomousOperatingStatus: 'enabled: discover, normalize, dedupe, qualify, package, enqueue, submit safely, confirm, and track without ordinary per-job approval',
+    autonomousOperatingStatus: 'enabled: Workday-first discovery, normalize, dedupe, qualify, package, enqueue, submit safely, confirm, and track without ordinary per-job approval',
     applicationAutomationStatus: releaseMetrics.readyForAutomation
       ? `${releaseMetrics.readyForAutomation} application(s) ready for supported automation and automatically eligible for the execution queue; human/legal/compensation/CAPTCHA/MFA gates remain paused.`
       : 'No applications are currently eligible for safe automatic submission; every remaining item has a human-only or technical blocker.',
@@ -413,36 +432,50 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
     previousSearchConfig: asRecord(evidence?.latestSourceRun?.search_config),
     workflowEvents: evidence?.workflowEvents || [],
   });
-  const boards = options.maxBoards && options.maxBoards > 0
+  const workdayFirst = workdayFirstModeEnabled();
+  const boards = !workdayFirst && options.maxBoards && options.maxBoards > 0
     ? discoveryPlan.greenhouseBoards.slice(0, options.maxBoards)
-    : discoveryPlan.greenhouseBoards;
+    : workdayFirst
+      ? []
+      : discoveryPlan.greenhouseBoards;
   const minFitScore = 85;
   const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:broader-product-leadership:${discoveryPlan.fingerprint}:${runDay}`);
   const errors: string[] = [];
   const postings: JsonRecord[] = [];
   const sourceStatuses: JsonRecord[] = [];
+  let linkedinSummary: JsonRecord = {};
   let reviewed = 0;
 
-  const settled = await fetchGreenhouseSourceBatches(discoveryPlan, boards);
-  const oracleResults = await fetchOracleSourceResults(discoveryPlan);
+  const workdayResults = await fetchWorkdaySourceResults(discoveryPlan);
+  const settled = workdayFirst ? [] : await fetchGreenhouseSourceBatches(discoveryPlan, boards);
+  const oracleResults = workdayFirst ? [] : await fetchOracleSourceResults(discoveryPlan);
+
+  workdayResults.forEach((result) => {
+    sourceStatuses.push(sourceStatus(result.source, result.source.employer, result.jobs.length ? 'succeeded' : 'failed', result.jobs.length, result.error || '', 'official_workday_cxs_api'));
+    if (result.error) errors.push(`${result.source.employer}: ${result.error}`);
+    reviewed += result.jobs.length;
+    for (const job of result.jobs) {
+      postings.push(normalizeWorkdayPosting(ownerEmail, job, executedAt, sourceRunId, minFitScore, result.source));
+    }
+  });
 
   settled.forEach((result) => {
     if (result.status === 'rejected') {
       const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
       errors.push(`${result.board}: ${reason}`);
-      sourceStatuses.push(sourceStatus(result.source, result.board, 'failed', 0, reason));
+      sourceStatuses.push(sourceStatus(result.source, result.board, 'failed', 0, reason, 'official_greenhouse_board_api'));
       return;
     }
     const { board, source } = result.value;
     reviewed += result.value.jobs.length;
-    sourceStatuses.push(sourceStatus(source, board, 'succeeded', result.value.jobs.length));
+    sourceStatuses.push(sourceStatus(source, board, 'succeeded', result.value.jobs.length, '', 'official_greenhouse_board_api'));
     for (const job of result.value.jobs) {
       const posting = normalizePosting(ownerEmail, board, job, executedAt, sourceRunId, minFitScore, source);
       postings.push(posting);
     }
   });
   oracleResults.forEach((result) => {
-    sourceStatuses.push(sourceStatus(result.source, result.source.employer, result.jobs.length ? 'succeeded' : 'failed', result.jobs.length, result.error || ''));
+    sourceStatuses.push(sourceStatus(result.source, result.source.employer, result.jobs.length ? 'succeeded' : 'failed', result.jobs.length, result.error || '', 'official_oracle_candidate_experience_api'));
     if (result.error) errors.push(`${result.source.employer}: ${result.error}`);
     reviewed += result.jobs.length;
     for (const job of result.jobs) {
@@ -450,10 +483,36 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
     }
   });
 
+  const linkedinDiscovery = loadLinkedInDiscoveryRecordsFromEnv(process.env);
+  if (linkedinDiscovery.requested) {
+    const linkedinResult = normalizeLinkedInJobRecords(linkedinDiscovery.records, {
+      now: executedAt,
+      ownerEmail,
+      sourceRunId,
+    });
+    linkedinSummary = linkedinResult.summary;
+    const linkedinErrors = [...linkedinDiscovery.errors, ...linkedinResult.errors];
+    if (!linkedinDiscovery.records.length && !linkedinErrors.length) {
+      linkedinErrors.push('LinkedIn discovery requires specific LinkedIn job records or employer apply URLs; https://www.linkedin.com/jobs/ alone is not actionable.');
+    }
+    sourceStatuses.push(buildLinkedInSourceStatus({
+      errors: linkedinErrors,
+      records: linkedinDiscovery.records,
+      sourceUrl: linkedinDiscovery.sourceUrl,
+      summary: linkedinSummary,
+    }));
+    errors.push(...linkedinErrors.map((error) => `LinkedIn: ${error}`));
+    reviewed += numberValue(linkedinSummary.inspected) || linkedinDiscovery.records.length;
+    postings.push(...linkedinResult.postings);
+  }
+
   const dedupedPostings = dedupePostings(postings)
     .sort((a, b) => numberValue(b.fit_score) - numberValue(a.fit_score) || String(a.company).localeCompare(String(b.company)));
-  const qualifiedPostings = dedupedPostings.filter((posting) => numberValue(posting.fit_score) >= minFitScore);
-  const postingsToPersist = qualifiedPostings;
+  const qualifiedPostings = dedupedPostings.filter((posting) => qualifiesForCurrentProductionLane(posting, minFitScore));
+  const postingsToPersist = dedupePostings([
+    ...qualifiedPostings,
+    ...dedupedPostings.filter((posting) => isLinkedInDiscoveryPosting(posting)),
+  ]);
   const backlogProgress = processDiscoveryBacklogBatches(dedupedPostings, sourceRunId);
   dedupedPostings.forEach((posting) => {
     posting.selected_for_pilot = qualifiedPostings[0]?.id === posting.id;
@@ -462,9 +521,13 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
   const sourceRun = {
     id: sourceRunId,
     owner_email: ownerEmail,
-    source_type: 'global_supported_official_source_plan',
-    source_name: 'Broader product management, digital transformation, customer experience, enterprise platform, banking, and human-led AI official sources',
-    source_url: 'https://boards-api.greenhouse.io/v1/boards plus Oracle Candidate Experience official-source registry',
+    source_type: workdayFirst ? 'workday_first_supported_official_source_plan' : 'global_supported_official_source_plan',
+    source_name: workdayFirst
+      ? 'Workday-first official career portals for product, platform, AI, transformation, and customer-experience roles'
+      : 'Broader product management, digital transformation, customer experience, enterprise platform, banking, and human-led AI official sources',
+    source_url: workdayFirst
+      ? 'https://*.myworkdayjobs.com/wday/cxs official Workday CXS endpoints'
+      : 'https://boards-api.greenhouse.io/v1/boards plus Oracle Candidate Experience official-source registry',
     status: reviewed > 0 ? 'succeeded' : 'error',
     executed_at: executedAt,
     number_reviewed: reviewed,
@@ -475,6 +538,9 @@ export async function runDailyGreenhouseDiscovery(ownerEmail: string, evidence?:
       foreground_batch: Boolean(options.maxBoards),
       foreground_batch_boards_processed: boards.length,
       foreground_batch_total_supported_boards: discoveryPlan.greenhouseBoards.length,
+      linkedin_discovery: linkedinDiscovery.requested ? linkedinSummary : null,
+      workday_first_enabled: workdayFirst,
+      workday_sources_processed: workdayResults.length,
     },
     evidence: qualifiedPostings.slice(0, 15).map((posting) => ({
       company: posting.company,
@@ -556,6 +622,8 @@ function buildAutoApplyPromotionRows(
 
   for (const posting of qualifiedPostings) {
     if (numberValue(posting.fit_score) < AUTO_APPLY_PROMOTION_THRESHOLD) continue;
+    if (!eligibleForCurrentProductionLane(posting)) continue;
+    if (!autonomousCompensationEligible(posting)) continue;
     const existingOpportunity = findExistingOpportunityForPosting(posting, opportunities);
     const opportunityId = stringValue(existingOpportunity?.id) || stringValue(posting.id);
     const existingApplication = findExistingApplicationForOpportunity(opportunityId, posting, applications);
@@ -650,6 +718,8 @@ function buildAutoApplyPackageArtifacts(
 
   for (const posting of qualifiedPostings) {
     if (numberValue(posting.fit_score) < AUTO_APPLY_PROMOTION_THRESHOLD) continue;
+    if (!eligibleForCurrentProductionLane(posting)) continue;
+    if (!autonomousCompensationEligible(posting)) continue;
     if (!supportedAutoApplyPlatform(posting)) continue;
 
     const opportunity = findExistingOpportunityForPosting(posting, opportunities);
@@ -742,6 +812,7 @@ function inferredPostingPlatform(posting: JsonRecord) {
 }
 
 function supportedAutoApplyPlatform(posting: JsonRecord) {
+  if (workdayFirstModeEnabled()) return inferredPostingPlatform(posting).toLowerCase() === 'workday';
   return ['greenhouse', 'oracle', 'workday'].includes(inferredPostingPlatform(posting).toLowerCase());
 }
 
@@ -1039,6 +1110,7 @@ function applicationRiskSummary(posting: JsonRecord) {
   const platform = inferredPostingPlatform(posting).toLowerCase();
   if (platform === 'oracle') return 'Oracle Recruiting may require employer-controlled account verification or hCaptcha before submission.';
   if (platform === 'workday') return 'Workday may require structured employment dates or employer account verification later in the flow.';
+  if (platform === 'greenhouse' && workdayFirstModeEnabled()) return 'Greenhouse is preserved in the dashboard but deferred for phase two during Workday-first production.';
   return 'Greenhouse can continue automatically unless the employer introduces CAPTCHA, legal review text, or an unverified required answer.';
 }
 
@@ -1219,7 +1291,7 @@ function topEmployersWithMatches(postings: JsonRecord[]) {
   for (const posting of postings) {
     const text = `${posting.source_category || ''} ${posting.source_business_type || ''} ${posting.title || ''} ${posting.job_description || ''}`.toLowerCase();
     if (!hasAny(text, ['telecom', 'connectivity', 'wireless', 'broadband', 'fiber', 'cloud communications', 'contact center', 'network'])) continue;
-    if (numberValue(posting.fit_score) < 70) continue;
+    if (numberValue(posting.fit_score) < 65) continue;
     const employer = String(posting.company || posting.source_employer || 'Employer');
     counts.set(employer, (counts.get(employer) || 0) + 1);
   }
@@ -1270,7 +1342,7 @@ function buildDailyFunnel(
   const newlyDiscoveredRecords = recordsTouchedToday.filter((record) => recordNewToday(record, centralToday)).length;
   const uniqueRecordsToday = dedupeRawRecords(recordsTouchedToday);
   const exactExecutionStatuses = evidence.applications.map((application) => classifyApplicationExecution(application, nextDailyRunText(new Date())));
-  const submittedToday = countCanonicalSubmittedApplicationsOnDate(evidence.applications, new Date());
+  const submittedToday = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence) && centralDateKey(application.updated_at) === centralToday).length;
 
   return {
     applicationExecutionToday: {
@@ -1396,12 +1468,52 @@ function isPoorFit(record: JsonRecord) {
 function compensationPolicyClass(record: JsonRecord, preferredBaseSalary: number) {
   const max = numberValue(record.compensation_max_usd);
   const text = String(record.compensation_text || '');
+  const policy = classifyCompensationPolicy({
+    description: record.job_description || record.normalized_description,
+    maxUsd: max,
+    score: record.fit_score || record.match_score,
+    text,
+    title: record.title || record.position,
+  });
 
   if (!preferredBaseSalary) return 'unknown';
-  if (!max) return 'unknown';
   if (hasTotalCompensationEvidence(text)) return 'total_compensation_exception';
-  if (max < preferredBaseSalary) return 'below_target';
+  if (policy.status === 'comp_meets_floor') return 'posted_base_meets_policy';
+  if (policy.status === 'comp_below_floor_reject' || policy.status === 'comp_near_floor_review') return 'below_target';
+  if (policy.status === 'comp_unknown_strong_fit') return 'unknown_strong_fit';
+  if (!max) return 'unknown';
   return 'posted_base_meets_policy';
+}
+
+function qualifiesForCurrentProductionLane(posting: JsonRecord, minFitScore: number) {
+  if (numberValue(posting.fit_score) < minFitScore) return false;
+  if (!eligibleForCurrentProductionLane(posting)) return false;
+  if (!autonomousCompensationEligible(posting)) return false;
+  return true;
+}
+
+function eligibleForCurrentProductionLane(posting: JsonRecord) {
+  if (!workdayFirstModeEnabled()) return true;
+  return inferredPostingPlatform(posting).toLowerCase() === 'workday';
+}
+
+function autonomousCompensationEligible(posting: JsonRecord) {
+  return classifyCompensationPolicy({
+    description: posting.job_description || posting.normalized_description,
+    maxUsd: posting.compensation_max_usd,
+    score: posting.fit_score || posting.match_score,
+    text: posting.compensation_text,
+    title: posting.title || posting.position,
+  }).autoEligible;
+}
+
+function workdayFirstModeEnabled() {
+  return String(process.env.CAREER_OS_WORKDAY_FIRST_ENABLED || '1').trim() !== '0';
+}
+
+function workdayFirstSourceLimit() {
+  const value = Number(String(process.env.CAREER_OS_WORKDAY_SOURCE_LIMIT || '12').trim());
+  return Number.isFinite(value) && value > 0 ? Math.min(Math.floor(value), 50) : 12;
 }
 
 function hasTotalCompensationEvidence(value: unknown) {
@@ -1476,10 +1588,12 @@ function displayStatusForExecutionState(state: CanonicalApplicationExecutionStat
 
 function nextDailyRunText(now: Date) {
   const parts = centralDateParts(now);
-  let candidate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0));
-  if (now.getTime() >= candidate.getTime()) {
-    candidate = new Date(candidate.getTime() + 24 * 60 * 60 * 1000);
-  }
+  const candidates = [0, 1].flatMap((dayOffset) => [
+    new Date(Date.UTC(parts.year, parts.month - 1, parts.day + dayOffset, 1, 0, 0)),
+    new Date(Date.UTC(parts.year, parts.month - 1, parts.day + dayOffset, 13, 0, 0)),
+    new Date(Date.UTC(parts.year, parts.month - 1, parts.day + dayOffset, 19, 0, 0)),
+  ]).sort((left, right) => left.getTime() - right.getTime());
+  const candidate = candidates.find((date) => now.getTime() < date.getTime()) || candidates.at(-1) || now;
 
   return `${new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
@@ -1536,8 +1650,8 @@ function buildPipelineHealth(
   const submittedTodayFromEvents = submissionEvents.filter((event) => centralDateKey(event.occurred_at) === centralToday).length;
   const submittedThisWeekFromEvents = submissionEvents.filter((event) => isRecentIso(String(event.occurred_at || ''), 24 * 7)).length;
   // Prefer authoritative application evidence; workflow events still cover runs where the event lands before the app row refreshes.
-  const submittedTodayFromApplications = countCanonicalSubmittedApplicationsOnDate(evidence.applications, new Date());
-  const submittedThisWeekFromApplications = countCanonicalSubmittedApplicationsWithinHours(evidence.applications, 24 * 7);
+  const submittedTodayFromApplications = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence) && centralDateKey(application.updated_at) === centralToday).length;
+  const submittedThisWeekFromApplications = evidence.applications.filter((application) => Boolean(application.confirmation_number || application.submission_evidence) && isRecentIso(String(application.updated_at || ''), 24 * 7)).length;
   const submittedToday = Math.max(submittedTodayFromApplications, submittedTodayFromEvents);
   const submittedThisWeek = Math.max(submittedThisWeekFromApplications, submittedThisWeekFromEvents);
   const interviews = evidence.applications.filter((application) => hasAny(String(application.lifecycle_stage || ''), ['interview'])).length
@@ -1656,11 +1770,8 @@ function hasRetryProtection(evidence: DailyCycleEvidence) {
   return reportDoNotRetry || workflowProtection || evidence.applications.some((application) => Boolean(application.confirmation_number || application.submission_evidence));
 }
 
-function preferredMinimumBaseSalary(profile?: JsonRecord) {
-  const verifiedProfile = asRecord(profile?.verified_profile);
-  const strategy = asRecord(asRecord(verifiedProfile.candidate_preferences_strategy).compensation_strategy);
-  const reusable = asRecord(verifiedProfile.reusable_application_answers);
-  return numberValue(strategy.preferred_minimum_base_salary_usd || reusable.preferred_minimum_base_salary_usd);
+function preferredMinimumBaseSalary(_profile?: JsonRecord) {
+  return COMPENSATION_FLOOR_USD;
 }
 
 function hasConfiguredCostControls(searchConfig: JsonRecord) {
@@ -1723,7 +1834,7 @@ async function fetchGreenhouseSourceBatches(discoveryPlan: CareerOsDiscoveryPlan
   return results;
 }
 
-function sourceStatus(source: CareerOsSourceCandidate, board: string, status: 'succeeded' | 'failed', jobsReviewed: number, error = '') {
+function sourceStatus(source: CareerOsSourceCandidate, board: string, status: 'succeeded' | 'failed', jobsReviewed: number, error = '', sourceName = 'official_greenhouse_board_api') {
   return {
     ats: source.ats,
     board,
@@ -1732,9 +1843,133 @@ function sourceStatus(source: CareerOsSourceCandidate, board: string, status: 's
     employer: source.employer,
     error,
     jobs_reviewed: jobsReviewed,
-    source: 'official_greenhouse_board_api',
+    source: sourceName,
+    source_url: source.sourceUrl,
     status,
   };
+}
+
+async function fetchWorkdaySourceResults(discoveryPlan: CareerOsDiscoveryPlan) {
+  const results: Array<{ error?: string; jobs: JsonRecord[]; source: CareerOsSourceCandidate }> = [];
+  const sources = discoveryPlan.workdaySources.slice(0, workdayFirstSourceLimit());
+  for (let index = 0; index < sources.length; index += GLOBAL_DISCOVERY_MAX_CONCURRENCY) {
+    const batch = sources.slice(index, index + GLOBAL_DISCOVERY_MAX_CONCURRENCY);
+    const settled = await Promise.all(batch.map(async (source) => {
+      try {
+        const jobs = await fetchWorkdayJobs(source);
+        return { jobs, source };
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error), jobs: [], source };
+      }
+    }));
+    results.push(...settled);
+  }
+  return results;
+}
+
+async function fetchWorkdayJobs(source: CareerOsSourceCandidate) {
+  const parsed = parseWorkdaySource(source.sourceUrl);
+  if (!parsed) throw new Error('Workday source URL is missing or unsupported.');
+  const searchUrl = `${parsed.origin}/wday/cxs/${encodeURIComponent(parsed.apiTenant)}/${encodeURIComponent(parsed.site)}/jobs`;
+  const seen = new Set<string>();
+  const rows: JsonRecord[] = [];
+  for (const searchText of WORKDAY_SEARCH_TERMS) {
+    const response = await fetch(searchUrl, {
+      body: JSON.stringify({
+        appliedFacets: {},
+        limit: WORKDAY_RESULTS_PER_SEARCH,
+        offset: 0,
+        searchText,
+      }),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+      signal: AbortSignal.timeout(GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new Error(`Workday ${source.employer} returned ${response.status}`);
+    const payload = await response.json() as JsonRecord;
+    const postings = arrayValue(payload.jobPostings || payload.jobs || payload.data).map(asRecord);
+    for (const posting of postings) {
+      const externalPath = stringValue(posting.externalPath || posting.external_path || posting.path);
+      const requisition = stringValue(posting.jobReqId || posting.jobReqIdText || posting.jobRequisitionId || posting.id || arrayValue(posting.bulletFields)[0]);
+      const key = externalPath || requisition || stringValue(posting.title);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const detail = externalPath ? await fetchWorkdayJobDetail(parsed, externalPath).catch(() => ({} as JsonRecord)) : {};
+      rows.push({
+        ...posting,
+        detail,
+        sourceUrl: parsed.sourceUrl,
+        workdayApiTenant: parsed.apiTenant,
+        workdayHost: parsed.host,
+        workdaySite: parsed.site,
+      });
+    }
+  }
+  return rows;
+}
+
+async function fetchWorkdayJobDetail(
+  parsed: { apiTenant: string; origin: string; site: string },
+  externalPath: string,
+) {
+  const pathPart = externalPath.startsWith('/') ? externalPath : `/${externalPath}`;
+  const response = await fetch(`${parsed.origin}/wday/cxs/${encodeURIComponent(parsed.apiTenant)}/${encodeURIComponent(parsed.site)}${pathPart}`, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(GLOBAL_DISCOVERY_SOURCE_TIMEOUT_MS),
+  });
+  if (!response.ok) return {};
+  return await response.json() as JsonRecord;
+}
+
+function parseWorkdaySource(value: unknown) {
+  const text = stringValue(value);
+  if (!text) return null;
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return null;
+  }
+  if (!/myworkdayjobs\.com$/i.test(url.hostname)) return null;
+  const host = url.hostname.toLowerCase();
+  const apiTenant = host.replace(/\.myworkdayjobs\.com$/i, '').replace(/\.wd\d+$/i, '');
+  const segments = decodeURIComponent(url.pathname).split('/').map((segment) => segment.trim()).filter(Boolean);
+  const localeIndex = segments.findIndex((segment) => /^[a-z]{2}-[A-Z]{2}$/i.test(segment));
+  const site = localeIndex >= 0 ? segments[localeIndex + 1] : segments[0];
+  if (!apiTenant || !site || /^(job|apply|userhome)$/i.test(site)) return null;
+  return {
+    apiTenant,
+    host,
+    origin: url.origin,
+    site,
+    sourceUrl: `${url.origin}/en-US/${encodeURIComponent(site)}`,
+  };
+}
+
+function workdayCanonicalJobUrl(sourceUrl: string, externalPath: string) {
+  const parsed = parseWorkdaySource(sourceUrl);
+  if (!parsed) return stringValue(sourceUrl);
+  const pathPart = stringValue(externalPath);
+  if (!pathPart) return parsed.sourceUrl;
+  const publicPath = pathPart.startsWith('/job/') ? pathPart : `/job/${pathPart.replace(/^\/+/, '')}`;
+  return `${parsed.sourceUrl}${publicPath}`;
+}
+
+function workdayLocationText(job: JsonRecord, postingInfo: JsonRecord) {
+  const locationCandidates = [
+    postingInfo.location,
+    postingInfo.locationsText,
+    postingInfo.primaryLocation,
+    job.locationsText,
+    job.location,
+    asRecord(job.primaryLocation).descriptor,
+    arrayValue(job.locations).map((location) => stringValue(asRecord(location).descriptor || asRecord(location).name)).filter(Boolean).join(', '),
+    arrayValue(postingInfo.locations).map((location) => stringValue(asRecord(location).descriptor || asRecord(location).name)).filter(Boolean).join(', '),
+  ];
+  return locationCandidates.map(stringValue).find(Boolean) || '';
 }
 
 async function fetchGreenhouseJobs(board: string) {
@@ -1808,6 +2043,94 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
   };
 }
 
+function normalizeWorkdayPosting(ownerEmail: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
+  const detail = asRecord(job.detail);
+  const postingInfo = asRecord(detail.jobPostingInfo || detail.jobPosting || detail);
+  const title = stringValue(postingInfo.title || job.title);
+  const descriptionHtml = stringValue(postingInfo.jobDescription || postingInfo.description || job.jobDescription || job.description);
+  const description = htmlToText(descriptionHtml || [
+    stringValue(postingInfo.jobDescriptionText),
+    stringValue(job.subtitle),
+    arrayValue(job.bulletFields).map(String).join('\n'),
+  ].filter(Boolean).join('\n\n'));
+  const rolePolicy = classifyRolePolicy(title, description);
+  const compensation = extractCompensation(`${description} ${stringValue(postingInfo.compensation || job.compensation)}`);
+  const location = workdayLocationText(job, postingInfo);
+  const locationText = `${location} ${description}`;
+  const fitScore = rolePolicy.excluded ? 0 : scorePosting({ title, location: { name: location } }, description);
+  const externalPath = stringValue(postingInfo.externalPath || job.externalPath || job.external_path || job.path);
+  const requisition = stringValue(postingInfo.jobReqId || postingInfo.jobRequisitionId || job.jobReqId || job.jobRequisitionId || job.id || externalPath.split('_').pop());
+  const sourceRoot = stringValue(job.sourceUrl || source.sourceUrl);
+  const canonicalUrl = workdayCanonicalJobUrl(sourceRoot, externalPath);
+  const id = `workday-${slug(source.employer)}-${slug(requisition || simpleHash(canonicalUrl || title))}`;
+  const compensationPolicy = classifyCompensationPolicy({
+    description,
+    maxUsd: compensation.maxUsd,
+    score: fitScore,
+    text: compensation.text,
+    title,
+  });
+
+  return {
+    id,
+    source_run_id: sourceRunId,
+    owner_email: ownerEmail,
+    company: source.employer,
+    title,
+    location,
+    work_arrangement: /remote/i.test(locationText) ? 'remote' : 'unknown',
+    compensation_min_usd: compensation.minUsd,
+    compensation_max_usd: compensation.maxUsd,
+    compensation_text: compensation.text,
+    canonical_url: canonicalUrl,
+    external_requisition_id: requisition,
+    job_description: description,
+    normalized_description: description.slice(0, 12000),
+    posting_validation_status: 'active',
+    last_checked_at: lastCheckedAt,
+    raw_record: {
+      ...job,
+      ats_platform: 'workday',
+      compensation_policy_status: compensationPolicy.status,
+      compensation_policy_warnings: compensationPolicy.warnings,
+      source_url: sourceRoot,
+      workday_api_tenant: stringValue(job.workdayApiTenant),
+      workday_host: stringValue(job.workdayHost),
+      workday_site: stringValue(job.workdaySite),
+    },
+    normalized_role_level: rolePolicy.normalizedLevel,
+    deterministic_filter_reason: rolePolicy.reason,
+    source_category: source.category,
+    source_employer: source.employer,
+    source_business_type: source.businessType,
+    fit_score: fitScore,
+    ats_analysis: {
+      method: 'deterministic_workday_first_daily_cycle_v1',
+      risks: compensationPolicy.holdReason
+        ? [compensationPolicy.holdReason]
+        : [],
+      score: fitScore,
+      signals: matchingSignals({ title, location: { name: location } }, description),
+    },
+    ai_readiness_analysis: {
+      method: 'answerbrief_deterministic_readiness_v1',
+      score: rolePolicy.excluded ? 0 : scoreAiReadiness(description),
+      signals: ['platform strategy', 'automation', 'customer experience', 'enterprise platforms'].filter((signal) => hasAny(description, [signal])),
+    },
+    recruiter_intelligence: {
+      decision: fitScore >= minFitScore && autonomousCompensationEligible({ compensation_max_usd: compensation.maxUsd, compensation_text: compensation.text }) ? 'worth_applying' : 'skip',
+      location: location || 'not published',
+      salary: compensation.text || 'not published',
+      score: rolePolicy.excluded ? 0 : scoreRecruiterFit({ title, location: { name: location } }, description),
+    },
+    hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
+    selected_for_pilot: false,
+    status: classifyDiscoveredPostingStatus(fitScore, minFitScore, locationText, rolePolicy),
+    created_at: lastCheckedAt,
+    updated_at: lastCheckedAt,
+  };
+}
+
 function classifyDiscoveredPostingStatus(
   fitScore: number,
   minFitScore: number,
@@ -1816,7 +2139,7 @@ function classifyDiscoveredPostingStatus(
 ) {
   if (rolePolicy?.excluded) return 'ineligible';
   if (/relocation required|must relocate|on-site only/i.test(locationText)) return 'ineligible_location';
-  if (fitScore < 70) return 'poor_fit';
+  if (fitScore < 65) return 'poor_fit';
   if (fitScore < minFitScore) return 'qualification_pending';
   return 'discovered';
 }
@@ -2030,8 +2353,10 @@ function buildDailySearchConfig(
   runDay: string,
 ) {
   const boards = discoveryPlan.greenhouseBoards;
+  const workdaySources = discoveryPlan.workdaySources.map((source) => source.sourceUrl).filter(Boolean);
   const sourceFailures = sourceStatuses.filter((source) => String(source.status || '') === 'failed');
   const succeededSources = sourceStatuses.filter((source) => String(source.status || '') === 'succeeded');
+  const workdayFirst = workdayFirstModeEnabled();
   return {
     automatic_submission_limit: 3,
     batch_processing: {
@@ -2042,6 +2367,7 @@ function buildDailySearchConfig(
       throttle_policy: 'per_employer_and_per_ats',
     },
     boards,
+    workday_sources: workdaySources,
     coverage_summary: {
       discovery_mode: discoveryPlan.coverageSummary.discoveryMode,
       employer_sources_failed: sourceFailures.length,
@@ -2059,13 +2385,13 @@ function buildDailySearchConfig(
       open_to_higher_compensation: true,
       open_to_negotiation: true,
       optional_compensation_fields: 'leave_blank',
-      preferred_minimum_base_salary_usd: 200000,
+      preferred_minimum_base_salary_usd: COMPENSATION_FLOOR_USD,
       required_base_salary: 'use_approved_200000_base_strategy_where_appropriate',
       required_total_compensation: 'pause_pending_tomas_approved_total_compensation_target',
     },
     cost_controls: DAILY_OPERATING_CYCLE.creditSavingControls,
     daily_automation_id: 'daily-tomas-career-os-run',
-    discovery_mode: 'broader_product_management_oracle_and_greenhouse_market',
+    discovery_mode: workdayFirst ? 'workday_first_product_management_market' : 'broader_product_management_oracle_and_greenhouse_market',
     enqueue_qualified_package_ready_applications: true,
     employer_universe: DAILY_OPERATING_CYCLE.employerUniverseCovered,
     freshness_windows: ['24_hours', '3_days', '7_days', '14_days_if_active_exceptional_fit'],
@@ -2098,6 +2424,8 @@ function buildDailySearchConfig(
     source_statuses: sourceStatuses,
     standing_trusted_auto_apply_policy: {
       ordinary_application_approval_required: false,
+      workday_first_enabled: workdayFirst,
+      greenhouse_execution_deferred: workdayFirst,
       legal_fingerprint_reuse: 'reuse_when_materially_identical_fingerprint_matches',
       changed_legal_text_requires_review: true,
       no_duplicate_submissions: true,

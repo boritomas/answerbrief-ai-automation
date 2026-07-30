@@ -4,19 +4,27 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "node ../scripts/lint-career-os-source.mjs",
+    "lint": "node ./scripts/lint-career-os-source.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --test ../tests/acceptance/career-os-contract.test.mjs",
+    "test": "npm run test:ats",
+    "test:ats": "node --test tests/acceptance/career-os-contract.test.mjs tests/acceptance/career-os-integration.test.mjs tests/acceptance/career-os-conformance.test.mjs tests/acceptance/career-os-safety.test.mjs tests/acceptance/career-os-workday-poc.test.mjs tests/acceptance/career-os-workday-browser-dry-run.test.mjs tests/acceptance/career-os-production-readiness.test.mjs tests/acceptance/career-os-workday-production-flow.test.mjs tests/acceptance/career-os-workday-observation.test.mjs tests/acceptance/career-os-controlled-browser.test.mjs tests/acceptance/career-os-quality-layer.test.mjs tests/acceptance/career-os-linkedin-discovery.test.mjs",
+    "health:career-os": "node ./scripts/career-os-production-health.mjs",
     "worker:pair": "node ./scripts/career-os-browser-companion.mjs pair",
     "worker:start": "node ./scripts/career-os-browser-companion.mjs start",
     "worker:run-once": "node ./scripts/career-os-browser-companion.mjs run-once",
-    "worker:health": "node ./scripts/career-os-browser-companion.mjs health"
+    "worker:health": "node ./scripts/career-os-browser-companion.mjs health",
+    "browser:controlled": "node ./scripts/career-os-controlled-browser.mjs",
+    "report:career-os": "node ./scripts/career-os-production-report.mjs",
+    "outcomes:ingest": "node ./scripts/career-os-ingest-outcomes.mjs",
+    "workday:canary": "node ./scripts/career-os-workday-canary.mjs",
+    "workday:observe": "node ./scripts/career-os-workday-observe.mjs",
+    "linkedin:discover": "node ./scripts/career-os-linkedin-discovery.mjs"
   },
   "dependencies": {
     "@stripe/stripe-js": "^4.0.0",
-    "next": "^14.2.0",
+    "next": "^16.2.12",
     "pg": "^8.22.0",
     "playwright": "^1.54.2",
     "react": "^18.3.1",
@@ -29,8 +37,12 @@
     "@types/node": "^20.14.0",
     "@types/pg": "^8.15.6",
     "@types/react": "^18.3.3",
-    "eslint": "^8.57.0",
-    "eslint-config-next": "^14.2.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.2.12",
     "typescript": "^5.5.0"
+  },
+  "overrides": {
+    "postcss": "8.5.25",
+    "sharp": "0.35.3"
   }
 }

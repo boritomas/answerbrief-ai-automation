@@ -1,0 +1,10 @@
+{
+  "scenarioName": "resume_upload",
+  "expectedWorkdayState": "RESUME_UPLOAD",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "resumeUploadPresent": true,
+  "expectedRequiredFields": ["Upload Resume"],
+  "notes": ["Synthetic resume upload control. No local resume is uploaded."]
+}

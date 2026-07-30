@@ -109,7 +109,8 @@ export default async function CareerOsPage(
   const activeView = firstQueryValue(params.view) || 'home';
   const status = await getCareerOsStatus();
   const trust = status.operationalTrust;
-  const artifacts = status.evidence.artifacts.filter((artifact) => artifact.artifact_type === 'targeted_resume' || artifact.artifact_type === 'application_package');
+  const outcomeIntelligence = status.outcomeIntelligence;
+  const artifacts = status.evidence.artifacts.filter((artifact) => ['targeted_resume', 'application_package', 'cover_letter'].includes(String(artifact.artifact_type)));
   const applications = status.evidence.applications;
   const dailyWorkflow = status.dailyWorkflow;
   const pipelineHealth = dailyWorkflow.pipelineHealth;
@@ -131,6 +132,7 @@ export default async function CareerOsPage(
   const activeOpportunityRows = workflowRows.activeOpportunities;
   const readyToApplyRows = workflowRows.readyToApply;
   const submittedTodayRows = workflowRows.submittedToday;
+  const currentQualityScore = Math.max(0, ...readyToApplyRows.concat(qualifiedMatchRows).map((row) => row.score || 0));
   const candidatePipeline = buildCandidatePipeline(status, workflowRows, taskGroups.length);
   const systemNotice = buildSystemNotice(status);
   const primaryAction = buildPrimaryAction(status, taskGroups);
@@ -237,6 +239,85 @@ export default async function CareerOsPage(
                   <span>{item.value}</span>
                 </article>
               ))}
+            </div>
+          </section>
+          <section className="career-os-panel" id="workday-first">
+            <h2>Workday First</h2>
+            <p>{status.workdayFirst.plainEnglish}</p>
+            <div className="career-os-metrics secondary" aria-label="Career OS Workday-first production">
+              <Metric ctaLabel="View Ready Workday Roles" href="/career-os?view=ready#ready-to-apply" label="Workday Ready" value={status.workdayFirst.workdayReadyToProcess} />
+              <Metric ctaLabel="View Submitted Workday Applications" href="/career-os?view=submitted-history#applications" label="Workday Submitted" value={status.workdayFirst.workdaySubmitted} />
+              <Metric ctaLabel="View Code Gates" href="/career-os#action-center" label="Waiting on Code" value={status.workdayFirst.workdayWaitingOnHumanCode} />
+              <Metric ctaLabel="View Missing Answers" href="/career-os#action-center" label="Missing Answer" value={status.workdayFirst.workdayWaitingOnMissingAnswer} />
+              <Metric ctaLabel="View Phase 2 Workday Blockers" href="/career-os#application-list" label="Phase 2 Workday" value={status.workdayFirst.phaseTwoWorkdayBlockers} />
+              <Metric ctaLabel="View Deferred Greenhouse" href="/career-os#application-list" label="Greenhouse Deferred" value={status.workdayFirst.greenhouseDeferred} />
+              <Metric ctaLabel="View Unsupported ATS" href="/career-os#application-list" label="Unsupported Deferred" value={status.workdayFirst.unsupportedAtsDeferred} />
+              <Metric ctaLabel="View Duplicates" href="/career-os#application-list" label="Duplicates Skipped" value={status.workdayFirst.duplicatesSkipped} />
+              <Metric ctaLabel="View Closed Roles" href="/career-os#application-list" label="Rejected or Closed" value={status.workdayFirst.rejectedOrClosedRoles} />
+              <Metric ctaLabel="View LinkedIn Source Roles" href="/career-os#application-list" label="LinkedIn Cards" value={status.workdayFirst.linkedinFeedCardsInspected} />
+              <Metric ctaLabel="View LinkedIn Source Roles" href="/career-os#application-list" label="LinkedIn Found" value={status.workdayFirst.linkedinJobsDiscovered} />
+              <Metric ctaLabel="View LinkedIn Source Roles" href="/career-os#application-list" label="LinkedIn Opened" value={status.workdayFirst.linkedinFeedJobsClicked} />
+              <Metric ctaLabel="View LinkedIn Source Roles" href="/career-os#application-list" label="Apply Links" value={status.workdayFirst.linkedinEmployerApplyLinksResolved} />
+              <Metric ctaLabel="View LinkedIn Workday Roles" href="/career-os?view=ready#ready-to-apply" label="LinkedIn to Workday" value={status.workdayFirst.linkedinResolvedToWorkday} />
+              <Metric ctaLabel="View Queued Workday Roles" href="/career-os?view=ready#ready-to-apply" label="LinkedIn Queued" value={status.workdayFirst.linkedinQueuedToWorkday} />
+              <Metric ctaLabel="View Deferred LinkedIn Roles" href="/career-os#application-list" label="Easy Apply Deferred" value={status.workdayFirst.linkedinEasyApplyDeferred} />
+              <Metric ctaLabel="View Deferred Greenhouse" href="/career-os#application-list" label="LinkedIn Greenhouse" value={status.workdayFirst.linkedinGreenhouseDeferred} />
+              <Metric ctaLabel="View Quality Holds" href="/career-os#application-list" label="LinkedIn Quality Holds" value={status.workdayFirst.linkedinRejectedByQualityGate} />
+              <Metric ctaLabel="View Compensation Holds" href="/career-os#application-list" label="Below $200K" value={status.workdayFirst.linkedinCompBelowFloorReject} />
+              <Metric ctaLabel="View Near-Floor Roles" href="/career-os#application-list" label="$175K-$199K" value={status.workdayFirst.linkedinCompNearFloorReview} />
+              <Metric ctaLabel="View Unknown Compensation Strong Fits" href="/career-os#application-list" label="Unknown Strong Fit" value={status.workdayFirst.linkedinCompUnknownStrongFit} />
+              <Metric ctaLabel="View LinkedIn Applications" href="/career-os#applications" label="LinkedIn Attempted" value={status.workdayFirst.linkedinWorkdayApplicationsAttempted} />
+              <Metric ctaLabel="View Submitted LinkedIn Applications" href="/career-os?view=submitted-history#applications" label="LinkedIn Submitted" value={status.workdayFirst.linkedinWorkdayApplicationsSubmitted} />
+            </div>
+            {(status.workdayFirst.phaseTwoWorkdayBacklog.length > 0 || status.workdayFirst.linkedinTopHoldReasons.length > 0 || status.workdayFirst.linkedinSearchTermsUsed.length > 0) && (
+              <div className="career-os-list compact">
+                {status.workdayFirst.phaseTwoWorkdayBacklog.length > 0 && (
+                  <article className="career-os-row">
+                    <div>
+                      <h3>Phase 2 Workday Blockers</h3>
+                      <p>{status.workdayFirst.phaseTwoWorkdayBacklog.slice(0, 5).map((item) => `${item.employer}: ${item.classification}`).join(', ')}</p>
+                    </div>
+                    <span>{status.workdayFirst.phaseTwoWorkdayBlockers}</span>
+                  </article>
+                )}
+                {status.workdayFirst.linkedinTopHoldReasons.length > 0 && (
+                  <article className="career-os-row">
+                    <div>
+                      <h3>LinkedIn Hold Reasons</h3>
+                      <p>{status.workdayFirst.linkedinTopHoldReasons.map((item) => `${item.reason} (${item.count})`).join(', ')}</p>
+                    </div>
+                    <span>{status.workdayFirst.linkedinRejectedByQualityGate}</span>
+                  </article>
+                )}
+                {status.workdayFirst.linkedinSearchTermsUsed.length > 0 && (
+                  <article className="career-os-row">
+                    <div>
+                      <h3>LinkedIn Search Terms</h3>
+                      <p>{status.workdayFirst.linkedinSearchTermsUsed.slice(0, 8).join('; ')}</p>
+                    </div>
+                    <span>{status.workdayFirst.linkedinSearchLocationsUsed.slice(0, 3).join(', ')}</span>
+                  </article>
+                )}
+              </div>
+            )}
+          </section>
+          <section className="career-os-panel" id="outcome-intelligence">
+            <h2>Outcome Intelligence</h2>
+            <p>{outcomeIntelligence.plainEnglish}</p>
+            <div className="career-os-metrics secondary" aria-label="Career OS outcome intelligence">
+              <Metric ctaLabel="View Application History" href="/career-os?view=submitted-history#applications" label="Applications Analyzed" value={outcomeIntelligence.submittedAnalyzed} />
+              <Metric ctaLabel="View Outcomes" href="/career-os#outcome-intelligence" label="Rejections Received" value={outcomeIntelligence.rejections} />
+              <Metric ctaLabel="View Outcomes" href="/career-os#interviews" label="Interviews Requested" value={outcomeIntelligence.interviews} />
+              <Metric ctaLabel="View Outcomes" detail={`${outcomeIntelligence.responseRate}% of submitted applications have a linked outcome signal`} href="/career-os#outcome-intelligence" label="Response Rate" value={outcomeIntelligence.responseRate} />
+              <Metric ctaLabel="View Outcomes" href="/career-os#outcome-intelligence" label="Fast Rejections" value={outcomeIntelligence.fastRejections} />
+              <Metric ctaLabel="View Held Roles" href="/career-os#outcome-intelligence" label="Held for Quality" value={outcomeIntelligence.heldForQuality} />
+              <Metric ctaLabel="View Ready Roles" detail="Highest current ready or qualified fit score" href="/career-os?view=ready#ready-to-apply" label="Current Quality Score" value={currentQualityScore} />
+              <Metric ctaLabel="View Documents" href="/career-os#documents" label="Cover Letters Generated" value={outcomeIntelligence.coverLettersGenerated} />
+              <Metric ctaLabel="View Documents" href="/career-os#documents" label="Cover Letters Uploaded" value={outcomeIntelligence.coverLettersUploaded} />
+            </div>
+            <div className="career-os-list compact">
+              <DetailRow detail={outcomeIntelligence.submittedWithoutCoverLetter ? `${outcomeIntelligence.submittedWithoutCoverLetter} submitted application(s) did not have a recorded cover letter.` : 'No linked rejection pattern is strong enough to overfit yet.'} label="What Career OS Learned" value={outcomeIntelligence.feedbackRequests ? 'Feedback' : 'Evidence'} />
+              <DetailRow detail="Future applications use 85+ as strong apply, 75-84 only with a tailored cover letter or rationale, 65-74 for review, and below 65 held." label="What Changed" value="Quality Gate" />
             </div>
           </section>
         </div>
@@ -595,7 +676,7 @@ function buildCandidateSummary(status: CareerStatus) {
       : 'Recovery required';
   const primaryMessage = dataUnavailable
     ? 'Career OS data is temporarily unavailable.'
-    : `Since the last run, Career OS evaluated ${uniqueLiveRoles} unique live roles, found ${qualifiedRoles} qualified matches, added ${newOpportunities} new opportunities, attempted ${applicationsAttemptedToday} applications, and submitted ${applicationsSubmittedToday}.`;
+    : status.workdayFirst.plainEnglish;
   const blockerMessage = technicalBlockers > 0
     ? `${technicalBlockers} system blocker${technicalBlockers === 1 ? ' is' : 's are'} still preventing supported automation from advancing.`
     : '';
@@ -1595,6 +1676,7 @@ function buildApplicationFunnel(status: CareerStatus) {
 function buildResumePerformance(artifacts: JsonRecord[], applications: JsonRecord[], status: CareerStatus) {
   const targetedResumes = artifacts.filter((artifact) => String(artifact.artifact_type) === 'targeted_resume');
   const packageAssets = artifacts.filter((artifact) => String(artifact.artifact_type) === 'application_package').length;
+  const coverLetters = artifacts.filter((artifact) => String(artifact.artifact_type) === 'cover_letter').length;
   const validatedResumes = targetedResumes.filter((artifact) => String(artifact.validation_status) === 'passed').length;
   const submittedWithResume = applications.filter((application) => Boolean(application.submission_evidence || application.confirmation_number) && Boolean(application.exact_resume)).length;
 
@@ -1603,6 +1685,7 @@ function buildResumePerformance(artifacts: JsonRecord[], applications: JsonRecor
     rows: [
       { detail: 'validated artifact count', label: 'Targeted resumes', value: String(validatedResumes) },
       { detail: 'qualified jobs with packages', label: 'Package coverage', value: `${status.packagesCoveringQualifiedJobs}/${status.activeQualifiedOpportunities}` },
+      { detail: 'tailored application-specific letters', label: 'Cover letters', value: String(coverLetters) },
       { detail: 'submitted applications with an exact resume path', label: 'Resume-backed submissions', value: String(submittedWithResume) },
       { detail: 'package assets are not job or application counts', label: 'Package assets', value: String(status.totalPackages) },
     ],
@@ -1632,7 +1715,7 @@ function buildCompensationSnapshot(status: CareerStatus, applications: JsonRecor
     { detail: 'Tomas-approved base-salary strategy', label: 'Preferred base minimum', value: preferredBase ? formatMoney(preferredBase) : 'not set' },
     { detail: 'posted base ranges where max meets or exceeds policy', label: 'Posted base range across jobs meeting policy', value: moneyRangeText(qualifiedRange) },
     { detail: 'all parsed postings, not all are qualified', label: 'Posted compensation across all discovered jobs', value: moneyRangeText(allRange) },
-    { detail: 'jobs with posted base max at or above $250K', label: 'Posted base at or above target', value: String(status.compensationPolicy.postedBaseAtOrAboveTarget) },
+    { detail: 'jobs with posted base max at or above $200K', label: 'Posted base at or above target', value: String(status.compensationPolicy.postedBaseAtOrAboveTarget) },
     { detail: 'approved total-compensation exception evidence', label: 'Approved total-compensation exceptions', value: String(status.compensationPolicy.approvedTotalCompensationExceptions) },
     { detail: 'requires compensation review before submission', label: 'Compensation unknown', value: String(status.compensationPolicy.compensationUnknown) },
     { detail: 'removed from qualified automation unless exception evidence exists', label: 'Below-target removed', value: String(status.compensationPolicy.belowTargetRemoved) },

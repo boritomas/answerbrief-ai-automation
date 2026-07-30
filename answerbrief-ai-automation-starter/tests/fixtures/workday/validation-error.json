@@ -1,0 +1,10 @@
+{
+  "scenarioName": "validation_error",
+  "expectedWorkdayState": "VALIDATION_ERROR",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "expectedRequiredFields": ["Email Address"],
+  "expectedFailureClassification": "VALIDATION_ERROR",
+  "notes": ["Synthetic validation error fixture. No submission is inferred."]
+}

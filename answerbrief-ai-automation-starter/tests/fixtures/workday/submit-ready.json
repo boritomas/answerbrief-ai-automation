@@ -1,0 +1,10 @@
+{
+  "scenarioName": "submit_ready",
+  "expectedWorkdayState": "SUBMIT_READY",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "expectedRequiredFields": [],
+  "expectedSubmitControlState": "VISIBLE_ENABLED",
+  "notes": ["Synthetic submit-ready fixture. The submit control is guarded and never clicked."]
+}

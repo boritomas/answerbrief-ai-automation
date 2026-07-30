@@ -6,6 +6,10 @@ function normalized(value) {
   return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function digitsOnly(value) {
+  return clean(value).replace(/[^0-9]/g, '');
+}
+
 function cssEscape(value) {
   return value.replace(/([ #;?%&,.+*~\\':"!^$[\]()=>|/@])/g, '\\$1');
 }
@@ -36,11 +40,137 @@ function fieldHaystack(field) {
   ].filter(Boolean).join(' '));
 }
 
+function fieldVisibleLabel(field = {}) {
+  return normalized([
+    field.label,
+    field.ariaLabel,
+    field.placeholder,
+  ].filter(Boolean).join(' '));
+}
+
+function fieldMachineLabel(field = {}) {
+  return normalized([
+    field.id,
+    field.name,
+    field.ariaLabelledby,
+    field.dataAutomationId,
+  ].filter(Boolean).join(' '));
+}
+
+function fieldDescriptor(field = {}) {
+  return normalized([
+    fieldVisibleLabel(field),
+    fieldMachineLabel(field),
+    field.role,
+    field.className,
+  ].filter(Boolean).join(' '));
+}
+
+function labelLooksLike(value, patterns = []) {
+  const text = normalized(value);
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function fieldMatchesMappingRoute(field = {}, mapping = {}) {
+  const key = normalized(mapping.key);
+  if (!key) return true;
+  const visibleLabel = fieldVisibleLabel(field);
+  const machineLabel = fieldMachineLabel(field);
+  const descriptor = fieldDescriptor(field);
+
+  if (key === 'legal_first_name') {
+    if (/\b(preferred|last|middle)\b/.test(descriptor)) return false;
+    return labelLooksLike(visibleLabel, [/^legal first name$/, /^first name$/])
+      || labelLooksLike(machineLabel, [/\blegal first name\b/, /\bfirst name\b/, /\bfirstname\b/]);
+  }
+
+  if (key === 'legal_last_name') {
+    if (/\b(preferred|first|middle)\b/.test(descriptor)) return false;
+    return labelLooksLike(visibleLabel, [/^legal last name$/, /^last name$/])
+      || labelLooksLike(machineLabel, [/\blegal last name\b/, /\blast name\b/, /\blastname\b/]);
+  }
+
+  if (key === 'address_line_1' || key === 'home_address') {
+    if (/\b(address line 2|address 2|line 2|city|state|province|postal|zip|country)\b/.test(descriptor)) return false;
+    return labelLooksLike(visibleLabel, [/^address line 1$/, /^address 1$/, /^street address$/, /^home address$/])
+      || labelLooksLike(machineLabel, [/\baddress line 1\b/, /\baddress 1\b/, /\bstreet address\b/]);
+  }
+
+  if (key === 'country_region') {
+    if (/\bphone\b|\bdial\b|\bcalling code\b/.test(descriptor)) return false;
+    return labelLooksLike(visibleLabel, [/^country$/, /^country or region$/, /^country region$/])
+      || labelLooksLike(machineLabel, [/\bcountry\b/]);
+  }
+
+  if (key === 'state') {
+    if (/\b(country|phone|dial|calling code|postal|zip|united states)\b/.test(descriptor)) return false;
+    return visibleLabel === 'state'
+      || visibleLabel.startsWith('state ')
+      || /\bstate (?:or |and )?province\b/.test(visibleLabel)
+      || /(^| )state($| )/.test(machineLabel);
+  }
+
+  if (key === 'country_phone_code') {
+    if (/\b(phone number|phone extension|extension|device type|phone device)\b/.test(descriptor)) return false;
+    return labelLooksLike(visibleLabel, [/^country phone code$/, /^phone country code$/, /^phone code$/])
+      || labelLooksLike(machineLabel, [/\bcountry phone code\b/, /\bphone code\b/]);
+  }
+
+  if (key === 'phone_device_type') {
+    if (/\b(phone number|phone extension|extension|country phone code|phone code)\b/.test(descriptor)) return false;
+    return labelLooksLike(visibleLabel, [/^phone device type$/, /^phone type$/, /^device type$/])
+      || labelLooksLike(machineLabel, [/\bphone device type\b/, /\bdevice type\b/]);
+  }
+
+  if (key === 'phone_number') {
+    if (/\b(country phone code|phone code|phone extension|extension|phone device|device type)\b/.test(descriptor)) return false;
+    return labelLooksLike(visibleLabel, [/^phone number$/, /^mobile phone number$/, /^telephone number$/])
+      || labelLooksLike(machineLabel, [/\bphone number\b/, /\bphonenumber\b/, /\btelephone number\b/]);
+  }
+
+  if (key === 'referral_source') {
+    if (/\blinkedin url\b|\bprofile url\b/.test(descriptor)) return false;
+    return /how did you hear about us|how did you hear about|how did you learn about|referral source/.test(descriptor);
+  }
+
+  return true;
+}
+
 function matchesField(field, matcher) {
   const haystack = fieldHaystack(field);
   if (!haystack) return false;
   if (matcher instanceof RegExp) return matcher.test(haystack);
-  return haystack.includes(normalized(matcher));
+
+  const target = normalized(matcher);
+  if (!target) return false;
+
+  // Prevent the canonical `state` mapping from matching `United States`
+  // in country and telephone-country-code controls.
+  if (target === 'state') {
+    const visibleLabel = normalized([
+      field.label,
+      field.ariaLabel,
+      field.placeholder,
+    ].filter(Boolean).join(' '));
+
+    const machineLabel = normalized([
+      field.id,
+      field.name,
+      field.ariaLabelledby,
+      field.dataAutomationId,
+    ].filter(Boolean).join(' '));
+
+    const descriptor = `${visibleLabel} ${machineLabel}`.trim();
+
+    if (/\b(country|phone|dial|calling code)\b/.test(descriptor)) return false;
+
+    return visibleLabel === 'state'
+      || visibleLabel.startsWith('state ')
+      || /\bstate (?:or |and )?province\b/.test(visibleLabel)
+      || /(^| )state($| )/.test(machineLabel);
+  }
+
+  return haystack.includes(target);
 }
 
 function optionIndexForStrategy(field, strategy, resolved, mapping = {}) {
@@ -338,14 +468,19 @@ async function visibleComboboxOptionIndex(page, { fieldLabel, mappingKey, strate
 
     const context = `${payload.fieldLabel || ''} ${payload.mappingKey || ''}`.toLowerCase();
     const direct = options.find((option) => {
-      if (option.text === target || option.text.startsWith(`${target} `)) return true;
+      if (option.text === target) return true;
+      if (!/country phone code|phone code|state|province/.test(context) && option.text.startsWith(`${target} `)) return true;
       if (/referral[_\s-]*source|how did you hear/.test(context) && /linkedin/.test(target) && /social network|social media|linkedin/.test(option.text)) return true;
+      if (/referral[_\s-]*source|how did you hear/.test(context) && target === 'internet search') {
+        return /^(internet search|online search|search engine|internet)$/.test(option.text)
+          && !/linkedin|social network|social media/.test(option.text);
+      }
       if (/(state|province)/.test(context) && ((target === 'texas' && option.text === 'tx') || (target === 'tx' && option.text === 'texas'))) return true;
       if (/country phone code|phone code/.test(context)) {
         const wantsUs = ['1', 'us', 'usa', 'united states', 'united states of america'].includes(target)
           || target.includes('united states')
           || /\b(?:us|usa|1)\b/.test(target);
-        if (wantsUs && (option.text.includes('united states') || option.text === 'us' || option.text === 'usa' || option.text === '1')) return true;
+        if (wantsUs && /\bunited states\b/.test(option.text) && /\b1\b/.test(option.text) && !/\balbania\b/.test(option.text)) return true;
       }
       if (/phone device type/.test(context) && target === 'mobile' && /mobile|cell|cellular/.test(option.text)) return true;
       return false;
@@ -485,6 +620,10 @@ async function applyComboboxMapping(page, field, mapping, resolved) {
   }
   const context = optionMatchContext(field, mapping);
   const target = normalized(resolved);
+  const spec = knownPromptSpec(mapping, resolved);
+  if (spec && ['state_texas', 'country_phone_code', 'phone_device_type', 'referral_internet_search'].includes(spec.kind)) {
+    return promptEvidenceMatches(spec, `${committed} ${finalValue}`);
+  }
   return optionMatchesResolved(committed, target, context)
     || optionMatchesResolved(finalValue, target, context)
     || optionMatchesResolved(optionText, target, context)
@@ -511,9 +650,58 @@ async function visibleExactComboboxOptionIndex(page, resolved = '') {
     return nodes.findIndex((node) => {
       if (!(node instanceof HTMLElement) || !visible(node)) return false;
       const text = normalize(node.textContent || '');
-      return text === target || text.startsWith(`${target} `);
+      return text === target;
     });
   }, clean(resolved)).catch(() => -1);
+}
+
+
+async function selectStrictVisibleOption(page, acceptedTexts = []) {
+  const normalize = (value) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+  const accepted = new Set(acceptedTexts.map(normalize).filter(Boolean));
+  const options = page.locator(OPTION_SELECTOR);
+  const count = await options.count().catch(() => 0);
+
+  for (let index = 0; index < count; index += 1) {
+    const option = options.nth(index);
+    if (!await option.isVisible().catch(() => false)) continue;
+
+    const optionText = clean(await option.textContent().catch(() => ''));
+    const ariaLabel = clean(await option.getAttribute('aria-label').catch(() => ''));
+    const title = clean(await option.getAttribute('title').catch(() => ''));
+    const candidates = [optionText, ariaLabel, title].map(normalize).filter(Boolean);
+
+    const matched = candidates.some((candidate) => {
+      if (accepted.has(candidate)) return true;
+
+      if (accepted.has('texas') || accepted.has('tx')) {
+        return candidate === 'texas' || candidate === 'tx';
+      }
+
+      if (
+        accepted.has('united states of america 1') ||
+        accepted.has('united states 1')
+      ) {
+        return /^united states(?: of america)? 1$/.test(candidate);
+      }
+
+      return false;
+    });
+
+    if (!matched) continue;
+
+    await option.scrollIntoViewIfNeeded().catch(() => null);
+    await option.click({ force: true }).catch(() => null);
+    await page.waitForTimeout?.(350).catch(() => null);
+    return optionText;
+  }
+
+  return '';
 }
 
 function comboboxSearchText(field = {}, mapping = {}, resolved = '') {
@@ -521,109 +709,339 @@ function comboboxSearchText(field = {}, mapping = {}, resolved = '') {
   const target = normalized(resolved);
   if (/country phone code|phone code/.test(context) && target.includes('united states')) return 'United States';
   if (/referral source|how did you hear/.test(context) && /linkedin/.test(target)) return 'Social Network';
+  if (/referral source|how did you hear/.test(context) && target === 'internet search') return 'Internet Search';
   return clean(resolved);
 }
 
 async function applyKnownPromptMapping(page, mapping, resolved) {
-  if (!page?.locator || !page?.evaluate) return false;
+  const empty = { applied: false, attempted: false, field: '', reason: '' };
+  if (!page?.locator || !page?.evaluate) return empty;
   const spec = knownPromptSpec(mapping, resolved);
-  if (!spec) return false;
-  for (const search of spec.searches) {
-    await closeOpenPromptMenus(page);
-    const opened = await clickPromptControlNearLabel(page, spec.labelPattern, {
-      allowPhoneContext: spec.kind === 'country_phone_code' || spec.kind === 'phone_device_type',
-    });
-    if (!opened) continue;
-    await page.waitForTimeout(350);
-    const searched = await fillVisiblePromptSearch(page, search);
-    if (!searched) await page.keyboard?.type?.(search, { delay: 20 }).catch(() => null);
-    if (spec.kind === 'country_phone_code') {
-      await page.keyboard?.press?.('Meta+A').catch(() => null);
-      await page.keyboard?.type?.('United States', { delay: 20 }).catch(() => null);
-    }
-    await page.waitForTimeout(350);
+  if (!spec) return empty;
 
-    if (spec.kind === 'referral_linkedin') {
-      const nestedApplied = await applyLinkedInReferralPromptPath(page, mapping, resolved, spec);
-      if (nestedApplied) return true;
-    }
+  const protectedPrompt = isProtectedKnownPromptSpec(spec);
+  let openedAny = false;
+  let lastDetails = null;
 
-    if (spec.kind === 'country_phone_code') {
-      const selected = await selectVisiblePromptOptionByPatterns(page, [
-        /^United States(?: of America)?\s*\(\+1\)$/i,
-        /^United States$/i,
-        /United States/i,
-      ]);
-      if (selected) {
-        await page.waitForTimeout(350);
-        await closeOpenPromptMenus(page);
-        if (await promptMappingCommitted(page, mapping, resolved, spec, 'United States (+1)')) return true;
-      }
-    } else if (spec.kind === 'phone_device_type') {
-      const selected = await selectVisiblePromptOptionByPatterns(page, [
-        /^Mobile$/i,
-        /^Personal Mobile$/i,
-        /^Cell(?:ular)?$/i,
-      ]);
-      if (selected) {
-        await page.waitForTimeout(350);
-        await closeOpenPromptMenus(page);
-        if (await promptMappingCommitted(page, mapping, resolved, spec, 'Mobile')) return true;
-      }
-    }
-
-    let optionIndex = -1;
-    if (spec.kind === 'country_phone_code') {
-      optionIndex = await visibleOptionIndexByPattern(page, /united states/i);
-    } else if (spec.kind === 'phone_device_type') {
-      optionIndex = await visibleOptionIndexByPattern(page, /^(mobile|personal mobile|cell|cellular)$/i);
-    } else {
-      optionIndex = await visibleExactComboboxOptionIndex(page, 'LinkedIn');
-    }
-    if (optionIndex < 0 && spec.kind === 'referral_linkedin') {
-      optionIndex = await visibleComboboxOptionIndex(page, {
-        fieldLabel: 'How Did You Hear About Us?',
-        mappingKey: 'referral_source',
-        resolved: 'LinkedIn',
-        strategy: 'match_value',
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (const search of spec.searches) {
+      await closeOpenPromptMenus(page);
+      const prompt = await clickPromptControlNearLabel(page, spec.labelPattern, {
+        allowPhoneContext: spec.kind === 'country_phone_code' || spec.kind === 'phone_device_type',
       });
-    }
-    if (optionIndex < 0) continue;
+      if (!prompt?.opened) continue;
+      openedAny = true;
+      await page.waitForTimeout(300);
 
-    const option = page.locator(OPTION_SELECTOR).nth(optionIndex);
-    if (!await option.count().catch(() => 0)) continue;
-    let optionText = clean(await option.textContent().catch(() => ''));
-    if (spec.kind === 'country_phone_code' && !/united states/i.test(optionText)) continue;
-    if (spec.kind === 'phone_device_type' && !/mobile|cell|cellular/i.test(optionText)) continue;
-    await clickOptionRowCenter(page, option);
-    await page.waitForTimeout(350);
+      const searched = await fillActivePromptSearch(page, prompt, search);
+      if (!searched && !protectedPrompt) await fillVisiblePromptSearch(page, search);
+      await page.waitForTimeout(300);
 
-    if (spec.kind === 'referral_linkedin' && /social network|social media/i.test(optionText)) {
-      const childIndex = await findNestedLinkedInOption(page, option);
-      if (childIndex >= 0) {
-        const child = page.locator(OPTION_SELECTOR).nth(childIndex);
-        const childText = clean(await child.textContent().catch(() => ''));
-        await clickOptionRowCenter(page, child);
-        optionText = [optionText, childText].filter(Boolean).join(' > ');
-        await page.waitForTimeout(350);
+      if (spec.kind === 'referral_linkedin') {
+        const nestedApplied = await applyLinkedInReferralPromptPath(page, mapping, resolved, spec);
+        if (nestedApplied) {
+          return {
+            applied: true,
+            attempted: true,
+            field: promptReportField(spec, mapping),
+            reason: 'known_prompt_mapping',
+          };
+        }
+      }
+
+      const selected = await selectActivePromptOption(page, prompt, spec);
+      lastDetails = selected;
+      if (selected?.selectedText) {
+        await page.waitForTimeout(450);
+        if (await promptMappingCommitted(page, mapping, resolved, spec, selected.selectedText)) {
+          return {
+            applied: true,
+            attempted: true,
+            field: promptReportField(spec, mapping),
+            reason: 'known_prompt_mapping',
+          };
+        }
+      }
+
+      if (!protectedPrompt && spec.kind === 'referral_linkedin') {
+        const optionIndex = await visibleExactComboboxOptionIndex(page, 'LinkedIn');
+        if (optionIndex >= 0) {
+          const option = page.locator(OPTION_SELECTOR).nth(optionIndex);
+          if (await option.count().catch(() => 0)) {
+            const optionText = clean(await option.textContent().catch(() => ''));
+            await clickOptionRowCenter(page, option);
+            await page.waitForTimeout(350);
+            if (await promptMappingCommitted(page, mapping, resolved, spec, optionText)) {
+              return {
+                applied: true,
+                attempted: true,
+                field: promptReportField(spec, mapping),
+                reason: 'known_prompt_mapping',
+              };
+            }
+          }
+        }
       }
     }
-
-    await closeOpenPromptMenus(page);
-    if (await promptMappingCommitted(page, mapping, resolved, spec, optionText)) return true;
   }
+
   await closeOpenPromptMenus(page);
+  if (protectedPrompt && openedAny) {
+    const screenshotPath = await captureProtectedPromptDiagnostics(page, mapping, resolved, spec, lastDetails);
+    return {
+      applied: false,
+      attempted: true,
+      diagnosticScreenshotPath: screenshotPath,
+      field: promptReportField(spec, mapping),
+      reason: 'protected_prompt_commit_failed',
+      terminalFailure: true,
+    };
+  }
+
+  return { ...empty, attempted: openedAny };
+}
+
+function isProtectedKnownPromptSpec(spec = {}) {
+  return ['state_texas', 'country_phone_code', 'phone_device_type'].includes(spec.kind);
+}
+
+function promptReportField(spec = {}, mapping = {}) {
+  if (spec.kind === 'state_texas') return 'State';
+  if (spec.kind === 'country_phone_code') return 'Country Phone Code';
+  if (spec.kind === 'phone_device_type') return 'Phone Device Type';
+  if (/referral/i.test(spec.kind || mapping.key || '')) return 'How Did You Hear About Us?';
+  return clean(mapping.key);
+}
+
+function promptEvidenceMatches(spec = {}, evidence = '') {
+  const raw = clean(evidence);
+  const text = normalized(raw);
+  if (!text) return false;
+
+  if (spec.kind === 'state_texas') {
+    return /\b(texas|tx)\b/.test(text) && !/\balabama\b/.test(text);
+  }
+
+  if (spec.kind === 'country_phone_code') {
+    return /\bunited states(?: of america)?\b/.test(text)
+      && (/\+1|\(\+1\)/.test(raw) || /\bunited states(?: of america)? 1\b/.test(text) || /\b1 item selected\b/.test(text))
+      && !/\balbania\b/.test(text);
+  }
+
+  if (spec.kind === 'phone_device_type') {
+    return /\b(mobile|personal mobile|cell|cellular)\b/.test(text)
+      && !/\b(landline|home phone|work phone)\b/.test(text);
+  }
+
+  if (spec.kind === 'referral_internet_search') {
+    return /\b(internet search|online search|search engine|internet)\b/.test(text)
+      && !/\b(linkedin|social network|social media)\b/.test(text);
+  }
+
+  if (spec.kind === 'referral_linkedin') {
+    return /\blinkedin\b/.test(text)
+      || (/\b(social network|social media)\b/.test(text)
+        && !/\b(campus|corporate website|directemployers|job board|recruiting event|required|0 items selected)\b/.test(text));
+  }
+
   return false;
+}
+
+async function fillActivePromptSearch(page, prompt = {}, value = '') {
+  if (!page?.evaluate || !page?.keyboard) return false;
+  const focused = await page.evaluate(({ promptMeta, searchText }) => {
+    const normalize = (item) => String(item || '').replace(/\s+/g, ' ').trim();
+    const visible = (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const activeControl = promptMeta.activePromptId
+      ? document.querySelector(`[data-career-os-active-prompt-id="${CSS.escape(promptMeta.activePromptId)}"]`)
+      : promptMeta.controlId
+        ? document.getElementById(promptMeta.controlId)
+        : document.querySelector('[data-career-os-active-prompt-id]');
+    const controlledIds = String(`${promptMeta.ariaControls || ''} ${promptMeta.ariaOwns || ''}`)
+      .split(/\s+/)
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const controlRect = activeControl instanceof HTMLElement ? activeControl.getBoundingClientRect() : null;
+    const containers = Array.from(document.querySelectorAll('[role="listbox"], [role="menu"], [role="dialog"], [data-automation-id*="prompt" i], [data-automation-id*="popup" i], [data-automation-id*="menu" i], ul, div'))
+      .filter((node) => node instanceof HTMLElement && visible(node))
+      .map((node) => {
+        const rect = node.getBoundingClientRect();
+        let score = 0;
+        if (node.id && controlledIds.includes(node.id)) score += 10000;
+        if (node.querySelector('[role="option"], [data-automation-id*="promptOption" i], [data-automation-id*="prompt-option" i]')) score += 500;
+        if (controlRect) score -= Math.abs(rect.top - controlRect.bottom) + Math.abs(rect.left - controlRect.left) / 4;
+        return { node, score, text: normalize(node.textContent || '') };
+      })
+      .filter((entry) => /search/i.test(entry.text) || entry.node.querySelector('input'))
+      .sort((left, right) => right.score - left.score);
+    for (const { node } of containers) {
+      const input = Array.from(node.querySelectorAll('input, [role="searchbox"], textarea'))
+        .find((candidate) => candidate instanceof HTMLElement && visible(candidate));
+      if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) continue;
+      input.focus();
+      input.value = '';
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: '' }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.setAttribute('data-career-os-active-search', 'true');
+      return Boolean(searchText);
+    }
+    return false;
+  }, { promptMeta: prompt, searchText: clean(value) }).catch(() => false);
+  if (!focused) return false;
+  await page.keyboard.press('Meta+A').catch(() => null);
+  await page.keyboard.press('Backspace').catch(() => null);
+  await page.keyboard.type(clean(value), { delay: 20 }).catch(() => null);
+  return true;
+}
+
+async function selectActivePromptOption(page, prompt = {}, spec = {}) {
+  if (!page?.evaluate) return { selectedText: '', visibleOptions: [] };
+  return page.evaluate(({ kind, promptMeta }) => {
+    const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const cleanText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const visible = (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const activeControl = promptMeta.activePromptId
+      ? document.querySelector(`[data-career-os-active-prompt-id="${CSS.escape(promptMeta.activePromptId)}"]`)
+      : promptMeta.controlId
+        ? document.getElementById(promptMeta.controlId)
+        : document.querySelector('[data-career-os-active-prompt-id]');
+    const controlId = promptMeta.controlId || activeControl?.id || '';
+    const controlRect = activeControl instanceof HTMLElement ? activeControl.getBoundingClientRect() : null;
+    const controlledIds = new Set(String(`${promptMeta.ariaControls || ''} ${promptMeta.ariaOwns || ''}`)
+      .split(/\s+/)
+      .map((id) => id.trim())
+      .filter(Boolean));
+    const rowFor = (element) => {
+      let best = element;
+      let current = element;
+      const targetText = cleanText(element.textContent || '');
+      for (let depth = 0; current && depth < 5; depth += 1, current = current.parentElement) {
+        if (!(current instanceof HTMLElement)) continue;
+        const rect = current.getBoundingClientRect();
+        const text = cleanText(current.textContent || '');
+        if (targetText && !text.includes(targetText)) continue;
+        if (rect.width >= 80 && rect.height >= 14 && rect.height <= 90) best = current;
+      }
+      return best;
+    };
+    const menuFor = (element) => element.closest('[role="listbox"], [role="menu"], [role="dialog"], [data-automation-id*="prompt" i], [data-automation-id*="popup" i], [data-automation-id*="menu" i], ul');
+    const clickElement = (element) => {
+      element.scrollIntoView({ block: 'center', inline: 'nearest' });
+      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      element.click();
+    };
+    const optionMatches = (text, raw) => {
+      if (!text) return false;
+      if (kind === 'state_texas') return (text === 'texas' || text === 'tx') && !/\balabama\b/.test(text);
+      if (kind === 'country_phone_code') {
+        return /\bunited states(?: of america)?\b/.test(text)
+          && (/\+1|\(\+1\)/.test(raw) || /\bunited states(?: of america)? 1\b/.test(text))
+          && !/\balbania\b/.test(text);
+      }
+      if (kind === 'phone_device_type') return /^(mobile|personal mobile|cell|cellular)$/.test(text) && !/\blandline\b/.test(text);
+      if (kind === 'referral_internet_search') {
+        return /^(internet search|online search|search engine|internet)$/.test(text)
+          && !/\b(linkedin|social network|social media)\b/.test(text);
+      }
+      if (kind === 'referral_linkedin') return text === 'linkedin';
+      return false;
+    };
+    const rawOptions = Array.from(document.querySelectorAll('[role="option"], [data-automation-id*="promptOption" i], [data-automation-id*="prompt-option" i], li[role="option"], [role="menuitem"]'))
+      .filter((element) => element instanceof HTMLElement && visible(element));
+    const candidates = rawOptions.map((option) => {
+      const row = rowFor(option);
+      const menu = menuFor(option);
+      const raw = cleanText(option.textContent || row.textContent || '');
+      const text = normalize(raw);
+      const rect = row.getBoundingClientRect();
+      const owner = option.getAttribute('data-owner') || row.getAttribute('data-owner') || '';
+      if (controlId && owner && owner !== controlId) return null;
+      let score = 0;
+      if (controlId && owner === controlId) score += 10000;
+      if (menu?.id && controlledIds.has(menu.id)) score += 9000;
+      if (option.id && controlledIds.has(option.id)) score += 8000;
+      if (controlRect) {
+        const verticalGap = Math.max(0, rect.top - controlRect.bottom);
+        score += Math.max(0, 2000 - verticalGap - Math.abs(rect.left - controlRect.left) / 4);
+      }
+      const menuRole = String(menu?.getAttribute('role') || '').toLowerCase();
+      if (menuRole === 'listbox' || menuRole === 'menu') score += 500;
+      return { node: option, raw, row, score, text };
+    })
+      .filter(Boolean)
+      .filter((entry) => entry.raw && entry.raw.length <= 160)
+      .sort((left, right) => right.score - left.score || left.raw.length - right.raw.length);
+    const visibleOptions = candidates.slice(0, 25).map((entry) => entry.raw);
+    const selected = candidates.find((entry) => optionMatches(entry.text, entry.raw));
+    if (!selected) return { selectedText: '', visibleOptions };
+    clickElement(selected.node);
+    return { selectedText: selected.raw, visibleOptions };
+  }, { kind: spec.kind, promptMeta: prompt }).catch(() => ({ selectedText: '', visibleOptions: [] }));
+}
+
+async function captureProtectedPromptDiagnostics(page, mapping = {}, resolved = '', spec = {}, details = null) {
+  const screenshotPath = `.career-os-browser-worker/screenshots/workday-protected-prompt-${clean(mapping.key).replace(/[^a-z0-9_-]+/gi, '-')}-${Date.now()}.png`;
+  await page.screenshot?.({ fullPage: true, path: screenshotPath }).catch(() => null);
+  const diagnostics = await page.evaluate(() => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const visible = (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    return Array.from(document.querySelectorAll('[role="listbox"], [role="menu"], [role="option"], [data-automation-id*="prompt" i]'))
+      .filter((node) => node instanceof HTMLElement && visible(node))
+      .slice(0, 20)
+      .map((node) => ({
+        role: node.getAttribute('role') || '',
+        text: normalize(node.textContent || '').slice(0, 300),
+      }));
+  }).catch(() => []);
+  console.error('[workday] protected prompt commit failed', JSON.stringify({
+    field: promptReportField(spec, mapping),
+    key: clean(mapping.key),
+    requested: clean(resolved),
+    screenshotPath,
+    visibleOptions: details?.visibleOptions || [],
+    diagnostics,
+  }));
+  return screenshotPath;
 }
 
 function knownPromptSpec(mapping = {}, resolved = '') {
   const key = normalized(mapping.key);
   const target = normalized(resolved);
+  if (/referral source|how did you hear/.test(key) && target === 'internet search') {
+    return {
+      kind: 'referral_internet_search',
+      labelPattern: /how did you hear about us|how did you hear about|how did you learn about|referral source/i,
+      searches: ['Internet Search', 'Online Search', 'Search Engine', 'Internet'],
+    };
+  }
   if (/referral source|how did you hear/.test(key) && /linkedin/.test(target)) {
     return {
       kind: 'referral_linkedin',
       labelPattern: /how did you hear about us/i,
       searches: ['LinkedIn', 'Social Network', 'Social Media'],
+    };
+  }
+  if (/^(state|province|state province)$/.test(key) && /^(texas|tx)$/.test(target)) {
+    return {
+      kind: 'state_texas',
+      labelPattern: /^state\b|^province\b/i,
+      searches: ['Texas'],
     };
   }
   if (/country phone code|phone code/.test(key)) {
@@ -700,7 +1118,7 @@ async function clickPromptControlNearLabel(page, labelPattern, options = {}) {
         if (verticalGap < -30 || verticalGap > 180) continue;
         if (horizontalGap > Math.max(260, label.width + 180)) continue;
         const score = 250000 - (verticalGap * 100) - horizontalGap - Math.abs(controlRect.width - Math.max(label.width, controlRect.width));
-        candidates.push({ control, score });
+        candidates.push({ control, labelText: label.text, score });
       }
       let current = control.parentElement;
       for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
@@ -714,18 +1132,41 @@ async function clickPromptControlNearLabel(page, labelPattern, options = {}) {
         let score = 100000 - area - labelDistance;
         if (/how did you hear about us/i.test(text)) score += 50000;
         if (/0 items selected/.test(normalize(control.textContent || ''))) score += 1000;
-        candidates.push({ control, score });
+        candidates.push({ control, labelText: text, score });
         break;
       }
     }
     candidates.sort((left, right) => right.score - left.score);
     const selected = candidates[0]?.control;
-    if (!(selected instanceof HTMLElement)) return false;
+    if (!(selected instanceof HTMLElement)) return { opened: false };
+    for (const node of Array.from(document.querySelectorAll('[data-career-os-active-prompt-id]'))) {
+      node.removeAttribute('data-career-os-active-prompt-id');
+    }
+    if (!selected.id) selected.id = `career-os-prompt-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+    if (selected.tagName.toLowerCase() === 'select') {
+      return {
+        controlId: selected.id,
+        nativeSelect: true,
+        opened: false,
+      };
+    }
+    const activePromptId = `prompt-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+    selected.setAttribute('data-career-os-active-prompt-id', activePromptId);
+    const labelText = candidates[0]?.labelText || '';
+    const ariaControls = selected.getAttribute('aria-controls') || '';
+    const ariaOwns = selected.getAttribute('aria-owns') || '';
     selected.scrollIntoView({ block: 'center', inline: 'nearest' });
     selected.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
     selected.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
     selected.click();
-    return true;
+    return {
+      activePromptId,
+      ariaControls,
+      ariaOwns,
+      controlId: selected.id,
+      labelText,
+      opened: true,
+    };
   }, { allowPhoneContext: options.allowPhoneContext === true, source: labelPattern.source }).catch(() => false);
 }
 
@@ -961,30 +1402,25 @@ async function visibleOptionIndexByPattern(page, pattern) {
 }
 
 async function promptMappingCommitted(page, mapping, resolved, spec, selectedText = '') {
-  await closeOpenPromptMenus(page);
-  await page.waitForTimeout?.(250).catch(() => null);
+  await page.waitForTimeout?.(350).catch(() => null);
   const refreshedFields = await scanVisibleFields(page).catch(() => []);
-  const field = refreshedFields.find((candidate) => (mapping.matchers || []).some((matcher) => matchesField(candidate, matcher)));
+  const field = refreshedFields.find((candidate) => (mapping.matchers || []).some((matcher) => matchesField(candidate, matcher))
+    && fieldMatchesMappingRoute(candidate, mapping));
   if (field && fieldAlreadyHasResolvedValue(field, mapping, resolved)) return true;
 
   const promptText = await selectedPromptValueNearLabel(page, spec.labelPattern);
+  const evidence = `${field?.currentValue || ''} ${promptText}`;
+  if (['state_texas', 'country_phone_code', 'phone_device_type', 'referral_internet_search', 'referral_linkedin'].includes(spec.kind)) {
+    return promptEvidenceMatches(spec, evidence);
+  }
   if (spec.kind === 'country_phone_code') {
-    if (field?.currentValue) return /united states/i.test(field.currentValue);
-    return /united states/i.test(promptText);
+    return promptEvidenceMatches(spec, evidence);
   }
   if (spec.kind === 'phone_device_type') {
-    if (field?.currentValue) {
-      return /mobile|cell|cellular/i.test(field.currentValue)
-        && !/landline/i.test(field.currentValue);
-    }
-    return /mobile|cell|cellular/i.test(promptText) && !/landline/i.test(promptText);
+    return promptEvidenceMatches(spec, evidence);
   }
   if (spec.kind === 'referral_linkedin') {
-    const evidence = `${promptText} ${field?.currentValue || ''}`;
-    return /linkedin/i.test(evidence)
-      || (/social network|social media/i.test(evidence)
-        && !/0 items selected|required/i.test(evidence)
-        && !/campus corporate website directemployers job board recruiting event/i.test(evidence));
+    return promptEvidenceMatches(spec, evidence);
   }
   return Boolean(selectedText && field);
 }
@@ -1391,11 +1827,15 @@ function optionMatchesResolved(optionText, target, context = '') {
     if (target === 'tx' && /\btexas\b/.test(option)) return true;
   }
   if (/referral source|how did you hear/.test(context) && /linkedin/.test(target) && /social network|social media|linkedin/.test(option)) return true;
+  if (/referral source|how did you hear/.test(context) && target === 'internet search') {
+    return /^(internet search|online search|search engine|internet)$/.test(option)
+      && !/linkedin|social network|social media/.test(option);
+  }
   if (context.includes('country phone code') || context.includes('phone code')) {
     const wantsUs = ['1', 'us', 'usa', 'united states', 'united states of america'].includes(target)
       || target.includes('united states')
       || /\b(?:us|usa|1)\b/.test(target);
-    if (wantsUs && (option.includes('united states') || option === 'us' || option === 'usa' || option === '1')) return true;
+    if (wantsUs && /\bunited states(?: of america)?\b/.test(option) && /\b1\b/.test(option) && !/\balbania\b/.test(option)) return true;
   }
   if (context.includes('phone device type') && target === 'mobile' && /mobile|cell|cellular/.test(option)) return true;
   if (context.includes('degree')) {
@@ -1434,7 +1874,8 @@ export async function applyFieldMappings(page, mappings, context) {
   for (const mapping of mappings) {
     await closeOpenPromptMenus(page);
     const matchers = mapping.matchers || [];
-    const matchingFields = fields.filter((candidate) => matchers.some((matcher) => matchesField(candidate, matcher)));
+    const matchingFields = fields.filter((candidate) => matchers.some((matcher) => matchesField(candidate, matcher))
+      && fieldMatchesMappingRoute(candidate, mapping));
     const field = matchingFields.find((candidate) => fieldCompatibleWithMapping(candidate, mapping)) || matchingFields[0];
     const resolved = resolveMappingValue(mapping, context, field);
     if (resolved === undefined || resolved === null || clean(resolved) === '') {
@@ -1448,17 +1889,29 @@ export async function applyFieldMappings(page, mappings, context) {
       continue;
     }
 
-    const knownPromptApplied = await applyKnownPromptMapping(page, mapping, resolved);
-    if (knownPromptApplied) {
+    const knownPromptResult = await applyKnownPromptMapping(page, mapping, resolved);
+    if (knownPromptResult.applied) {
       results.push({
         key: mapping.key,
         matched: true,
         applied: true,
-        field: 'How Did You Hear About Us?',
-        reason: 'known_prompt_mapping',
+        field: knownPromptResult.field || field?.label || field?.id || promptReportField(knownPromptSpec(mapping, resolved), mapping),
+        reason: knownPromptResult.reason || 'known_prompt_mapping',
         value: clean(resolved),
       });
       continue;
+    }
+    if (knownPromptResult.terminalFailure) {
+      results.push({
+        key: mapping.key,
+        matched: true,
+        applied: false,
+        diagnosticScreenshotPath: knownPromptResult.diagnosticScreenshotPath,
+        field: knownPromptResult.field || field?.label || field?.id || promptReportField(knownPromptSpec(mapping, resolved), mapping),
+        reason: knownPromptResult.reason || 'protected_prompt_commit_failed',
+        value: clean(resolved),
+      });
+      return results;
     }
 
     if (!field) {
@@ -1519,6 +1972,13 @@ function fieldAlreadyHasResolvedValue(field = {}, mapping = {}, resolved = '') {
   const target = normalized(resolved);
   if (!current || !target || ['__first_available__', '__decline__'].includes(clean(resolved))) return false;
   const context = optionMatchContext(field, mapping);
+  const spec = knownPromptSpec(mapping, resolved);
+  if (spec && ['state_texas', 'country_phone_code', 'phone_device_type', 'referral_internet_search', 'referral_linkedin'].includes(spec.kind)) {
+    return promptEvidenceMatches(spec, field.currentValue);
+  }
+  if (normalized(mapping.key) === 'phone_number') {
+    return current === digitsOnly(target) || current === target || digitsOnly(current) === digitsOnly(target);
+  }
   return optionMatchesResolved(current, target, context) || current.includes(target);
 }
 

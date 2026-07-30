@@ -199,6 +199,12 @@ export function buildWorkdayQuestionMappings(task, overrides = {}) {
       valueFrom: 'candidate.lastName',
     },
     {
+      key: 'address_line_1',
+      kind: 'text',
+      matchers: [/address line 1/i, /^address 1$/i, /street address/i],
+      value: homeAddress(task),
+    },
+    {
       key: 'city',
       kind: 'text',
       matchers: [/^city/i],

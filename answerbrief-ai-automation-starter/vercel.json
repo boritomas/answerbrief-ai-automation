@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/career-os/daily-run",
-      "schedule": "0 12 * * *"
+      "schedule": "0 13 * * *"
     }
   ]
 }

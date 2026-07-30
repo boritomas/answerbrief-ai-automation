@@ -1,0 +1,10 @@
+{
+  "scenarioName": "review_submit",
+  "expectedWorkdayState": "REVIEW",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "expectedRequiredFields": [],
+  "expectedSubmitControlState": "VISIBLE_ENABLED",
+  "notes": ["Synthetic final review page. The submit control is located but never clicked."]
+}

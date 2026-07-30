@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Workday Fixture - Sensitive Fields</title>
+  </head>
+  <body>
+    <main data-workday-state="VOLUNTARY_DISCLOSURES" data-fixture-scenario="sensitive_fields">
+      <h1>Voluntary Disclosures</h1>
+      <section data-section="voluntary_disclosures">
+        <input data-ats-field id="privacy" name="privacy" type="checkbox" data-label="I agree to the privacy policy" required data-section="legal" data-canonical="legal_consent" data-sensitive="legal">
+        <input data-ats-field id="background" name="background" type="checkbox" data-label="I authorize a background check" required data-section="legal" data-canonical="background_check" data-sensitive="legal">
+        <input data-ats-field id="arbitration" name="arbitration" type="checkbox" data-label="I agree to arbitration" required data-section="legal" data-canonical="arbitration" data-sensitive="legal">
+        <select data-ats-field id="gender" name="gender" data-label="Gender" data-section="demographics" data-canonical="gender" data-sensitive="demographic">
+          <option value="">Select one</option>
+          <option value="Decline to answer">Decline to answer</option>
+        </select>
+        <select data-ats-field id="disability" name="disability" data-label="Disability status" data-section="demographics" data-canonical="disability" data-sensitive="disability">
+          <option value="">Select one</option>
+          <option value="Decline to answer">Decline to answer</option>
+        </select>
+        <select data-ats-field id="veteran" name="veteran" data-label="Veteran status" data-section="demographics" data-canonical="veteran" data-sensitive="veteran">
+          <option value="">Select one</option>
+          <option value="Decline to answer">Decline to answer</option>
+        </select>
+        <select data-ats-field id="conflict" name="conflict" data-label="Conflict of interest disclosure" required data-section="application_questions" data-canonical="conflict_disclosure" data-sensitive="conflict_disclosure" data-user-decision="required">
+          <option value="">Select one</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </section>
+    </main>
+  </body>
+</html>

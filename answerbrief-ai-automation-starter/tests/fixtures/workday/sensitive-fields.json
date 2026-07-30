@@ -1,0 +1,11 @@
+{
+  "scenarioName": "sensitive_fields",
+  "expectedWorkdayState": "VOLUNTARY_DISCLOSURES",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "expectedRequiredFields": ["I agree to the privacy policy", "I authorize a background check", "I agree to arbitration", "Conflict of interest disclosure"],
+  "expectedUserGates": ["LEGAL_CONSENT_REQUIRED", "BACKGROUND_CHECK_CONSENT_REQUIRED", "ARBITRATION_CONSENT_REQUIRED", "DEMOGRAPHIC_DECISION_REQUIRED", "DISABILITY_SELF_ID_REQUIRED", "VETERAN_SELF_ID_REQUIRED", "CONFLICT_DISCLOSURE_REQUIRED"],
+  "expectedFailureClassification": "SENSITIVE_FIELD_REQUIRES_USER",
+  "notes": ["Synthetic sensitive field page. Self-identification and consent fields remain user-controlled."]
+}

@@ -1,0 +1,11 @@
+{
+  "scenarioName": "create_account_gate",
+  "expectedWorkdayState": "CREATE_ACCOUNT",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "authenticationRequired": true,
+  "expectedUserGates": ["ACCOUNT_CREATION_REQUIRED"],
+  "expectedFailureClassification": "ACCOUNT_GATE",
+  "notes": ["Synthetic account creation gate. No account is created."]
+}

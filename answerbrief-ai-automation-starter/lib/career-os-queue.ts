@@ -460,8 +460,11 @@ export function canonicalQueueState(application: JsonRecord): QueueState {
   if (lifecycleStage === 'browser_worker_running' || stringValue(browserWorker.status).toLowerCase() === 'running') return 'running';
   if (hasAny(text, ['submitted'])) return 'submitted';
   if (hasAny(text, ['duplicate'])) return 'duplicate';
+  if (hasAny(text, ['deferred_phase_two_greenhouse'])) return 'ineligible';
+  if (hasAny(text, ['quality_hold', 'hold_for_quality'])) return 'ineligible';
   if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable', 'no longer available', 'generic careers listing'])) return 'inactive';
   if (hasAny(text, ['ineligible'])) return 'ineligible';
+  if (isWorkdayAuthorizedAccountGate(application)) return 'queued';
   if (hasAny(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
   if (hasAny(text, ['failed', 'error'])) return 'failed';
   if (hasAny(text, ['running'])) return 'running';
@@ -552,6 +555,7 @@ function humanOrTechnicalBlocker(application: JsonRecord) {
   if (hasAny(text, ['geico', 'acknowledgement', 'acknowledgment']) && hasAny(text, ['account', 'workday', 'login', 'sign in', 'sign into'])) {
     return 'Tomas must create or sign in to the GEICO Workday account and review the required acknowledgement before automation can continue.';
   }
+  if (isWorkdayAuthorizedAccountGate(application)) return '';
   if (hasAny(text, ['account', 'workday', 'login', 'sign in', 'sign into', 'acknowledgement', 'acknowledgment'])) return 'Tomas must create or open the employer account, then resume automation.';
   if (!hasResolvedLegalApproval(application) && hasAny(text, ['privacy', 'legal', 'terms', 'attestation', 'nda', 'ai policy', 'policy'])) return 'Tomas must review and approve the exact legal, privacy, AI, NDA, or attestation text.';
   if (hasAny(text, ['captcha', 'mfa', 'identity', 'security code'])) return 'Tomas must complete the security or identity step in the employer session.';
@@ -568,6 +572,58 @@ function hasResolvedLegalApproval(application: JsonRecord) {
     || stringValue(approval.approved_at)
     || raw.tomas_answer_saved === true
   );
+}
+
+function isWorkdayAuthorizedAccountGate(application: JsonRecord) {
+  if (!isWorkdayApplication(application)) return false;
+  const text = applicationText(application);
+  if (!hasAny(text, [
+    'account',
+    'create account',
+    'create or open the employer account',
+    'login',
+    'log in',
+    'sign in',
+    'sign into',
+    'waiting_for_account_creation',
+    'waiting_for_sign_in',
+    'workday requires tomas to create or open an employer account',
+    'workday requires tomas to sign in',
+  ])) return false;
+  if (hasAny(text, [
+    'captcha',
+    'email code',
+    'email verification',
+    'identity',
+    'mfa',
+    'otp',
+    'password rejected',
+    'password reset',
+    'security code',
+    'verification code',
+    'wrong email address or password',
+    'wrong password',
+    'account is locked',
+    'account locked',
+    'locked out',
+  ])) return false;
+  if (hasAny(text, ['geico', 'acknowledgement', 'acknowledgment'])) return false;
+  return true;
+}
+
+function isWorkdayApplication(application: JsonRecord) {
+  const raw = asRecord(application.raw_record);
+  const text = [
+    application.employer,
+    application.position,
+    raw.platform,
+    raw.ats_platform,
+    raw.application_url,
+    raw.canonical_url,
+    raw.job_url,
+    externalApplicationHref(application),
+  ].map(stringValue).join(' ').toLowerCase();
+  return hasAny(text, ['workday', 'myworkdayjobs.com', '.wd1.', '.wd3.', '.wd5.', '.wd12.']);
 }
 
 function recoverableLegacyAdapterState(application: JsonRecord): QueueState | null {

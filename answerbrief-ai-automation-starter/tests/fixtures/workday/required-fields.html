@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Workday Fixture - Required Fields</title>
+  </head>
+  <body>
+    <main data-workday-state="PERSONAL_INFORMATION" data-fixture-scenario="required_fields">
+      <h1>Personal Information</h1>
+      <section data-section="personal_information">
+        <input data-ats-field id="firstName" name="firstName" data-label="Legal First Name" required data-section="personal_information" data-canonical="first_name">
+        <input data-ats-field id="lastName" name="lastName" data-label="Legal Last Name" required data-section="personal_information" data-canonical="last_name">
+        <input data-ats-field id="email" name="email" type="email" data-label="Email Address" required data-section="personal_information" data-canonical="email">
+        <input data-ats-field id="phone" name="phone" type="tel" data-label="Phone Number" required data-section="personal_information" data-canonical="phone">
+        <input data-ats-field id="city" name="city" data-label="City" required data-section="personal_information" data-canonical="city">
+        <select data-ats-field id="state" name="state" data-label="State or Province" required data-section="personal_information" data-canonical="state">
+          <option value="">Select one</option>
+          <option value="TX">Texas</option>
+          <option value="CA">California</option>
+        </select>
+        <input data-ats-field id="postalCode" name="postalCode" data-label="Postal Code" required data-section="personal_information" data-canonical="postal_code">
+        <input data-ats-field id="source" name="source" data-label="Source Tracking" data-visible="false" data-section="system" value="fixture">
+      </section>
+    </main>
+  </body>
+</html>

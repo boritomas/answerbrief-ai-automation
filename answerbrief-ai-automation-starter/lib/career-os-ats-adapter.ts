@@ -38,3 +38,24 @@ export interface ATSAdapter {
   matches(task: BrowserWorkerTask): boolean;
   execute(page: Page, task: BrowserWorkerTask, runtime: ATSAdapterRuntime): Promise<boolean>;
 }
+
+export type LegacyATSAdapter = ATSAdapter;
+
+export type {
+  AdapterPhaseResult,
+  AtsAdapter as NativeATSAdapter,
+  AtsAdapterCapabilities,
+  AtsAdapterMetadata,
+  AtsCanonicalState,
+  AtsDetectionInput,
+  AtsDetectionResult,
+  AtsExecutionContext,
+  AtsPlatform,
+  EvidenceBundle,
+  FailureClassification,
+  NormalizedAtsContext,
+  RetryPolicy,
+  UserGate,
+} from './ats/contracts';
+export { routeAtsApplication } from './ats/router';
+export { createLegacyAdapterBridge } from './ats/legacy-adapter-bridge';

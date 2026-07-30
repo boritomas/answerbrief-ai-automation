@@ -1,0 +1,9 @@
+{
+  "scenarioName": "confirmation",
+  "expectedWorkdayState": "CONFIRMATION",
+  "fixtureUrl": "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Dallas-TX/Product-Manager_JR123456?jobId=JR123456",
+  "tenant": "acme.wd5.myworkdayjobs.com:en-US/External",
+  "jobId": "JR123456",
+  "expectedRequiredFields": [],
+  "notes": ["Synthetic confirmation page for isolated classification. It is not proof of a real submission."]
+}

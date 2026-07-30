@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Workday Fixture - Validation Error</title>
+  </head>
+  <body>
+    <main data-workday-state="VALIDATION_ERROR" data-fixture-scenario="validation_error">
+      <h1>Personal Information</h1>
+      <div class="wd-validation-error">Validation error: Email is required.</div>
+      <section data-section="personal_information">
+        <input data-ats-field id="emailError" name="email" type="email" data-label="Email Address" required data-section="personal_information" data-canonical="email" data-validation-message="Email is required">
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,193 @@
+{
+  "profileId": "synthetic-workday-phase3",
+  "description": "Synthetic candidate profile for Workday fixture inspection tests. Contains no real personal data.",
+  "canonicalValues": [
+    {
+      "canonicalFieldKey": "first_name",
+      "value": "Alex",
+      "displayValue": "Alex",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized",
+      "sensitivityClassification": "standard",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "last_name",
+      "value": "Example",
+      "displayValue": "Example",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized",
+      "sensitivityClassification": "standard",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "email",
+      "value": "alex.fixture@example.invalid",
+      "displayValue": "alex.fixture@example.invalid",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized",
+      "sensitivityClassification": "contact",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "phone",
+      "value": "555-0100",
+      "displayValue": "555-0100",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized",
+      "sensitivityClassification": "contact",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "city",
+      "value": "Testville",
+      "displayValue": "Testville",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized",
+      "sensitivityClassification": "contact",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "state",
+      "value": "TX",
+      "displayValue": "TX",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized",
+      "sensitivityClassification": "contact",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "postal_code",
+      "value": "75001",
+      "displayValue": "75001",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized",
+      "sensitivityClassification": "contact",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "sponsorship_now",
+      "value": "No",
+      "displayValue": "No",
+      "source": "fixture_profile",
+      "confidence": 0.95,
+      "verified": true,
+      "authorizationStatus": "authorized_for_reuse",
+      "sensitivityClassification": "sponsorship",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "salary_expectation",
+      "value": "100000",
+      "displayValue": "100000",
+      "source": "fixture_profile",
+      "confidence": 0.95,
+      "verified": true,
+      "authorizationStatus": "authorization_required",
+      "sensitivityClassification": "salary",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "relocation",
+      "value": "Maybe",
+      "displayValue": "Maybe",
+      "source": "fixture_profile",
+      "confidence": 0.95,
+      "verified": true,
+      "authorizationStatus": "user_decision_required",
+      "sensitivityClassification": "relocation",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "legal_consent",
+      "value": true,
+      "displayValue": "I agree",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized_for_reuse",
+      "sensitivityClassification": "legal",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "background_check",
+      "value": true,
+      "displayValue": "I authorize",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized_for_reuse",
+      "sensitivityClassification": "legal",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "arbitration",
+      "value": true,
+      "displayValue": "I agree",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized_for_reuse",
+      "sensitivityClassification": "legal",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "gender",
+      "value": "Decline to answer",
+      "displayValue": "Decline to answer",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized_for_application",
+      "sensitivityClassification": "demographic",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "disability",
+      "value": "Decline to answer",
+      "displayValue": "Decline to answer",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized_for_application",
+      "sensitivityClassification": "disability",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "veteran",
+      "value": "Decline to answer",
+      "displayValue": "Decline to answer",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "authorized_for_application",
+      "sensitivityClassification": "veteran",
+      "provenance": { "fixture": true }
+    },
+    {
+      "canonicalFieldKey": "conflict_disclosure",
+      "value": "No",
+      "displayValue": "No",
+      "source": "fixture_profile",
+      "confidence": 0.99,
+      "verified": true,
+      "authorizationStatus": "user_decision_required",
+      "sensitivityClassification": "conflict_disclosure",
+      "provenance": { "fixture": true }
+    }
+  ]
+}

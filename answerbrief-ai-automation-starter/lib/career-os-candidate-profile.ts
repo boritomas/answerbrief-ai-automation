@@ -22,6 +22,7 @@ export type CandidateProfile = {
   email?: string;
   employmentHistory: CandidateEmploymentRecord[];
   firstName?: string;
+  fullAddress?: string;
   lastName?: string;
   linkedin?: string;
   phone?: string;
@@ -33,6 +34,7 @@ export type CandidateProfile = {
   sponsorshipFuture?: string;
   sponsorshipNow?: string;
   stateOrProvince?: string;
+  streetAddress?: string;
   usWorkAuthorization?: boolean;
 };
 
@@ -69,6 +71,7 @@ export function buildCandidateProfile(verifiedProfileInput: unknown, profileInpu
     email: stringValue(contact.email),
     employmentHistory,
     firstName,
+    fullAddress: stringValue(contact.full_address || reusableAnswers.full_address),
     lastName,
     linkedin: stringValue(contact.linkedin || verifiedProfile.linkedin),
     phone: stringValue(contact.phone),
@@ -80,6 +83,7 @@ export function buildCandidateProfile(verifiedProfileInput: unknown, profileInpu
     sponsorshipFuture: stringValue(sponsorship.answer_label),
     sponsorshipNow: stringValue(sponsorship.answer_label),
     stateOrProvince: stringValue(reusableAnswers.state_or_province || contact.state || contact.state_or_province),
+    streetAddress: stringValue(contact.street_address || reusableAnswers.street_address),
     usWorkAuthorization: reusableAnswers.us_work_authorization === true,
   };
 }

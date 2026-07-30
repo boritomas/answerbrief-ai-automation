@@ -1,16 +1,24 @@
 import { applyFieldMappings } from './career-os-field-engine.mjs';
+import { createCareerOsAtsFacade } from './career-os-ats-integration.mjs';
+import {
+  createProductionBlockedReport,
+  createProductionDecisionQueueItem,
+  reportablePolicyDetails,
+  resolveProductionExecutionPolicy,
+} from './career-os-production-controls.mjs';
 import { buildGreenhouseQuestionMappings, buildWorkdayQuestionMappings } from './career-os-question-mappings.mjs';
+import { runWorkdayProductionFlow } from './career-os-workday-production.mjs';
 
 function clean(value) {
   return String(value || '').trim().replace(/^"|"$/g, '');
 }
 
 function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function cssEscape(value) {
-  return value.replace(/([ #;?%&,.+*~\\':"!^$[\]()=>|/@])/g, '\\$1');
+  return String(value || '').replace(/([ #;?%&,.+*~\\':"!^$[\]()=>|/@])/g, '\\$1');
 }
 
 function normalized(value) {
@@ -72,185 +80,29 @@ async function selectOptionByText(select, value) {
   return false;
 }
 
-function submitPatternSource(pattern) {
-  return pattern instanceof RegExp ? pattern.source : escapeRegExp(clean(pattern));
-}
-
-function submitPatternLabel(pattern) {
-  return pattern instanceof RegExp ? `/${pattern.source}/${pattern.flags}` : clean(pattern);
-}
-
-async function clickSubmitLocator(locator, selectorType, selectorValue, options = {}) {
-  const count = await locator.count().catch(() => 0);
-  if (!count) {
-    return {
-      clicked: false,
-      reason: `${selectorType} did not resolve to an element.`,
-    };
-  }
-
-  const visible = await locator.isVisible().catch(() => true);
-  const enabled = await locator.isEnabled().catch(() => true);
-  if (!visible || !enabled) {
-    return {
-      clicked: false,
-      reason: `${selectorType} matched "${selectorValue}", but it was not clickable.`,
-      selectorType,
-      selectorValue,
-    };
-  }
-
-  if (options.beforeClick) await options.beforeClick();
-  try {
-    await locator.click();
-    return {
-      clicked: true,
-      selectorType,
-      selectorValue: clean(selectorValue),
-    };
-  } catch (error) {
-    return {
-      clicked: false,
-      reason: `${selectorType} matched "${selectorValue}", but click failed: ${error.message}`,
-      selectorType,
-      selectorValue,
-    };
-  }
-}
-
-async function resolveSubmitInputByValue(context, pattern, selector = 'input[type="submit"]') {
-  const result = await context.locator(selector).evaluateAll((nodes, source) => {
-    const regex = new RegExp(source, 'i');
-    const isVisible = (node) => {
-      const style = typeof window !== 'undefined' && window.getComputedStyle
-        ? window.getComputedStyle(node)
-        : null;
-      if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
-      if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return false;
-      const rect = typeof node.getBoundingClientRect === 'function'
-        ? node.getBoundingClientRect()
-        : { width: 1, height: 1 };
-      return rect.width !== 0 || rect.height !== 0;
-    };
-    const isEnabled = (node) => !node.disabled
-      && !(node.getAttribute && node.getAttribute('disabled') !== null)
-      && !(node.getAttribute && node.getAttribute('aria-disabled') === 'true');
-
-    const index = nodes.findIndex((node) => {
-      const value = String((node.getAttribute && node.getAttribute('value')) || node.value || '');
-      return regex.test(value) && isVisible(node) && isEnabled(node);
-    });
-    if (index < 0) return null;
-    const node = nodes[index];
-    return {
-      index,
-      value: String((node.getAttribute && node.getAttribute('value')) || node.value || ''),
-    };
-  }, submitPatternSource(pattern)).catch(() => null);
-
-  if (!result || !Number.isFinite(Number(result.index))) return null;
-  return {
-    locator: context.locator(selector).nth(Number(result.index)),
-    selectorValue: result.value,
-  };
-}
-
-async function resolveSubmitRoleFallback(context, pattern) {
-  const selector = 'button:not([type="submit"]), input[type="button"], [role="button"]';
-  const result = await context.locator(selector).evaluateAll((nodes, source) => {
-    const regex = new RegExp(source, 'i');
-    const normalizedText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
-    const isVisible = (node) => {
-      const style = typeof window !== 'undefined' && window.getComputedStyle
-        ? window.getComputedStyle(node)
-        : null;
-      if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
-      if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return false;
-      const rect = typeof node.getBoundingClientRect === 'function'
-        ? node.getBoundingClientRect()
-        : { width: 1, height: 1 };
-      return rect.width !== 0 || rect.height !== 0;
-    };
-    const isEnabled = (node) => !node.disabled
-      && !(node.getAttribute && node.getAttribute('disabled') !== null)
-      && !(node.getAttribute && node.getAttribute('aria-disabled') === 'true');
-    const isSubmitCapable = (node, label) => {
-      const tagName = String(node.tagName || '').toLowerCase();
-      const type = String((node.getAttribute && node.getAttribute('type')) || '').toLowerCase();
-      const role = String((node.getAttribute && node.getAttribute('role')) || '').toLowerCase();
-      const hasSubmitIntent = /submit|apply|continue|next|review/i.test(label);
-      const hasFormRelationship = Boolean(node.closest && node.closest('form'))
-        || Boolean(node.getAttribute && node.getAttribute('form'));
-      return hasSubmitIntent && (
-        hasFormRelationship
-        || tagName === 'button'
-        || role === 'button'
-        || type === 'button'
-      );
-    };
-
-    const index = nodes.findIndex((node) => {
-      const label = normalizedText(
-        (node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('value') || node.getAttribute('title')))
-        || node.value
-        || node.textContent,
-      );
-      return regex.test(label) && isVisible(node) && isEnabled(node) && isSubmitCapable(node, label);
-    });
-    if (index < 0) return null;
-    const node = nodes[index];
-    return {
-      index,
-      value: normalizedText(
-        (node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('value') || node.getAttribute('title')))
-        || node.value
-        || node.textContent,
-      ),
-    };
-  }, submitPatternSource(pattern)).catch(() => null);
-
-  if (!result || !Number.isFinite(Number(result.index))) return null;
-  return {
-    locator: context.locator(selector).nth(Number(result.index)),
-    selectorValue: result.value,
-  };
-}
-
-export async function clickSubmitControl(context, patterns, options = {}) {
-  const failures = [];
-  for (const pattern of patterns) {
-    const button = context.locator('button[type="submit"]').filter({ hasText: pattern }).first();
-    if (await button.count().catch(() => 0)) {
-      const selectorValue = await button.textContent().catch(() => submitPatternLabel(pattern));
-      const result = await clickSubmitLocator(button, 'button[type=submit]', selectorValue, options);
-      if (result.clicked) return result;
-      failures.push(result.reason);
-    }
-
-    const input = await resolveSubmitInputByValue(context, pattern);
-    if (input) {
-      const result = await clickSubmitLocator(input.locator, 'input[type=submit]', input.selectorValue, options);
-      if (result.clicked) return result;
-      failures.push(result.reason);
-    }
-
-    const fallback = await resolveSubmitRoleFallback(context, pattern);
-    if (fallback) {
-      const result = await clickSubmitLocator(fallback.locator, 'role/button', fallback.selectorValue, options);
-      if (result.clicked) return result;
-      failures.push(result.reason);
-    }
-  }
-
-  return {
-    clicked: false,
-    reason: failures.find(Boolean) || `No submit control matched ${patterns.map(submitPatternLabel).join(', ')}.`,
-  };
-}
-
 async function clickButton(page, patterns, options = {}) {
-  const result = await clickSubmitControl(page, patterns, options);
-  return result.clicked;
+  for (const pattern of patterns) {
+    const button = page.locator('button, input[type="submit"], input[type="button"]').filter({ hasText: pattern }).first();
+    if (await button.count()) {
+      if (options.beforeClick) await options.beforeClick();
+      await button.click();
+      return true;
+    }
+    const input = page.locator('input[type="submit"], input[type="button"]').evaluateAll((nodes, source) => {
+      const regex = new RegExp(source, 'i');
+      const found = nodes.find((node) => regex.test(String(node.getAttribute('value') || '')));
+      return found ? String(nodes.indexOf(found)) : '';
+    }, pattern.source).catch(() => '');
+    if (input) {
+      const index = Number(input);
+      if (Number.isFinite(index)) {
+        if (options.beforeClick) await options.beforeClick();
+        await page.locator('input[type="submit"], input[type="button"]').nth(index).click();
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 async function bodyText(page) {
@@ -457,6 +309,26 @@ async function captureConfirmation(context, page, task, runtime, adapterId) {
   return true;
 }
 
+async function detectGreenhouseVerificationCodeGate(context, page, runtime) {
+  const text = await bodyText(context);
+  if (!/verification code|security code|confirm you(?:'re| are) a human|8-character code/i.test(text)) {
+    return false;
+  }
+  await runtime.report({
+    status: 'waiting_for_email_code',
+    currentUrl: contextUrl(context, page),
+    evidenceText: 'Greenhouse accepted the completed application form and then required an 8-character human verification/security code before final submission.',
+    screenshotPath: await runtime.safeShot('greenhouse-verification-code-gate'),
+    details: {
+      classification: 'human_verification_code_required',
+      codeRecorded: false,
+      outcomeStatus: 'waiting_for_email_code',
+      protectedGate: true,
+    },
+  });
+  return true;
+}
+
 async function fillGreenhouseForm(page, task, runtime) {
   const context = await resolveGreenhouseContext(page);
   const locationText = [task.candidate.city, task.candidate.stateOrProvince].filter(Boolean).join(', ');
@@ -494,6 +366,7 @@ async function fillGreenhouseForm(page, task, runtime) {
   if (!uploaded) {
     throw new Error('Greenhouse resume upload field was not found.');
   }
+  await maybeUploadGreenhouseCoverLetter(context, task, runtime);
 
   await selectFromLabel(context, /pronouns/i, task.candidate.pronouns);
   await selectFromLabel(context, /require immigration sponsorship.*united states/i, task.candidate.sponsorshipNow);
@@ -504,13 +377,33 @@ async function fillGreenhouseForm(page, task, runtime) {
   await selectFromLabel(context, /visa \/ work permit/i, task.candidate.sponsorshipNow);
   await selectFromLabel(context, /worked at nice/i, 'No');
   await selectFromLabel(context, /first-degree relatives/i, 'No');
-  await applyFieldMappings(
+  const mappingResults = await applyFieldMappings(
     context,
     buildGreenhouseQuestionMappings(task, {
       email: task.candidate.email,
     }),
     task,
   );
+  const referralApplied = await ensureGreenhouseReferralSource(context, task);
+  const acknowledged = await acceptGreenhouseOrdinaryAcknowledgements(context);
+  if (acknowledged > 0 || referralApplied) {
+    await runtime.report({
+      status: 'heartbeat',
+      evidenceText: `Applied Greenhouse standing-authorized fallbacks: referral=${referralApplied ? 'filled' : 'not_needed'}, acknowledgements=${acknowledged}.`,
+      details: {
+        acknowledgedOrdinaryGreenhouseCheckboxes: acknowledged,
+        greenhouseMappingResults: mappingResults.map((result) => ({
+          applied: result.applied,
+          field: result.field,
+          key: result.key,
+          matched: result.matched,
+          reason: result.reason,
+          value: result.value,
+        })),
+        referralFallbackApplied: referralApplied,
+      },
+    });
+  }
 }
 
 async function maybeUploadGreenhouseResume(context, resumePath, runtime) {
@@ -597,6 +490,107 @@ async function selectPreferredGreenhouseFileInput(context) {
   return context.locator('input[type="file"]').nth(index);
 }
 
+async function maybeUploadGreenhouseCoverLetter(context, task, runtime) {
+  if (typeof runtime.ensureCoverLetterFile !== 'function' || !task.coverLetter) return false;
+  const coverLetterPath = await runtime.ensureCoverLetterFile();
+  if (!coverLetterPath) return false;
+  const directSelectors = [
+    'input[type="file"][name*="cover" i]',
+    'input[type="file"][id*="cover" i]',
+    'input[type="file"][aria-label*="cover" i]',
+    '[data-qa*="cover" i] input[type="file"]',
+    '[data-testid*="cover" i] input[type="file"]',
+    '[class*="cover" i] input[type="file"]',
+  ];
+  for (const selector of directSelectors) {
+    const input = context.locator(selector).first();
+    if (!await input.count()) continue;
+    await input.setInputFiles(coverLetterPath);
+    await runtime.report({
+      status: 'heartbeat',
+      evidenceText: `Uploaded approved cover letter ${coverLetterPath.split('/').pop()}.`,
+      details: {
+        coverLetterFileName: coverLetterPath.split('/').pop(),
+        coverLetterSupported: true,
+        coverLetterUploaded: true,
+      },
+    });
+    return true;
+  }
+
+  const triggerPatterns = [
+    /attach cover letter/i,
+    /upload cover letter/i,
+    /cover letter/i,
+  ];
+  for (const pattern of triggerPatterns) {
+    const trigger = context.locator('label, button, a, div[role="button"], span').filter({ hasText: pattern }).first();
+    if (!await trigger.count()) continue;
+    await trigger.click().catch(() => null);
+    await context.waitForTimeout(500);
+    const candidate = await selectPreferredGreenhouseCoverLetterInput(context);
+    if (!candidate) continue;
+    await candidate.setInputFiles(coverLetterPath);
+    await runtime.report({
+      status: 'heartbeat',
+      evidenceText: `Uploaded approved cover letter ${coverLetterPath.split('/').pop()}.`,
+      details: {
+        coverLetterFileName: coverLetterPath.split('/').pop(),
+        coverLetterSupported: true,
+        coverLetterUploaded: true,
+      },
+    });
+    return true;
+  }
+
+  await runtime.report({
+    status: 'heartbeat',
+    evidenceText: 'No supported Greenhouse cover letter upload control was visible.',
+    details: {
+      coverLetterSupported: false,
+      coverLetterUploaded: false,
+    },
+  });
+  return false;
+}
+
+async function selectPreferredGreenhouseCoverLetterInput(context) {
+  const index = await context.locator('input[type="file"]').evaluateAll((nodes) => {
+    const normalize = (value) => String(value || '').trim().toLowerCase();
+    const score = (node) => {
+      const attrs = [
+        node.getAttribute('name'),
+        node.getAttribute('id'),
+        node.getAttribute('aria-label'),
+        node.getAttribute('data-qa'),
+        node.getAttribute('data-testid'),
+        node.className,
+        node.parentElement?.textContent,
+        node.closest('section, fieldset, div, label')?.textContent,
+      ].map(normalize).join(' ');
+      if (/resume|\bcv\b/.test(attrs)) return -100;
+      let points = 0;
+      if (/cover letter/.test(attrs)) points += 8;
+      if (/cover/.test(attrs)) points += 5;
+      if (/attach|upload/.test(attrs)) points += 1;
+      return points;
+    };
+    let bestIndex = -1;
+    let bestScore = -101;
+    nodes.forEach((node, currentIndex) => {
+      if (!(node instanceof HTMLInputElement) || node.type !== 'file') return;
+      const points = score(node);
+      if (points > bestScore) {
+        bestIndex = currentIndex;
+        bestScore = points;
+      }
+    });
+    return bestScore > 0 ? bestIndex : -1;
+  }).catch(() => -1);
+  if (!Number.isInteger(index) || index < 0) return null;
+  return context.locator('input[type="file"]').nth(index);
+}
+
 async function detectUnresolvedGreenhouseFields(context, page, task, runtime) {
   const missing = await visibleRequiredFields(context);
   if (!missing.length) return false;
@@ -612,6 +606,126 @@ async function detectUnresolvedGreenhouseFields(context, page, task, runtime) {
     },
   });
   return true;
+}
+
+async function acceptGreenhouseOrdinaryAcknowledgements(context) {
+  const controls = context.locator('input[type="checkbox"]');
+  const count = await controls.count();
+  let accepted = 0;
+  for (let index = 0; index < count; index += 1) {
+    const control = controls.nth(index);
+    const candidate = await control.evaluate((element) => {
+      const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+      const visible = (node) => {
+        if (!(node instanceof HTMLElement)) return false;
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      };
+      if (!(element instanceof HTMLInputElement) || !visible(element) || element.checked) {
+        return { eligible: false };
+      }
+      const label = element.closest('label') || (element.id ? document.querySelector(`label[for="${CSS.escape(element.id)}"]`) : null);
+      const labelText = normalize(label?.textContent);
+      const containerText = normalize(element.closest('fieldset, section, div')?.textContent || labelText);
+      const required = element.required || element.getAttribute('aria-required') === 'true' || /\*/.test(labelText);
+      const ordinary = /^i agree\.?$/i.test(labelText)
+        || /applicant privacy|candidate privacy|privacy policy|privacy statement|cookie|personal data|data processing/i.test(containerText);
+      const excluded = /arbitration|class action|jury|background check|criminal|conviction|consumer report|credit report|certif(?:y|ication).*accur|electronic signature|non-compete|noncompete/i.test(containerText);
+      return {
+        eligible: Boolean(required && ordinary && !excluded),
+        labelText,
+      };
+    }).catch(() => ({ eligible: false }));
+    if (!candidate.eligible) continue;
+    await control.check({ force: true }).catch(() => null);
+    if (await control.isChecked().catch(() => false)) accepted += 1;
+  }
+  return accepted;
+}
+
+async function ensureGreenhouseReferralSource(context, task) {
+  const id = await context.evaluate(() => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const visible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const labelTextFor = (element) => {
+      const explicit = element.id ? document.querySelector(`label[for="${CSS.escape(element.id)}"]`) : null;
+      if (explicit) return normalize(explicit.textContent);
+      const wrapped = element.closest('label');
+      if (wrapped) return normalize(wrapped.textContent);
+      const field = element.closest('.select, .select__container, [role="group"], fieldset, div');
+      return normalize(field?.querySelector?.('label, legend')?.textContent);
+    };
+    const input = Array.from(document.querySelectorAll('input[role="combobox"]'))
+      .find((element) => element instanceof HTMLInputElement
+        && visible(element)
+        && /how did you (?:hear|learn).*about|where .*learned about/i.test(labelTextFor(element)));
+    return input?.id || '';
+  }).catch(() => '');
+  if (!id) return false;
+  const current = await greenhouseComboboxCommittedValue(context, id);
+  if (current) return false;
+
+  const values = [
+    task.candidate?.referralSourceAffirmFallback,
+    task.candidate?.referralSource,
+    task.employer ? `${task.employer} Careers Page` : '',
+    'Careers Page',
+  ].map(clean).filter(Boolean);
+
+  for (const value of Array.from(new Set(values))) {
+    if (await selectGreenhouseComboboxOption(context, id, value)) return true;
+  }
+  return false;
+}
+
+async function selectGreenhouseComboboxOption(context, id, value) {
+  const input = context.locator(`#${cssEscape(id)}`).first();
+  if (!await input.count()) return false;
+  await input.scrollIntoViewIfNeeded().catch(() => null);
+  await input.click({ force: true }).catch(() => null);
+  await input.fill('').catch(() => null);
+  await input.type(value, { delay: 20 }).catch(() => null);
+  await context.waitForTimeout(350);
+  let option = context.locator('[role="option"], .select__option').filter({ hasText: new RegExp(escapeRegExp(value), 'i') }).first();
+  if (!await option.count() && /careers?\s+page/i.test(value)) {
+    option = context.locator('[role="option"], .select__option').filter({ hasText: /careers?\s+page/i }).first();
+  }
+  if (!await option.count()) {
+    await input.press('Escape').catch(() => null);
+    return false;
+  }
+  await option.click({ force: true }).catch(() => null);
+  await input.press('Tab').catch(() => null);
+  await context.waitForTimeout(350);
+  const committed = await greenhouseComboboxCommittedValue(context, id);
+  return Boolean(committed);
+}
+
+async function greenhouseComboboxCommittedValue(context, id) {
+  return clean(await context.evaluate((fieldId) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const input = document.getElementById(fieldId);
+    let current = input?.parentElement;
+    for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+      const selectedText = Array.from(
+        current.querySelectorAll('.select__single-value, [class*="singleValue"], [class*="single-value"], [class*="multiValue__label"], [class*="multi-value__label"]'),
+      )
+        .map((node) => normalize(node.textContent))
+        .find(Boolean);
+      if (selectedText) return selectedText;
+      const hiddenValue = Array.from(current.querySelectorAll('input[type="hidden"], input[aria-hidden="true"]'))
+        .map((node) => normalize(node.getAttribute('value') || node.value))
+        .find(Boolean);
+      if (hiddenValue) return hiddenValue;
+    }
+    return '';
+  }, id).catch(() => ''));
 }
 
 async function visibleRequiredFields(context) {
@@ -631,12 +745,31 @@ async function visibleRequiredFields(context) {
       const nearby = field?.querySelector?.('label, legend');
       return normalize(nearby?.textContent);
     };
+    const committedComboboxValue = (element) => {
+      let current = element.parentElement;
+      for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+        const selectedText = Array.from(
+          current.querySelectorAll('.select__single-value, [class*="singleValue"], [class*="single-value"], [class*="multiValue__label"], [class*="multi-value__label"]'),
+        )
+          .map((node) => normalize(node.textContent))
+          .find(Boolean);
+        if (selectedText) return selectedText;
+        const hiddenValue = Array.from(current.querySelectorAll('input[type="hidden"], input[aria-hidden="true"]'))
+          .map((node) => normalize(node.getAttribute('value') || node.value))
+          .find(Boolean);
+        if (hiddenValue) return hiddenValue;
+      }
+      return '';
+    };
     const empty = (element) => {
       if (element instanceof HTMLSelectElement) {
         return element.selectedIndex <= 0 || !normalize(element.value);
       }
       if (element instanceof HTMLInputElement) {
         if (element.type === 'radio' || element.type === 'checkbox') return false;
+        if (element.getAttribute('role') === 'combobox' || /\bselect__input\b/i.test(element.className)) {
+          if (committedComboboxValue(element)) return false;
+        }
         return !normalize(element.value);
       }
       if (element instanceof HTMLTextAreaElement) return !normalize(element.value);
@@ -649,6 +782,18 @@ async function visibleRequiredFields(context) {
       const type = element instanceof HTMLInputElement ? element.type : '';
       if (['hidden', 'file', 'submit', 'button'].includes(type)) continue;
       const label = labelTextFor(element) || normalize(element.getAttribute('aria-label')) || normalize(element.getAttribute('placeholder'));
+      const helperOnlyRequiredMirror = element instanceof HTMLInputElement
+        && type === 'text'
+        && /\brequiredinput\b/i.test(String(element.className || ''))
+        && !label
+        && !normalize(element.getAttribute('name'))
+        && !normalize(element.id);
+      if (helperOnlyRequiredMirror) continue;
+      if (
+        element instanceof HTMLInputElement
+        && (element.getAttribute('role') === 'combobox' || /\bselect__input\b/i.test(element.className))
+        && (!label || label.toLowerCase() === 'text')
+      ) continue;
       const required = element.hasAttribute('required')
         || element.getAttribute('aria-required') === 'true'
         || /\*/.test(label);
@@ -670,6 +815,101 @@ async function visibleRequiredFields(context) {
 
     return Array.from(new Set([...fields, ...radioGroups.values()])).filter(Boolean).slice(0, 12);
   });
+}
+
+// CAREER_OS_WORKDAY_ENTRY_FLOW_V2
+async function workdayApplicationFormVisible(page) {
+  const text = await bodyText(page);
+  if (/you are applying for|my information|my experience|application questions|voluntary disclosures|review your application/i.test(text)) return true;
+  const signals = [
+    'input[type="file"]',
+    '[data-automation-id="legalNameSection"]',
+    '[data-automation-id="contactInformationSection"]',
+    '[data-automation-id="workExperienceSection"]',
+    '[data-automation-id="educationSection"]',
+  ];
+  for (const selector of signals) {
+    if (await page.locator(selector).first().count().catch(() => 0)) return true;
+  }
+  return false;
+}
+
+async function workdayProgressFingerprint(page) {
+  const text = (await bodyText(page)).replace(/\s+/g, ' ').trim().slice(0, 1200);
+  return JSON.stringify({ url: page.url(), text });
+}
+
+async function clickExactWorkdayEntryChoice(page, pattern) {
+  const candidates = [
+    page.getByRole('button', { name: pattern, exact: true }).first(),
+    page.getByRole('link', { name: pattern, exact: true }).first(),
+    page.locator('[data-automation-id="applyManually"], [data-automation-id="autofillWithResume"]').filter({ hasText: pattern }).first(),
+    page.locator('button, a, [role="button"]').filter({ hasText: pattern }).first(),
+  ];
+  for (const locator of candidates) {
+    if (!await locator.count().catch(() => 0)) continue;
+    if (!await locator.isVisible().catch(() => false)) continue;
+    if (!await locator.isEnabled().catch(() => false)) continue;
+    const label = (await locator.textContent().catch(() => ''))?.replace(/\s+/g, ' ').trim() || String(pattern);
+    await locator.click({ timeout: 10000 }).catch(() => null);
+    return { clicked: true, selectorType: 'workday_exact_accessible', selectorValue: label };
+  }
+  return { clicked: false, reason: 'No exact Workday entry choice was clickable.' };
+}
+
+async function waitForWorkdayEntryProgress(page, beforeFingerprint, timeoutMs = 20000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    await page.waitForTimeout(500);
+    if (await workdayApplicationFormVisible(page)) return true;
+    const current = await workdayProgressFingerprint(page);
+    if (current !== beforeFingerprint && /my information|my experience|application questions|upload.*resume|you are applying for/i.test(current)) return true;
+  }
+  return false;
+}
+
+async function maybeOpenWorkdayApplication(page, task, runtime) {
+  if (await workdayApplicationFormVisible(page)) return true;
+
+  const choices = [
+    { pattern: /^apply manually$/i, label: 'Apply Manually' },
+    { pattern: /autofill with resume/i, label: 'Autofill with Resume' },
+    { pattern: /^start application$/i, label: 'Start Application' },
+    { pattern: /^apply now$/i, label: 'Apply Now' },
+    { pattern: /^apply$/i, label: 'Apply' },
+  ];
+
+  for (const choice of choices) {
+    const beforeFingerprint = await workdayProgressFingerprint(page);
+    let result = await clickExactWorkdayEntryChoice(page, choice.pattern);
+    if (!result.clicked) result = await clickSubmitControl(page, [choice.pattern]);
+    if (!result.clicked) continue;
+
+    await runtime.report({
+      status: 'heartbeat',
+      currentUrl: page.url(),
+      evidenceText: `Advanced Workday entry flow using ${result.selectorType}: ${result.selectorValue}.`,
+      details: {
+        classification: 'workday_entry_transition',
+        preferredChoice: choice.label,
+        selectorType: result.selectorType,
+        selectorValue: result.selectorValue,
+      },
+    });
+
+    await page.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => null);
+    if (await waitForWorkdayEntryProgress(page, beforeFingerprint)) return true;
+
+    await runtime.report({
+      status: 'heartbeat',
+      currentUrl: page.url(),
+      evidenceText: `Workday entry choice ${choice.label} was clicked but no recognized application progress followed.`,
+      screenshotPath: await runtime.safeShot(`workday-entry-no-progress-${choice.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`),
+      details: { classification: 'workday_entry_no_progress', attemptedChoice: choice.label },
+    });
+  }
+
+  return workdayApplicationFormVisible(page);
 }
 
 async function maybeUploadWorkdayResume(page, task, runtime) {
@@ -703,6 +943,77 @@ async function maybeUploadWorkdayResume(page, task, runtime) {
   return false;
 }
 
+async function maybeUploadWorkdayCoverLetter(page, task, runtime) {
+  if (typeof runtime.ensureCoverLetterFile !== 'function' || !task.coverLetter) return false;
+  const coverLetterPath = await runtime.ensureCoverLetterFile();
+  if (!coverLetterPath) return false;
+  const fileInput = await selectWorkdayCoverLetterFileInput(page);
+  if (!fileInput) {
+    const text = await bodyText(page);
+    if (/cover letter/i.test(text)) {
+      await runtime.report({
+        status: 'heartbeat',
+        evidenceText: 'Workday showed cover-letter text, but no supported cover letter upload control was visible.',
+        details: {
+          coverLetterSupported: false,
+          coverLetterUploaded: false,
+        },
+      });
+    }
+    return false;
+  }
+  await fileInput.setInputFiles(coverLetterPath);
+  await page.waitForTimeout(1500);
+  await runtime.report({
+    status: 'heartbeat',
+    evidenceText: `Uploaded approved Workday cover letter ${coverLetterPath.split('/').pop()}.`,
+    details: {
+      coverLetterFileName: coverLetterPath.split('/').pop(),
+      coverLetterSupported: true,
+      coverLetterUploaded: true,
+    },
+  });
+  return true;
+}
+
+async function selectWorkdayCoverLetterFileInput(page) {
+  if (!page?.locator) return null;
+  const index = await page.locator('input[type="file"]').evaluateAll((nodes) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const score = (node) => {
+      const attrs = [
+        node.getAttribute('name'),
+        node.getAttribute('id'),
+        node.getAttribute('aria-label'),
+        node.getAttribute('data-automation-id'),
+        node.getAttribute('data-testid'),
+        node.className,
+        node.parentElement?.textContent,
+        node.closest('[data-automation-id], section, fieldset, div, label')?.textContent,
+      ].map(normalize).join(' ');
+      if (/resume|\bcv\b/.test(attrs)) return -100;
+      let points = 0;
+      if (/cover letter/.test(attrs)) points += 8;
+      if (/\bcover\b/.test(attrs)) points += 5;
+      if (/attach|upload/.test(attrs)) points += 1;
+      return points;
+    };
+    let bestIndex = -1;
+    let bestScore = -101;
+    nodes.forEach((node, currentIndex) => {
+      if (!(node instanceof HTMLInputElement) || node.type !== 'file') return;
+      const points = score(node);
+      if (points > bestScore) {
+        bestIndex = currentIndex;
+        bestScore = points;
+      }
+    });
+    return bestScore > 0 ? bestIndex : -1;
+  }).catch(() => -1);
+  if (!Number.isInteger(index) || index < 0) return null;
+  return page.locator('input[type="file"]').nth(index);
+}
+
 async function fillInputFromLabel(page, labelPattern, value) {
   if (!value) return false;
   const label = page.locator('label').filter({ hasText: labelPattern }).first();
@@ -710,13 +1021,13 @@ async function fillInputFromLabel(page, labelPattern, value) {
   const forId = await label.getAttribute('for');
   if (forId) {
     const input = page.locator(`#${cssEscape(forId)}`).first();
-    if (await input.count()) {
+    if (await input.count() && await isTextFillableControl(input)) {
       await input.fill(String(value));
       return true;
     }
   }
   const input = label.locator('input, textarea').first();
-  if (await input.count()) {
+  if (await input.count() && await isTextFillableControl(input)) {
     await input.fill(String(value));
     return true;
   }
@@ -727,12 +1038,30 @@ async function fillInputBySelectors(page, selectors, value) {
   if (!value) return false;
   for (const selector of selectors) {
     const input = page.locator(selector).first();
-    if (await input.count()) {
+    if (await input.count() && await isTextFillableControl(input)) {
       await input.fill(String(value));
       return true;
     }
   }
   return false;
+}
+
+async function isTextFillableControl(locator) {
+  return locator.evaluate((element) => {
+    if (!(element instanceof HTMLElement)) return false;
+    if (element instanceof HTMLTextAreaElement) return true;
+    if (!(element instanceof HTMLInputElement)) return element.isContentEditable;
+    const type = String(element.type || 'text').toLowerCase();
+    return [
+      'text',
+      'email',
+      'tel',
+      'url',
+      'search',
+      'number',
+      'password',
+    ].includes(type);
+  }).catch(() => false);
 }
 
 async function selectFromLabel(page, labelPattern, value) {
@@ -782,13 +1111,34 @@ async function chooseRadioNearText(page, questionPattern, answer) {
 
 async function detectWorkdayAccountGate(page, task, runtime) {
   const text = await bodyText(page);
-  if (!/sign in|login|create account|create an account|forgot password/i.test(text)) return false;
   if (/you are applying for|my information|my experience|application questions/i.test(text)) return false;
+
+  const checkpoint = /reset your password|password reset|forgot password/i.test(text)
+    ? 'password_reset'
+    : /verification code|verify your email|email verification|check your email/i.test(text)
+      ? 'email_verification'
+      : /multi-factor|two-factor|authentication code|security code/i.test(text)
+        ? 'mfa'
+        : /create account|create an account/i.test(text)
+          ? 'account_creation'
+          : /sign in|login/i.test(text)
+            ? 'sign_in'
+            : '';
+  if (!checkpoint) return false;
+
+  const messages = {
+    password_reset: 'Employer requires completion of a Workday password reset before automation can resume.',
+    email_verification: 'Employer requires Workday email verification before automation can resume.',
+    mfa: 'Employer requires Workday multi-factor authentication before automation can resume.',
+    account_creation: 'Employer requires a Workday account to be created before automation can resume.',
+    sign_in: 'Employer presented a Workday sign-in gate.',
+  };
   await runtime.report({
     status: 'waiting_on_tomas',
     currentUrl: page.url(),
-    evidenceText: 'Employer presented a Workday account or sign-in gate.',
-    screenshotPath: await runtime.safeShot('workday-account-gate'),
+    evidenceText: messages[checkpoint],
+    screenshotPath: await runtime.safeShot(`workday-${checkpoint.replace(/_/g, '-')}`),
+    details: { classification: checkpoint, employer: task?.company || task?.employer || '' },
   });
   return true;
 }
@@ -1039,6 +1389,105 @@ async function detectOracleAccountGate(page, task, runtime) {
   return true;
 }
 
+async function executeWorkdayControlledInspection(page, task, runtime, policy) {
+  await runtime.report({
+    status: 'running',
+    evidenceText: `Opening ${task.applicationUrl} in Workday ${policy.mode} mode.`,
+  });
+  await page.goto(task.applicationUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.waitForTimeout(2500);
+  await runtime.takeShot('workday-controlled-opened');
+
+  if (await runtime.detectCommonHumanGate()) return true;
+  if (await detectWorkdayAccountGate(page, task, runtime)) return true;
+
+  const inspection = await inspectVisibleWorkdaySurface(page);
+  const fieldLabels = inspection.fields.map((field) => field.label).filter(Boolean).slice(0, 25);
+  const actionLabels = inspection.actions.map((action) => action.label).filter(Boolean).slice(0, 12);
+  const submitControls = inspection.actions.filter((action) => /submit/i.test(action.label));
+  const currentUrl = page.url();
+  await runtime.report({
+    status: 'inspected_assisted',
+    currentUrl,
+    evidenceText: `Workday inspected in ${policy.mode}; no submit was attempted. Detected ${fieldLabels.length} field(s) and ${actionLabels.length} action control(s).`,
+    screenshotPath: await runtime.safeShot('workday-controlled-inspection'),
+    details: {
+      actionLabels,
+      classification: 'workday_controlled_inspection',
+      executionMode: policy.mode,
+      fieldLabels,
+      inspectionErrors: inspection.errors,
+      outcomeStatus: 'inspected_assisted',
+      submitBlocked: true,
+      submitControlsDetected: submitControls.map((control) => control.label),
+      decisionQueue: [
+        createProductionDecisionQueueItem({
+          ats: 'workday',
+          category: submitControls.length ? 'unknown' : 'low_confidence',
+          confidence: fieldLabels.length || actionLabels.length ? 0.78 : 0.52,
+          fieldLabel: submitControls.length ? 'Workday submit control' : 'Workday application surface',
+          reason: submitControls.length
+            ? 'Workday presented a submit control, and production policy requires Tomas to complete or approve this step manually.'
+            : 'Workday live inspection completed without a production-proven submit path.',
+          requiredAction: 'Review the Workday application manually; Career OS will not submit Workday applications in controlled launch.',
+          resumePoint: 'After Tomas completes the Workday step, mark the application resumed or completed in Career OS.',
+          routing: policy.details?.routing,
+          sensitivity: 'operational',
+          task,
+          tenant: policy.details?.routing?.tenant,
+          url: currentUrl,
+        }),
+      ],
+    },
+  });
+  return true;
+}
+
+async function inspectVisibleWorkdaySurface(page) {
+  return page.evaluate(() => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const visible = (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const labelFor = (element) => {
+      const explicit = element.id ? document.querySelector(`label[for="${CSS.escape(element.id)}"]`) : null;
+      if (explicit) return normalize(explicit.textContent);
+      const wrapped = element.closest('label');
+      if (wrapped) return normalize(wrapped.textContent);
+      const field = element.closest('[data-automation-id], [role="group"], fieldset, div');
+      const nearby = field?.querySelector?.('label, legend, [data-automation-id*="label" i]');
+      return normalize(nearby?.textContent || element.getAttribute('aria-label') || element.getAttribute('placeholder') || element.getAttribute('name') || element.id);
+    };
+    const fields = Array.from(document.querySelectorAll('input, select, textarea, [role="combobox"]'))
+      .filter((element) => visible(element))
+      .map((element) => ({
+        label: labelFor(element),
+        required: element.getAttribute('aria-required') === 'true' || element.hasAttribute('required'),
+        tagName: element.tagName.toLowerCase(),
+        type: element.getAttribute('type') || element.getAttribute('role') || '',
+      }))
+      .filter((field) => field.label)
+      .slice(0, 50);
+    const actions = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a[role="button"]'))
+      .filter((element) => visible(element))
+      .map((element) => ({
+        enabled: !element.hasAttribute('disabled') && element.getAttribute('aria-disabled') !== 'true',
+        label: normalize(element.textContent || element.getAttribute('value') || element.getAttribute('aria-label')),
+        tagName: element.tagName.toLowerCase(),
+      }))
+      .filter((action) => action.label)
+      .slice(0, 30);
+    return { actions, errors: [], fields };
+  }).catch((error) => ({
+    actions: [],
+    errors: [error instanceof Error ? error.message : String(error)],
+    fields: [],
+  }));
+}
+
 const greenhouseAdapter = {
   id: 'greenhouse',
   matches(task) {
@@ -1071,37 +1520,26 @@ const greenhouseAdapter = {
     const refreshedContext = await resolveGreenhouseContext(page);
     if (await detectUnresolvedGreenhouseFields(refreshedContext, page, task, runtime)) return true;
 
-    const submitResult = await clickSubmitControl(refreshedContext, [/submit application|submit/i], {
-      beforeClick: async () => {
-        await runtime.assertSafeToSubmit();
-        await runtime.report({ status: 'running', evidenceText: 'Submitting the employer application.' });
-      },
-    });
-    if (submitResult.clicked) {
-      await page.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => null);
+    const submit = refreshedContext.locator('button[type="submit"], input[type="submit"]').filter({ hasText: /submit application|submit/i }).first();
+    if (await submit.count()) {
+      await runtime.assertSafeToSubmit();
+      await runtime.report({ status: 'running', evidenceText: 'Submitting the employer application.' });
+      await Promise.allSettled([
+        page.waitForLoadState('domcontentloaded', { timeout: 20000 }),
+        submit.click(),
+      ]);
       await page.waitForTimeout(3000);
     }
 
     const confirmedContext = await resolveGreenhouseContext(page);
     if (await captureConfirmation(confirmedContext, page, task, runtime, 'greenhouse')) return true;
-
-    if (!submitResult.clicked) {
-      await runtime.report({
-        status: 'blocked_technical',
-        currentUrl: page.url(),
-        evidenceText: `Greenhouse submit control was not clicked: ${submitResult.reason}`,
-        screenshotPath: await runtime.takeShot('greenhouse-submit-not-found'),
-        details: { submitResult },
-      });
-      return true;
-    }
+    if (await detectGreenhouseVerificationCodeGate(confirmedContext, page, runtime)) return true;
 
     await runtime.report({
       status: 'waiting_on_tomas',
       currentUrl: page.url(),
-      evidenceText: `Submission click executed (${submitResult.selectorType}: ${submitResult.selectorValue}), but no confirmation evidence was detected. Tomas should review the live employer page.`,
+      evidenceText: 'Submission click completed, but no confirmation evidence was detected. Tomas should review the live employer page.',
       screenshotPath: await runtime.takeShot('greenhouse-after-submit'),
-      details: { submitResult },
     });
     return true;
   },
@@ -1119,10 +1557,26 @@ const workdayAdapter = {
     await runtime.takeShot('workday-opened');
 
     if (await runtime.detectCommonHumanGate()) return true;
-    if (await detectWorkdayAccountGate(page, task, runtime)) return true;
 
-    for (let step = 1; step <= 8; step += 1) {
+    const workdayEntryOpened = await maybeOpenWorkdayApplication(page, task, runtime);
+    if (await runtime.detectCommonHumanGate()) return true;
+    if (await detectWorkdayAccountGate(page, task, runtime)) return true;
+    if (!workdayEntryOpened) {
+      await runtime.report({
+        status: 'blocked_technical',
+        currentUrl: page.url(),
+        evidenceText: 'Workday adapter could not advance from the public job or start-application screen into the application form.',
+        screenshotPath: await runtime.safeShot('workday-entry-not-opened'),
+        details: { classification: 'workday_entry_transition' },
+      });
+      return true;
+    }
+
+    await runtime.takeShot('workday-application-opened');
+
+    for (let step = 1; step <= 12; step += 1) {
       await maybeUploadWorkdayResume(page, task, runtime);
+      await maybeUploadWorkdayCoverLetter(page, task, runtime);
       await fillWorkdayPage(page, task, runtime);
       await page.waitForTimeout(1000);
       await runtime.takeShot(`workday-step-${step}`);
@@ -1265,8 +1719,72 @@ const oracleAdapter = {
   },
 };
 
-const adapters = [greenhouseAdapter, workdayAdapter, oracleAdapter];
+const adapters = [greenhouseAdapter, workdayAdapter];
+const routedAtsFacade = createCareerOsAtsFacade({
+  legacyAdapters: {
+    greenhouse: greenhouseAdapter,
+    workday: workdayAdapter,
+  },
+});
 
-export function getATSAdapter(task) {
-  return adapters.find((adapter) => adapter.matches(task)) || null;
+export function getATSAdapter(task, options = {}) {
+  return createProductionControlledAdapter(routedAtsFacade.getRoutedAtsAdapter(task), {
+    env: options.env || process.env,
+  });
+}
+
+function createProductionControlledAdapter(adapter, options = {}) {
+  return {
+    ...adapter,
+    matches(task) {
+      return adapter.matches(task);
+    },
+    async execute(page, task, runtime) {
+      const policy = resolveProductionExecutionPolicy({
+        adapterId: adapter.id,
+        env: options.env || process.env,
+        routingMetadata: adapter.routingMetadata,
+        task,
+      });
+      const controlledRuntime = createProductionControlledRuntime(runtime, policy, adapter.id);
+      if (!policy.allowed) {
+        await controlledRuntime.report(createProductionBlockedReport(policy, task));
+        return true;
+      }
+      if (adapter.id === 'workday') {
+        return runWorkdayProductionFlow(page, task, controlledRuntime, policy, { env: options.env || process.env });
+      }
+      return adapter.execute(page, task, controlledRuntime);
+    },
+  };
+}
+
+function createProductionControlledRuntime(runtime, policy, adapterId) {
+  return {
+    ...runtime,
+    async assertSafeToSubmit() {
+      if (!policy.submitAllowed) {
+        throw new Error(`submit_blocked_by_production_policy:${policy.adapterId}:${policy.mode || 'missing_mode'}`);
+      }
+      if (typeof runtime.assertSafeToSubmit !== 'function') {
+        throw new Error('submit_blocked_by_production_policy:missing_runtime_submit_safety');
+      }
+      return runtime.assertSafeToSubmit();
+    },
+    async report(payload) {
+      const details = payload.details || {};
+      const outcomeStatus = details.outcomeStatus || (adapterId === 'greenhouse' && payload.status === 'confirmed' ? 'submitted_confirmed' : undefined);
+      return runtime.report({
+        ...payload,
+        details: {
+          ...details,
+          outcomeStatus,
+          production: {
+            ...reportablePolicyDetails(policy),
+            outcomeStatus: outcomeStatus || policy.outcomeStatus,
+          },
+        },
+      });
+    },
+  };
 }
