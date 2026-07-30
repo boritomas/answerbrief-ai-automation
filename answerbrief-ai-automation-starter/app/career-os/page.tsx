@@ -1,5 +1,5 @@
-import GuidedCareerOsPage from './guided/page';
+import AutonomousCareerOsPage from './autonomous-page';
 
 export const dynamic = 'force-dynamic';
 
-export default GuidedCareerOsPage;
+export default AutonomousCareerOsPage;

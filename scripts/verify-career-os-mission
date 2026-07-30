@@ -42,18 +42,27 @@ const path = require('node:path');
   }
   add('Synthetic fixture set exists', existsSync(path.join(repoRoot, 'fixtures', 'synthetic-career-os', 'pilot-evidence.json')));
 
-  run('Acceptance tests pass', 'node', ['--test', 'tests/acceptance/career-os-contract.test.mjs'], repoRoot);
+  run('Acceptance tests pass', 'node', ['--test', 'tests/acceptance/career-os-contract.test.mjs'], appRoot);
   run('Career OS source lint passes', 'npm', ['run', 'lint'], appRoot);
   run('TypeScript type check passes', localTsc, ['--noEmit', '--incremental', 'false'], appRoot);
   run('Next production build passes', 'npx', ['-y', 'node@20', 'node_modules/next/dist/bin/next', 'build'], appRoot, 600000);
 
   const statusUrl = process.env.CAREER_OS_VERIFY_URL || defaultProductionStatusUrl;
-  try {
-    const statusPayload = await fetchProductionStatusEvidence(statusUrl);
-    add('Production status API reachable', true, statusUrl);
-    for (const row of evaluateStatusApiEvidence(statusPayload)) rows.push(row);
-  } catch (error) {
-    add('Production status API reachable', false, compact(error instanceof Error ? error.message : String(error)));
+  const skipProductionVerify = process.env.CAREER_OS_SKIP_PRODUCTION_VERIFY === '1';
+  const isCi = process.env.CI === 'true';
+
+  if (skipProductionVerify && isCi) {
+    add('Production status API verification skip blocked in CI', false, 'CAREER_OS_SKIP_PRODUCTION_VERIFY=1 is local-only and must not be used in CI.');
+  } else if (skipProductionVerify) {
+    add('Production status API verification skipped (local-only override)', true, 'CAREER_OS_SKIP_PRODUCTION_VERIFY=1');
+  } else {
+    try {
+      const statusPayload = await fetchProductionStatusEvidence(statusUrl);
+      add('Production status API reachable', true, statusUrl);
+      for (const row of evaluateStatusApiEvidence(statusPayload)) rows.push(row);
+    } catch (error) {
+      add('Production status API reachable', false, compact(error instanceof Error ? error.message : String(error)));
+    }
   }
 
   console.log('Career OS mission verification');

@@ -13,6 +13,7 @@ import {
   detectContradictions,
   enforceApplicationMode,
   evaluateEmployerWorkflow,
+  fetchProductionStatusEvidence,
   fileExistsAndReadable,
   mapRequirementsToEvidence,
   readJson,
@@ -527,6 +528,67 @@ test('live-site status response and snapshot summary are factual and not hard-co
   assert.equal(summary.greeting, 'Good morning, Tomas.');
   assert.match(summary.salary, /\$235K-\$285K/);
   assert.equal(status.productionEvidenceReady, false);
+});
+
+test('production status fetch reports HTTP status and body on endpoint failure', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 503,
+      text: async () => 'upstream unavailable',
+    });
+
+    await assert.rejects(
+      fetchProductionStatusEvidence('https://example.com/status'),
+      /Application failure: GET https:\/\/example\.com\/status returned HTTP 503\. Response body: upstream unavailable/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('production status fetch distinguishes infrastructure timeouts from application failures', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (_url, options) => {
+      await new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    };
+
+    await assert.rejects(
+      fetchProductionStatusEvidence('https://example.com/status', { timeoutMs: 10 }),
+      /Infrastructure failure: GET https:\/\/example\.com\/status timed out after 10ms/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('production status fetch reports malformed JSON responses clearly', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '<html>not json</html>',
+    });
+    await assert.rejects(
+      fetchProductionStatusEvidence('https://example.com/status'),
+      /Application failure: GET https:\/\/example\.com\/status returned malformed JSON\. Response body: <html>not json<\/html>/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('mission verifier runs contract test from appRoot and supports local-only production verification skip', () => {
+  const verifier = readFileSync(path.join(repoRoot, 'scripts', 'verify-career-os-mission'), 'utf8');
+  assert.match(verifier, /run\('Acceptance tests pass', 'node', \['--test', 'tests\/acceptance\/career-os-contract\.test\.mjs'\], appRoot\)/);
+  assert.match(verifier, /const skipProductionVerify = process\.env\.CAREER_OS_SKIP_PRODUCTION_VERIFY === '1'/);
+  assert.match(verifier, /if \(skipProductionVerify && isCi\)/);
+  assert.match(verifier, /Production status API verification skipped \(local-only override\)/);
 });
 
 test('production status implementation has no manual evidence file dependency', () => {
