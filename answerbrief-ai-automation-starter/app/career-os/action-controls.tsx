@@ -26,7 +26,7 @@ type ActionResult = {
   whatCareerOsCompleted?: string;
 };
 
-type ReviewAction = 'approve' | 'reject_similar' | 'skip';
+type ReviewAction = 'approve' | 'hide' | 'reject_similar' | 'save' | 'skip' | 'tailor' | 'watch';
 
 type AnswerField = {
   key: string;
@@ -387,6 +387,70 @@ export function ReviewQueueActionControl({
       <small>{state}: {message}</small>
     </div>
   );
+}
+
+export function OpportunityActionControl({
+  actionToken,
+  actionTokenExpiresAt,
+  employer,
+  opportunityId,
+  title,
+}: {
+  actionToken: string;
+  actionTokenExpiresAt: string;
+  employer: string;
+  opportunityId: string;
+  title: string;
+}) {
+  const [message, setMessage] = useState('Choose how Career OS should handle this role.');
+  const [state, setState] = useState<'idle' | 'loading' | 'success' | 'blocked' | 'error'>('idle');
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  function submit(action: ReviewAction) {
+    startTransition(async () => {
+      setState('loading');
+      setMessage(`Saving ${labelForReviewAction(action)} for ${employer} · ${title}...`);
+      const result = await postCareerAction({
+        action: 'review_opportunity',
+        actionToken,
+        actionTokenExpiresAt,
+        employer,
+        opportunityId,
+        reviewAction: action,
+      });
+      if (!result.ok) {
+        setState(result.status === 'blocked' ? 'blocked' : 'error');
+        setMessage(result.error || result.message || 'Action failed.');
+        return;
+      }
+      setState('success');
+      setMessage(result.message || 'Saved.');
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className={`career-os-opportunity-actions ${state}`} aria-live="polite">
+      <button className="button primary" disabled={isPending} onClick={() => submit('approve')} type="button">Apply</button>
+      <button className="button secondary" disabled={isPending} onClick={() => submit('tailor')} type="button">Tailor Resume</button>
+      <button className="button secondary" disabled={isPending} onClick={() => submit('save')} type="button">Save</button>
+      <button className="button secondary" disabled={isPending} onClick={() => submit('watch')} type="button">Watch</button>
+      <button className="button secondary" disabled={isPending} onClick={() => submit('hide')} type="button">Hide</button>
+      <button className="button secondary" disabled={isPending} onClick={() => submit('skip')} type="button">Skip</button>
+      <small>{state}: {message}</small>
+    </div>
+  );
+}
+
+function labelForReviewAction(action: ReviewAction) {
+  if (action === 'approve') return 'apply';
+  if (action === 'tailor') return 'tailor resume';
+  if (action === 'save') return 'save';
+  if (action === 'watch') return 'watch';
+  if (action === 'hide') return 'hide';
+  if (action === 'reject_similar') return 'hide similar roles';
+  return 'skip';
 }
 
 function StructuredFields({

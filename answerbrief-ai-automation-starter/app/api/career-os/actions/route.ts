@@ -35,7 +35,7 @@ type ActionBody = {
   employer?: string;
   ownerEmail?: string;
   opportunityId?: string;
-  reviewAction?: 'approve' | 'reject_similar' | 'skip';
+  reviewAction?: 'approve' | 'hide' | 'reject_similar' | 'save' | 'skip' | 'tailor' | 'watch';
 };
 
 export async function POST(request: NextRequest) {
@@ -194,7 +194,7 @@ async function recordOpportunityReviewDecision({
   employer?: string;
   opportunityId: string;
   ownerEmail: string;
-  reviewAction: 'approve' | 'reject_similar' | 'skip';
+  reviewAction: 'approve' | 'hide' | 'reject_similar' | 'save' | 'skip' | 'tailor' | 'watch';
 }) {
   const rows = await careerOsSelectRows('career_os_job_postings', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&id=eq.${encodeURIComponent(opportunityId)}&limit=1`);
   const posting = rows[0] as Record<string, unknown> | undefined;
@@ -204,18 +204,32 @@ async function recordOpportunityReviewDecision({
 
   const raw = asRecord(posting.raw_record);
   const now = new Date().toISOString();
+  const normalizedReviewAction = reviewAction === 'hide' ? 'reject_similar' : reviewAction;
   await careerOsPatchRowById('career_os_job_postings', String(posting.id), {
     raw_record: {
       ...raw,
       review_actioned_at: now,
-      review_decision: reviewAction,
+      review_decision: normalizedReviewAction,
       review_employer: employer || posting.company || 'Employer',
     },
     updated_at: now,
   });
 
-  if (reviewAction === 'skip' || reviewAction === 'reject_similar') {
-    if (reviewAction === 'reject_similar') {
+  if (reviewAction === 'save' || reviewAction === 'watch' || reviewAction === 'tailor') {
+    const messages = {
+      save: 'Saved. Career OS will keep this role in your shortlist.',
+      tailor: 'Tailor request saved. Career OS will prioritize resume/package preparation for this role.',
+      watch: 'Watch saved. Career OS will keep an eye on this role and company.',
+    } as const;
+    return {
+      ok: true,
+      status: 'success',
+      message: messages[reviewAction],
+    };
+  }
+
+  if (reviewAction === 'skip' || reviewAction === 'hide' || reviewAction === 'reject_similar') {
+    if (reviewAction === 'hide' || reviewAction === 'reject_similar') {
       const profiles = await careerOsSelectRows('career_os_profiles', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&limit=1`);
       const profile = profiles[0] as Record<string, unknown> | undefined;
       if (profile) {
@@ -234,7 +248,7 @@ async function recordOpportunityReviewDecision({
     return {
       ok: true,
       status: 'success',
-      message: reviewAction === 'skip' ? 'Role skipped and removed from My Review Queue.' : 'Career OS learned the similarity preference and removed this role from My Review Queue.',
+      message: reviewAction === 'skip' ? 'Role skipped.' : 'Hidden. Career OS will suppress similar low-signal roles.',
     };
   }
 
