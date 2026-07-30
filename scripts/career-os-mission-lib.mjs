@@ -7,6 +7,7 @@ export const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathn
 export const appRoot = path.join(repoRoot, 'answerbrief-ai-automation-starter');
 export const syntheticRoot = path.join(repoRoot, 'fixtures', 'synthetic-career-os');
 export const defaultProductionStatusUrl = 'https://www.answer-brief.com/api/career-os/status';
+export const defaultProductionStatusTimeoutMs = 15000;
 
 export const qualifyingHumanOnlyGates = new Set([
   'CAPTCHA',
@@ -249,16 +250,41 @@ export function evaluateProductionEvidence(evidence) {
   return rows;
 }
 
-export async function fetchProductionStatusEvidence(statusUrl = process.env.CAREER_OS_VERIFY_URL || defaultProductionStatusUrl) {
-  const response = await fetch(statusUrl, {
-    headers: { accept: 'application/json' },
-  });
+export async function fetchProductionStatusEvidence(
+  statusUrl = process.env.CAREER_OS_VERIFY_URL || defaultProductionStatusUrl,
+  options = {},
+) {
+  const timeoutMs = Number(options.timeoutMs ?? process.env.CAREER_OS_VERIFY_TIMEOUT_MS ?? defaultProductionStatusTimeoutMs);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
 
-  if (!response.ok) {
-    throw new Error(`GET ${statusUrl} returned ${response.status}`);
+  try {
+    response = await fetch(statusUrl, {
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`Infrastructure failure: GET ${statusUrl} timed out after ${timeoutMs}ms.`);
+    }
+    const reason = describeFetchFailure(error);
+    throw new Error(`Infrastructure failure: GET ${statusUrl} failed before an HTTP response (${reason}).`);
+  } finally {
+    clearTimeout(timeout);
   }
 
-  return await response.json();
+  const body = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Application failure: GET ${statusUrl} returned HTTP ${response.status}. Response body: ${compactBody(body)}`);
+  }
+
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error(`Application failure: GET ${statusUrl} returned malformed JSON. Response body: ${compactBody(body)}`);
+  }
 }
 
 export function evaluateStatusApiEvidence(payload) {
@@ -312,6 +338,19 @@ function hasAnyToken(haystack, needle) {
 
 function round(value) {
   return Math.round(value * 100) / 100;
+}
+
+function describeFetchFailure(error) {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause instanceof Error ? error.cause : null;
+  if (cause?.message) return `${cause.name || 'Error'}: ${cause.message}`;
+  return `${error.name}: ${error.message}`;
+}
+
+function compactBody(body) {
+  const normalized = String(body || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '<empty>';
+  return normalized.length > 240 ? `${normalized.slice(0, 240)}…` : normalized;
 }
 
 export function isMainModule(importMetaUrl) {
