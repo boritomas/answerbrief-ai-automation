@@ -1,5 +1,6 @@
 import { getCareerOsStatus, type CareerOsStatus, type OperationalTrustRecord } from '@/lib/career-os-status';
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
+import { careerOsSelectRows } from '@/lib/career-os-supabase';
 import { RunNowControl } from '../action-controls';
 import { HashScroll } from '../hash-scroll';
 
@@ -12,6 +13,7 @@ export default async function CareerOsAdminPage(
 ) {
   const params = searchParams ? await searchParams : {};
   const query = firstQueryValue(params.q);
+  if (firstQueryValue(params.full) !== '1') return <CareerOsAdminOverview />;
   const status = await getCareerOsStatus();
   const trust = status.operationalTrust;
   const dailyWorkflow = status.dailyWorkflow;
@@ -241,6 +243,107 @@ export default async function CareerOsAdminPage(
   );
 }
 
+async function CareerOsAdminOverview() {
+  const snapshot = await getAdminOverviewSnapshot();
+  return (
+    <main className="career-os-shell">
+      <HashScroll />
+      <header className="career-os-nav" aria-label="Career OS navigation">
+        <a className="brand" href="/career-os">Tomas Career OS</a>
+        <nav>
+          <a href="/career-os">Home</a>
+          <a href="/career-os#matches">Best Matches</a>
+          <a href="/career-os#applications">Applications</a>
+          <a href="/career-os#interviews">Interviews</a>
+          <a href="/career-os/admin?full=1">Full Ledger</a>
+        </nav>
+      </header>
+
+      <section className="career-os-home">
+        <div className="career-os-briefing">
+          <p className="eyebrow">Admin</p>
+          <h1>Operational Detail</h1>
+          <p className="subhead">Fast production status from the latest operating report, deployment metadata, and bounded evidence reads.</p>
+          <div className="career-os-metrics" aria-label="Career OS production summary">
+            <Metric label="Qualified Opportunities" value={snapshot.activeQualifiedOpportunities} />
+            <Metric label="Ready for Automation" value={snapshot.readyForAutomation} />
+            <Metric label="Waiting on Tomas" value={snapshot.waitingOnTomas} />
+            <Metric label="Submitted" value={snapshot.submittedApplications} />
+          </div>
+        </div>
+        <aside className="career-os-action">
+          <p className="eyebrow">Live Production</p>
+          <h2>{snapshot.systemState}</h2>
+          <p>Latest report: {snapshot.generatedAt || 'not available'}.</p>
+          <p>Latest run: {snapshot.latestAutomationRun || 'not recorded'}.</p>
+          <a className="button secondary" href="/api/career-os/status">Open status API</a>
+        </aside>
+      </section>
+
+      <section className="career-os-band" id="system-health">
+        <h2>System Health</h2>
+        <div className="career-os-list compact">
+          <DetailRow detail="Production deployment serving this page." label="Deployment" value={snapshot.deploymentId} />
+          <DetailRow detail="Current Vercel environment." label="Environment" value={snapshot.environment} />
+          <DetailRow detail="Latest operating report availability." label="Snapshot" value={snapshot.generatedAt ? 'available' : 'missing'} />
+          <DetailRow detail="Known source records reviewed in the latest report." label="Raw Jobs Reviewed" value={String(snapshot.rawJobsReviewed)} />
+          <DetailRow detail="Qualified active backlog from the latest report." label="Remaining Qualified" value={String(snapshot.remainingQualifiedApplications)} />
+          <DetailRow detail="Open human-only gates from the latest report." label="Human Gates" value={String(snapshot.waitingOnTomas)} />
+        </div>
+      </section>
+
+      <section className="career-os-band">
+        <h2>Evidence Windows</h2>
+        <div className="career-os-list compact">
+          <DetailRow detail="Use this for operational checks and candidate-mode sanity." label="Default Admin" value="bounded" />
+          <DetailRow detail="Opens the full evidence ledger with intentional deep database reads." label="Full Ledger" value="/career-os/admin?full=1" />
+          <DetailRow detail="Public Career OS entrypoint." label="Guided Experience" value="/career-os" />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+async function getAdminOverviewSnapshot() {
+  const ownerEmail = String(process.env.CAREER_OS_OWNER_EMAIL || 'tomas@nieves.com').trim().replace(/^"|"$/g, '');
+  const [dailyReports, automationRuns] = await Promise.all([
+    safeAdminSelect('career_os_daily_operating_reports', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=generated_at.desc&limit=1`),
+    safeAdminSelect('career_os_automation_runs', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=started_at.desc&limit=1`),
+  ]);
+  const dailyReport = dailyReports[0] || {};
+  const payload = asRecord(dailyReport.payload);
+  const release = asRecord(payload.release_progress_20260719);
+  const cycle = asRecord(payload.daily_operating_cycle);
+  const pipelineHealth = asRecord(cycle.pipelineHealth);
+  const marketCoverage = asRecord(cycle.marketCoverage);
+  const submittedApplications = firstPositiveNumber(release.submitted_applications, pipelineHealth.totalSubmitted);
+  const activeQualifiedOpportunities = firstPositiveNumber(release.active_qualified_opportunities, marketCoverage.qualifiedMatches);
+  const waitingOnTomas = firstPositiveNumber(release.waiting_on_tomas, pipelineHealth.waitingOnTomas, dailyReport.prepared_for_review);
+  const readyForAutomation = firstPositiveNumber(release.ready_for_automation, pipelineHealth.readyForAutomation, dailyReport.auto_apply_eligible);
+
+  return {
+    activeQualifiedOpportunities,
+    deploymentId: process.env.VERCEL_DEPLOYMENT_ID || 'local',
+    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'unknown',
+    generatedAt: String(dailyReport.generated_at || ''),
+    latestAutomationRun: String(automationRuns[0]?.finished_at || automationRuns[0]?.started_at || ''),
+    rawJobsReviewed: firstPositiveNumber(marketCoverage.rawJobsReviewed, dailyReport.opportunities_reviewed),
+    readyForAutomation,
+    remainingQualifiedApplications: Math.max(activeQualifiedOpportunities - submittedApplications, 0),
+    submittedApplications,
+    systemState: dailyReports[0] ? 'healthy' : 'degraded',
+    waitingOnTomas,
+  };
+}
+
+async function safeAdminSelect(table: string, query: string): Promise<JsonRecord[]> {
+  try {
+    return await careerOsSelectRows(table, query);
+  } catch {
+    return [];
+  }
+}
+
 function buildStateInspector(status: CareerOsStatus, query: string) {
   const trust = status.operationalTrust;
   const normalizedQuery = query.trim().toLowerCase();
@@ -348,6 +451,19 @@ function moneyRangeText(range: { complete: boolean; maxUsd?: number; minUsd?: nu
 
 function formatMoney(value: number) {
   return `$${Math.round(value).toLocaleString('en-US')}`;
+}
+
+function firstPositiveNumber(...values: unknown[]) {
+  for (const value of values) {
+    const number = numberValue(value);
+    if (number > 0) return number;
+  }
+  return 0;
+}
+
+function numberValue(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function asRecord(value: unknown): JsonRecord {

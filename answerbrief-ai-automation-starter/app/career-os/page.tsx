@@ -108,8 +108,8 @@ export default async function CareerOsPage(
 ) {
   const params = searchParams ? await searchParams : {};
   const requestedView = firstQueryValue(params.view);
-  if (!requestedView) return <GuidedCareerOsPage />;
-  const activeView = requestedView || 'home';
+  if (requestedView !== 'full') return <GuidedCareerOsPage />;
+  const activeView: string = requestedView || 'home';
   const status = await getCareerOsStatus();
   const trust = status.operationalTrust;
   const outcomeIntelligence = status.outcomeIntelligence;

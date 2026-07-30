@@ -21,7 +21,7 @@ export default async function GuidedCareerOsPage() {
           <a href="#matches" style={styles.navLink}>Best Matches</a>
           <a href="#applications" style={styles.navLink}>Applications</a>
           <a href="#interviews" style={styles.navLink}>Interviews</a>
-          <a href="/career-os?view=detailed" style={styles.navLink}>Detailed View</a>
+          <a href="/career-os/admin" style={styles.navLink}>Admin</a>
         </nav>
       </header>
 
@@ -60,7 +60,7 @@ export default async function GuidedCareerOsPage() {
         <p style={styles.eyebrow}>BEST MATCHES</p>
         <h2 style={styles.sectionTitle}>Opportunities worth your time</h2>
         <p style={styles.muted}>Career OS prioritizes roles that match your leadership experience, compensation goals, location, and verified career evidence.</p>
-        <a href="/career-os?view=qualified#qualified-matches" style={styles.primaryButton}>View My Best Matches</a>
+        <a href="#matches" style={styles.primaryButton}>View My Best Matches</a>
       </section>
 
       <section id="applications" style={styles.section}>
@@ -74,14 +74,14 @@ export default async function GuidedCareerOsPage() {
             </div>
           ))}
         </div>
-        <a href="/career-os?view=detailed#applications" style={styles.secondaryButton}>View Application Progress</a>
+        <a href="#applications" style={styles.secondaryButton}>View Application Progress</a>
       </section>
 
       <section id="interviews" style={styles.section}>
         <p style={styles.eyebrow}>INTERVIEW CENTER</p>
         <h2 style={styles.sectionTitle}>Be ready when the opportunity comes</h2>
         <p style={styles.muted}>Your resume, company research, STAR stories, and interview preparation will be kept together in one place.</p>
-        <a href="/career-os?view=detailed#interviews" style={styles.secondaryButton}>Open Interview Center</a>
+        <a href="#interviews" style={styles.secondaryButton}>Open Interview Center</a>
       </section>
     </main>
   );
@@ -101,10 +101,7 @@ function text(value: unknown) {
 
 async function getGuidedSnapshot() {
   const ownerEmail = String(process.env.CAREER_OS_OWNER_EMAIL || 'tomas@nieves.com').trim().replace(/^"|"$/g, '');
-  const [dailyReports, artifacts] = await Promise.all([
-    safeSelect('career_os_daily_operating_reports', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=generated_at.desc&limit=1`),
-    safeSelect('career_os_artifacts', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=created_at.desc&limit=200`),
-  ]);
+  const dailyReports = await safeSelect('career_os_daily_operating_reports', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=generated_at.desc&limit=1`);
   const dailyReport = dailyReports[0] || {};
   const payload = asRecord(dailyReport.payload);
   const release = asRecord(payload.release_progress_20260719);
@@ -128,10 +125,11 @@ async function getGuidedSnapshot() {
       pipelineHealth.readyForAutomation,
       dailyReport.auto_apply_eligible,
     ),
-    resumeReady: artifacts.some((item) => {
-      const type = text(item.artifact_type);
-      return type.includes('resume') && (text(item.approval_status).includes('approved') || text(item.validation_status).includes('passed'));
-    }),
+    resumeReady: firstPositiveNumber(
+      release.total_package_assets,
+      pipelineHealth.packageAssets,
+      pipelineHealth.packageCoverage,
+    ) > 0,
     submitted: firstPositiveNumber(
       release.submitted_applications,
       pipelineHealth.totalSubmitted,
