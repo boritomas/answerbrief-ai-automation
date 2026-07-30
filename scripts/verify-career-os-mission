@@ -42,7 +42,7 @@ const path = require('node:path');
   }
   add('Synthetic fixture set exists', existsSync(path.join(repoRoot, 'fixtures', 'synthetic-career-os', 'pilot-evidence.json')));
 
-  run('Acceptance tests pass', 'node', ['--test', '../tests/acceptance/career-os-contract.test.mjs'], appRoot);
+  run('Acceptance tests pass', 'node', ['--test', 'tests/acceptance/career-os-contract.test.mjs'], appRoot);
   run('Career OS source lint passes', 'npm', ['run', 'lint'], appRoot);
   run('TypeScript type check passes', localTsc, ['--noEmit', '--incremental', 'false'], appRoot);
   run('Next production build passes', 'npx', ['-y', 'node@20', 'node_modules/next/dist/bin/next', 'build'], appRoot, 600000);

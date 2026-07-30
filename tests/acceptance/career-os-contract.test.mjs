@@ -585,7 +585,7 @@ test('production status fetch reports malformed JSON responses clearly', async (
 
 test('mission verifier runs contract test from appRoot and supports local-only production verification skip', () => {
   const verifier = readFileSync(path.join(repoRoot, 'scripts', 'verify-career-os-mission'), 'utf8');
-  assert.match(verifier, /run\('Acceptance tests pass', 'node', \['--test', '\.\.\/tests\/acceptance\/career-os-contract\.test\.mjs'\], appRoot\)/);
+  assert.match(verifier, /run\('Acceptance tests pass', 'node', \['--test', 'tests\/acceptance\/career-os-contract\.test\.mjs'\], appRoot\)/);
   assert.match(verifier, /const skipProductionVerify = process\.env\.CAREER_OS_SKIP_PRODUCTION_VERIFY === '1'/);
   assert.match(verifier, /if \(skipProductionVerify && isCi\)/);
   assert.match(verifier, /Production status API verification skipped \(local-only override\)/);
