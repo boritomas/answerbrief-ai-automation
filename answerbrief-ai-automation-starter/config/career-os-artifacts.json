@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "career-os-artifact-registry-v1",
+  "updatedAt": "2026-07-29T00:00:00Z",
+  "candidateId": "tomas-nieves",
+  "defaults": {
+    "canonicalResumeId": "resume-executive-v3",
+    "coverLetterPolicy": "generate_role_specific_when_requested_or_high_value",
+    "requireApprovedEvidence": true,
+    "allowUnverifiedClaims": false
