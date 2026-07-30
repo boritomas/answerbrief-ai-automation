@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { getCareerOsStatus } from '@/lib/career-os-status';
 
 export const dynamic = 'force-dynamic';
@@ -113,7 +114,7 @@ function text(value: unknown) {
   return typeof value === 'string' ? value.toLowerCase() : '';
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   page: { minHeight: '100vh', background: '#f7f8fb', color: '#172033', fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', paddingBottom: 80 },
   header: { maxWidth: 1180, margin: '0 auto', padding: '24px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 },
   brand: { color: '#172033', textDecoration: 'none', fontWeight: 800, fontSize: 20 },
