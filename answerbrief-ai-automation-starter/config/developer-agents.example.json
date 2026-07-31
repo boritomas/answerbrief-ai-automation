@@ -1,0 +1,13 @@
+{
+  "repository": "boritomas/answerbrief-ai-automation",
+  "primaryProvider": "openhands",
+  "secondaryProvider": "aider",
+  "branchPrefix": "agent/",
+  "requireHumanMerge": true,
+  "validationCommand": "npm run typecheck && npm run lint && npm test && npm run build",
+  "environment": {
+    "GITHUB_TOKEN": "set-outside-repository",
+    "OPENAI_API_KEY": "optional-provider-secret",
+    "ANTHROPIC_API_KEY": "optional-provider-secret"
+  }
+}
