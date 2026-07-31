@@ -36,7 +36,7 @@ if (!source.includes('resume_checkpoint: browserCheckpoint')) {
 }
 
 const retryAnchor = `      next_action: report.evidenceText || 'Browser companion scheduled a retry.',`;
-const retryReplacement = `      next_action: report.evidenceText || (cleanEnv(browserCheckpoint.current_step)\n        ? \\`Browser companion scheduled a retry from \\${cleanEnv(browserCheckpoint.current_step)}.\\`\n        : 'Browser companion scheduled a retry.'),`;
+const retryReplacement = "      next_action: report.evidenceText || (cleanEnv(browserCheckpoint.current_step)\n        ? 'Browser companion scheduled a retry from ' + cleanEnv(browserCheckpoint.current_step) + '.'\n        : 'Browser companion scheduled a retry.'),";
 if (!source.includes('Browser companion scheduled a retry from')) {
   if (!source.includes(retryAnchor)) throw new Error('Retry next-action anchor was not found.');
   source = source.replace(retryAnchor, retryReplacement);
