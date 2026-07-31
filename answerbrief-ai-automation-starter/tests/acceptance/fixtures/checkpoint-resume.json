@@ -1,0 +1,9 @@
+{
+  "applicationId": "application-123",
+  "completedSections": ["profile", "experience", "education", "resume"],
+  "completedStep": "resume",
+  "currentStep": "questions",
+  "resumeUrl": "https://example.com/application/questions",
+  "status": "retry_scheduled",
+  "version": 1
+}
