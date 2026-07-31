@@ -1,0 +1,12 @@
+{
+  "previous": {
+    "completed_step": "education",
+    "current_step": "resume",
+    "version": 1
+  },
+  "report": {
+    "status": "heartbeat",
+    "details": {}
+  },
+  "expected": "retain_previous"
+}
