@@ -1,0 +1,48 @@
+name: Career OS Build Status
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+  workflow_run:
+    workflows: ["Career OS PR Validation"]
+    types: [requested, completed]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: build-status-${{ github.event.workflow_run.id || github.event.pull_request.number }}-${{ github.event.action }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish verified milestone to Issue 27
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_STATUS: ${{ github.event.workflow_run.status }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            body="Build milestone: PR #${PR_NUMBER} ${ACTION}. Branch: \`${PR_BRANCH}\`. Artifact: ${PR_URL}"
+          elif [ "$ACTION" = "requested" ]; then
+            body="Build milestone: CI started for branch \`${RUN_BRANCH}\`. Artifact: ${RUN_URL}"
+          elif [ "$RUN_CONCLUSION" = "success" ]; then
+            body="Build milestone: CI passed for branch \`${RUN_BRANCH}\`. Ready for merge review. Artifact: ${RUN_URL}"
+          else
+            body="Build milestone: CI failed for branch \`${RUN_BRANCH}\` with conclusion \`${RUN_CONCLUSION}\`. Inspect the failing job before retrying. Artifact: ${RUN_URL}"
+          fi
+          gh issue comment 27 --repo "$REPO" --body "$body"
