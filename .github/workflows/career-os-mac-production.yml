@@ -55,8 +55,9 @@ jobs:
       - name: Repair package lock when manifest changed
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           cd "$CAREER_OS_SOURCE"
+          set +e
           node <<'NODE'
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -71,6 +72,7 @@ jobs:
           }
           NODE
           status=$?
+          set -e
           if [ "$status" -eq 42 ]; then
             npm install --package-lock-only --ignore-scripts
             git config user.name "github-actions[bot]"
