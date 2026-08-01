@@ -1,0 +1,24 @@
+services:
+  career-os:
+    build:
+      context: .
+      dockerfile: Dockerfile.cloud
+    restart: unless-stopped
+    env_file:
+      - .env.cloud
+    ports:
+      - "3000:3000"
+    shm_size: "2gb"
+    volumes:
+      - career_os_worker:/app/.career-os-browser-worker
+      - career_os_debug:/app/.career-os-debug
+      - career_os_state:/app/career-os-state
+      - career_os_applications:/app/career-os-applications
+      - career_os_data:/app/data
+
+volumes:
+  career_os_worker:
+  career_os_debug:
+  career_os_state:
+  career_os_applications:
+  career_os_data:
