@@ -1,12 +1,18 @@
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
 import { getCareerOsStatus } from '@/lib/career-os-status';
 import { FounderRunControls } from './founder-run-controls';
+import { QualifiedRoleControls } from './qualified-role-controls';
 import styles from './founder-dashboard.module.css';
 
 export const dynamic = 'force-dynamic';
 
 type Metric = { label: string; value: string | number; note: string };
 type PipelineStage = { label: string; value: number };
+type JsonRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+}
 
 export default async function FounderDashboardPage() {
   const status = await getCareerOsStatus();
@@ -27,6 +33,33 @@ export default async function FounderDashboardPage() {
     expiresAt: actionTokenExpiresAt,
     ownerEmail: status.evidence.ownerEmail,
   });
+  const reviewOpportunityToken = createCareerOsActionToken({
+    action: 'review_opportunity',
+    expiresAt: actionTokenExpiresAt,
+    ownerEmail: status.evidence.ownerEmail,
+  });
+
+  const qualifiedRoles = status.evidence.jobPostings
+    .map((posting) => asRecord(posting))
+    .filter((posting) => {
+      const raw = asRecord(posting.raw_record);
+      const fitScore = Number(posting.fit_score || 0);
+      const postingStatus = String(posting.status || '').toLowerCase();
+      const reviewDecision = String(raw.review_decision || '').toLowerCase();
+      return fitScore >= 85
+        && !['approved', 'reject_similar', 'skip', 'hidden'].includes(reviewDecision)
+        && !['inactive', 'ineligible', 'poor_fit', 'duplicate'].some((value) => postingStatus.includes(value));
+    })
+    .sort((left, right) => Number(right.fit_score || 0) - Number(left.fit_score || 0))
+    .slice(0, 5)
+    .map((posting) => ({
+      id: String(posting.id || ''),
+      company: String(posting.company || 'Employer'),
+      title: String(posting.title || 'Role'),
+      location: String(posting.location || ''),
+      fitScore: Number(posting.fit_score || 0),
+    }))
+    .filter((role) => Boolean(role.id));
 
   const activeApplications = counts.reviewQueue + counts.actionCenter + counts.readyToResume + counts.applying;
   const workerState = workflow.immediateQueueProcessor.runningNow > 0
@@ -80,7 +113,7 @@ export default async function FounderDashboardPage() {
   const priorities = [
     counts.actionCenter > 0 ? `Resolve ${counts.actionCenter} verified action-center item${counts.actionCenter === 1 ? '' : 's'}` : 'No verified human-action items',
     counts.readyToResume > 0 ? `Resume ${counts.readyToResume} verified application checkpoint${counts.readyToResume === 1 ? '' : 's'}` : 'No verified resumable checkpoints',
-    pipelineHealth.recruiterResponses > 0 ? `Review ${pipelineHealth.recruiterResponses} recruiter response${pipelineHealth.recruiterResponses === 1 ? '' : 's'}` : 'Continue sourcing and submitting qualified roles',
+    qualifiedRoles.length > 0 ? `Approve one of ${qualifiedRoles.length} highest-fit qualified roles below` : 'Continue sourcing and submitting qualified roles',
   ];
 
   const activity = [
@@ -113,6 +146,23 @@ export default async function FounderDashboardPage() {
           ownerEmail={status.evidence.ownerEmail}
           runNowToken={runNowToken}
           refreshDiscoveryToken={refreshDiscoveryToken}
+          tokenExpiresAt={actionTokenExpiresAt}
+        />
+      </section>
+
+      <section className={styles.panel} aria-label="Qualified roles ready for founder approval">
+        <div className={styles.sectionHeading}>
+          <div>
+            <p className={styles.eyebrow}>Production unlock</p>
+            <h2>Approve a qualified role</h2>
+            <p>Approve one high-fit role, create or update its application record, and immediately resume queue processing.</p>
+          </div>
+          <span className={styles.badge}>{qualifiedRoles.length} available</span>
+        </div>
+        <QualifiedRoleControls
+          actionToken={reviewOpportunityToken}
+          ownerEmail={status.evidence.ownerEmail}
+          roles={qualifiedRoles}
           tokenExpiresAt={actionTokenExpiresAt}
         />
       </section>
