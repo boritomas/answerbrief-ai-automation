@@ -19,7 +19,7 @@ const FULL_CAPABILITIES = {
   inspectCi: true,
 };
 
-const DEFAULT_PROVIDER_ORDER = 'gemini,opencode,aider,openhands,claude-code,codex';
+const DEFAULT_PROVIDER_ORDER = 'openhands,gemini,opencode,aider,claude-code,codex';
 
 function executableExists(binary) {
   const result = spawnSync('sh', ['-lc', `command -v ${binary}`], { encoding: 'utf8' });
@@ -90,7 +90,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const task = resolveTask(args);
   if (!task) {
-    console.error('Usage: npm run executor -- "Fix the issue" [--provider gemini] [--dry-run]');
+    console.error('Usage: npm run executor -- "Fix the issue" [--provider openhands] [--dry-run]');
     process.exit(2);
   }
 
