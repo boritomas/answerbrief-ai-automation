@@ -20,7 +20,6 @@ permissions:
 
 jobs:
   production-canary:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-career-os-canary]')
     runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 45
     env:
@@ -34,7 +33,10 @@ jobs:
           set -euo pipefail
           test -d "$CAREER_OS_RUNTIME"
           test -f "$CAREER_OS_RUNTIME/package.json"
-          test -f "$CAREER_OS_RUNTIME/.env.local"
+          if test ! -f "$CAREER_OS_RUNTIME/.env" && test ! -f "$CAREER_OS_RUNTIME/.env.local"; then
+            echo "Career OS runtime environment file is missing."
+            exit 1
+          fi
           mkdir -p "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}"
 
       - name: Preserve local state and update code
