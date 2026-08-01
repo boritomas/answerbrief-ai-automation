@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${CAREER_OS_RUNNER_REPO_URL:-https://github.com/boritomas/answerbrief-ai-automation}"
+REPO_SLUG="${CAREER_OS_RUNNER_REPO_SLUG:-boritomas/answerbrief-ai-automation}"
+REPO_URL="${CAREER_OS_RUNNER_REPO_URL:-https://github.com/${REPO_SLUG}}"
 RUNNER_DIR="${CAREER_OS_RUNNER_DIR:-$HOME/actions-runner-career-os}"
 RUNNER_NAME="${CAREER_OS_RUNNER_NAME:-career-os-mac-$(scutil --get LocalHostName 2>/dev/null || hostname)}"
 RUNNER_LABELS="${CAREER_OS_RUNNER_LABELS:-career-os}"
@@ -21,12 +22,20 @@ case "$ARCH" in
 esac
 
 if [[ -z "$RUNNER_TOKEN" ]]; then
-  cat >&2 <<'EOF'
-CAREER_OS_RUNNER_TOKEN is required.
-Create a temporary registration token in:
-GitHub repository Settings > Actions > Runners > New self-hosted runner.
-Do not save or commit the token.
-EOF
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "GitHub CLI is required when CAREER_OS_RUNNER_TOKEN is not supplied." >&2
+    echo "Install it with: brew install gh" >&2
+    exit 2
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "GitHub CLI is not authenticated. Run: gh auth login" >&2
+    exit 2
+  fi
+  RUNNER_TOKEN="$(gh api --method POST "repos/${REPO_SLUG}/actions/runners/registration-token" --jq .token)"
+fi
+
+if [[ -z "$RUNNER_TOKEN" ]]; then
+  echo "Unable to obtain a GitHub runner registration token." >&2
   exit 2
 fi
 
