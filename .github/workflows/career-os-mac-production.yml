@@ -20,17 +20,18 @@ permissions:
 
 jobs:
   production-canary:
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted]
     timeout-minutes: 45
     env:
       CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
       CAREER_OS_DEBUG_CLAIM: '1'
       CAREER_OS_DAILY_LIMIT: '1'
     steps:
-      - name: Verify local runtime
+      - name: Verify runner and local runtime
         shell: bash
         run: |
           set -euo pipefail
+          test "$(uname -s)" = "Darwin"
           test -d "$CAREER_OS_RUNTIME"
           test -f "$CAREER_OS_RUNTIME/package.json"
           if test ! -f "$CAREER_OS_RUNTIME/.env" && test ! -f "$CAREER_OS_RUNTIME/.env.local"; then
@@ -38,6 +39,12 @@ jobs:
             exit 1
           fi
           mkdir -p "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}"
+          {
+            echo "runner_name=${RUNNER_NAME:-unknown}"
+            echo "runner_os=${RUNNER_OS:-unknown}"
+            echo "runner_arch=${RUNNER_ARCH:-unknown}"
+            uname -a
+          } > "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}/runner.txt"
 
       - name: Preserve local state and update code
         shell: bash
