@@ -7,7 +7,6 @@ import {
   buildProviderCommand,
   createDeveloperAgentConfig,
   providerDefinitions,
-  selectAvailableProvider,
 } from './lib/career-os-developer-agent.mjs';
 
 const FULL_CAPABILITIES = {
@@ -19,6 +18,8 @@ const FULL_CAPABILITIES = {
   triggerCi: true,
   inspectCi: true,
 };
+
+const DEFAULT_PROVIDER_ORDER = 'gemini,opencode,aider,openhands,claude-code,codex';
 
 function executableExists(binary) {
   const result = spawnSync('sh', ['-lc', `command -v ${binary}`], { encoding: 'utf8' });
@@ -52,33 +53,51 @@ function detectAvailability() {
   );
 }
 
-function run(command, options = {}) {
+function providerOrder(args, availability) {
+  const requested = args.provider ? [args.provider] : [];
+  const configured = (process.env.ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER || DEFAULT_PROVIDER_ORDER)
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  const known = Object.keys(providerDefinitions());
+  const ordered = [...requested, ...configured, ...known];
+  return [...new Set(ordered)].filter((provider) => availability[provider] === true);
+}
+
+function execute(command) {
   const [binary, ...args] = command;
   const result = spawnSync(binary, args, {
-    cwd: options.cwd || process.cwd(),
+    cwd: process.cwd(),
     env: process.env,
     stdio: 'inherit',
   });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`${binary} exited with status ${result.status}`);
+  if (result.error) return { ok: false, message: result.error.message };
+  if (result.status !== 0) return { ok: false, message: `${binary} exited with status ${result.status}` };
+  return { ok: true, message: '' };
+}
+
+function configFor(provider) {
+  return createDeveloperAgentConfig({
+    provider,
+    repository: process.env.ANSWERBRIEF_EXECUTOR_REPOSITORY || 'boritomas/answerbrief-ai-automation',
+    capabilities: FULL_CAPABILITIES,
+    requireHumanMerge: process.env.ANSWERBRIEF_EXECUTOR_AUTO_MERGE !== '1',
+    validateCommand: process.env.ANSWERBRIEF_EXECUTOR_VALIDATE || 'npm run typecheck && npm run lint && npm test && npm run build',
+  });
 }
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const task = resolveTask(args);
   if (!task) {
-    console.error('Usage: npm run executor -- "Fix the issue" [--provider openhands] [--dry-run]');
+    console.error('Usage: npm run executor -- "Fix the issue" [--provider gemini] [--dry-run]');
     process.exit(2);
   }
 
   const availability = detectAvailability();
-  const preferred = (process.env.ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER || 'openhands,aider,opencode,gemini,claude-code,codex')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const selectedProvider = args.provider || selectAvailableProvider(availability, preferred);
+  const providers = providerOrder(args, availability);
 
-  if (!selectedProvider) {
+  if (!providers.length) {
     console.error(JSON.stringify({
       ok: false,
       status: 'hard_blocker',
@@ -88,36 +107,79 @@ function main() {
     process.exit(3);
   }
 
-  const config = createDeveloperAgentConfig({
-    provider: selectedProvider,
-    repository: process.env.ANSWERBRIEF_EXECUTOR_REPOSITORY || 'boritomas/answerbrief-ai-automation',
-    capabilities: FULL_CAPABILITIES,
-    requireHumanMerge: process.env.ANSWERBRIEF_EXECUTOR_AUTO_MERGE !== '1',
-    validateCommand: process.env.ANSWERBRIEF_EXECUTOR_VALIDATE || 'npm run typecheck && npm run lint && npm test && npm run build',
-  });
-  const command = buildProviderCommand(config, task);
+  if (args.dryRun) {
+    const provider = providers[0];
+    const command = buildProviderCommand(configFor(provider), task);
+    console.log(JSON.stringify({
+      ok: true,
+      status: 'dry_run',
+      provider,
+      fallbackOrder: providers,
+      availability,
+      command: [command[0], ...command.slice(1).map((value) => value === task ? '<task>' : value)],
+    }, null, 2));
+    return;
+  }
 
-  console.log(JSON.stringify({
-    ok: true,
-    status: args.dryRun ? 'dry_run' : 'executing',
-    provider: selectedProvider,
-    availability,
-    repository: config.repository,
-    command: [command[0], ...command.slice(1).map((value, index) => index === command.length - 2 ? '<task>' : value)],
-  }, null, 2));
+  const failures = [];
+  let completedProvider = '';
+  let completedConfig = null;
 
-  if (args.dryRun) return;
+  for (const provider of providers) {
+    const config = configFor(provider);
+    const command = buildProviderCommand(config, task);
+    console.log(JSON.stringify({
+      ok: true,
+      status: 'executing',
+      provider,
+      fallbackOrder: providers,
+      repository: config.repository,
+    }, null, 2));
 
-  run(command);
+    const result = execute(command);
+    if (result.ok) {
+      completedProvider = provider;
+      completedConfig = config;
+      break;
+    }
+
+    failures.push({ provider, message: result.message });
+    console.error(JSON.stringify({
+      ok: false,
+      status: 'provider_failed_trying_fallback',
+      provider,
+      message: result.message,
+    }, null, 2));
+  }
+
+  if (!completedProvider || !completedConfig) {
+    console.error(JSON.stringify({
+      ok: false,
+      status: 'failed',
+      message: 'Every available execution provider failed.',
+      failures,
+    }, null, 2));
+    process.exit(1);
+  }
 
   if (process.env.ANSWERBRIEF_EXECUTOR_SKIP_VALIDATION !== '1') {
-    run(['sh', '-lc', config.commands.validate]);
+    const validation = execute(['sh', '-lc', completedConfig.commands.validate]);
+    if (!validation.ok) {
+      console.error(JSON.stringify({
+        ok: false,
+        status: 'validation_failed',
+        provider: completedProvider,
+        message: validation.message,
+      }, null, 2));
+      process.exit(1);
+    }
   }
 
   console.log(JSON.stringify({
     ok: true,
     status: 'completed',
-    provider: selectedProvider,
+    provider: completedProvider,
+    attemptedProviders: [...failures.map(({ provider }) => provider), completedProvider],
     validation: process.env.ANSWERBRIEF_EXECUTOR_SKIP_VALIDATION === '1' ? 'skipped' : 'passed',
   }, null, 2));
 }
