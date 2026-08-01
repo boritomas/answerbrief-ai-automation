@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const pagePath = new URL('../../app/founder-dashboard/page.tsx', import.meta.url);
+const controlsPath = new URL('../../app/founder-dashboard/founder-run-controls.tsx', import.meta.url);
 const stylePath = new URL('../../app/founder-dashboard/founder-dashboard.module.css', import.meta.url);
 
 test('founder dashboard exposes the approved production sections', async () => {
@@ -39,14 +40,18 @@ test('founder dashboard reads verified Career OS production status', async () =>
   assert.doesNotMatch(source, /Live data pending/);
 });
 
-test('founder dashboard exposes authenticated production controls', async () => {
+test('founder dashboard uses action-specific signed production controls', async () => {
   const source = await readFile(pagePath, 'utf8');
+  const controls = await readFile(controlsPath, 'utf8');
 
   assert.match(source, /createCareerOsActionToken/);
-  assert.match(source, /RunNowControl/);
-  assert.match(source, /actionTokenExpiresAt/);
+  assert.match(source, /action: 'run_now'/);
+  assert.match(source, /action: 'refresh_discovery'/);
+  assert.match(source, /FounderRunControls/);
   assert.match(source, /ownerEmail=\{status\.evidence\.ownerEmail\}/);
-  assert.match(source, /Refresh official job sources, queue eligible applications/);
+  assert.match(controls, /runNowToken/);
+  assert.match(controls, /refreshDiscoveryToken/);
+  assert.match(controls, /fetch\('\/api\/career-os\/actions'/);
 });
 
 test('founder dashboard exposes verified browser-worker execution state', async () => {
