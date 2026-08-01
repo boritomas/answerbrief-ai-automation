@@ -10,6 +10,7 @@ test('founder dashboard exposes the approved production sections', async () => {
 
   for (const requiredText of [
     'Founder Success Dashboard',
+    'Run Career OS',
     'Applications submitted',
     'Active applications',
     'Recruiter responses',
@@ -33,6 +34,16 @@ test('founder dashboard reads verified Career OS production status', async () =>
   assert.match(source, /Live production data/);
   assert.doesNotMatch(source, /Applications submitted[^\n]*147/);
   assert.doesNotMatch(source, /Live data pending/);
+});
+
+test('founder dashboard exposes authenticated production controls', async () => {
+  const source = await readFile(pagePath, 'utf8');
+
+  assert.match(source, /createCareerOsActionToken/);
+  assert.match(source, /RunNowControl/);
+  assert.match(source, /actionTokenExpiresAt/);
+  assert.match(source, /ownerEmail=\{status\.evidence\.ownerEmail\}/);
+  assert.match(source, /Refresh official job sources, queue eligible applications/);
 });
 
 test('founder dashboard preserves evidence-first offer reporting', async () => {
