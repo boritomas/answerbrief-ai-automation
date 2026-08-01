@@ -1,4 +1,6 @@
+import { createCareerOsActionToken } from '@/lib/career-os-queue';
 import { getCareerOsStatus } from '@/lib/career-os-status';
+import { RunNowControl } from '../career-os/action-controls';
 import styles from './founder-dashboard.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +22,12 @@ export default async function FounderDashboardPage() {
   const counts = trust.verifiedCounts;
   const workflow = status.dailyWorkflow;
   const pipelineHealth = workflow.pipelineHealth;
+  const actionTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
+  const actionToken = createCareerOsActionToken({
+    action: 'founder_dashboard',
+    expiresAt: actionTokenExpiresAt,
+    ownerEmail: status.evidence.ownerEmail,
+  });
 
   const activeApplications =
     counts.reviewQueue +
@@ -116,6 +124,22 @@ export default async function FounderDashboardPage() {
         </div>
         <a className={styles.homeLink} href="/career-os">Open Career OS</a>
       </header>
+
+      <section className={styles.panel} aria-label="Career OS production controls">
+        <div className={styles.sectionHeading}>
+          <div>
+            <p className={styles.eyebrow}>Production controls</p>
+            <h2>Run Career OS</h2>
+            <p>Refresh official job sources, queue eligible applications, and refresh verified status from one place.</p>
+          </div>
+          <span className={styles.badge}>{workflow.immediateQueueProcessor.status}</span>
+        </div>
+        <RunNowControl
+          actionToken={actionToken}
+          actionTokenExpiresAt={actionTokenExpiresAt}
+          ownerEmail={status.evidence.ownerEmail}
+        />
+      </section>
 
       <section className={styles.metricGrid} aria-label="Founder success metrics">
         {metrics.map((metric) => (
