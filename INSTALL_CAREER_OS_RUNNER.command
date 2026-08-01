@@ -60,8 +60,12 @@ if ! command -v aider >/dev/null 2>&1; then
 fi
 
 chmod +x scripts/bootstrap-career-os-mac-runner.sh
+chmod +x scripts/install-career-os-control-plane.sh
 chmod +x scripts/career-os-autonomous-supervisor.mjs
+chmod +x scripts/career-os-mcp-server.mjs
+
 bash scripts/bootstrap-career-os-mac-runner.sh
+bash scripts/install-career-os-control-plane.sh
 
 mkdir -p "$HOME/.career-os"
 {
@@ -71,7 +75,9 @@ mkdir -p "$HOME/.career-os"
   echo "gemini=$(command -v gemini || true)"
   echo "opencode=$(command -v opencode || true)"
   echo "aider=$(command -v aider || true)"
+  echo "mcp_details=$HOME/Desktop/CareerOS-Control-Plane.txt"
 } > "$HOME/.career-os/control-plane.env"
+chmod 600 "$HOME/.career-os/control-plane.env"
 
 echo "Installed repair providers:"
 for tool in gemini opencode aider; do
@@ -87,6 +93,7 @@ gh workflow run career-os-mac-production.yml --repo boritomas/answerbrief-ai-aut
 
 echo
 echo "Control-plane installation and production dispatch completed."
+echo "MCP connection details are stored privately on your Desktop in CareerOS-Control-Plane.txt."
 echo "The first Gemini CLI repair may require a one-time Google sign-in."
 echo "Log saved to: $LOG"
 read -r -p "Press Return to close."
