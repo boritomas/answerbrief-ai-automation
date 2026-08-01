@@ -30,7 +30,7 @@ jobs:
       CAREER_OS_DAILY_LIMIT: '1'
       CAREER_OS_AUTO_REPAIR: '1'
       CAREER_OS_SUPERVISOR_MAX_ATTEMPTS: '3'
-      ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER: gemini,opencode,aider,openhands,claude-code,codex
+      ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER: openhands,gemini,opencode,aider,claude-code,codex
     steps:
       - name: Verify runner and local runtime
         shell: bash
@@ -50,7 +50,7 @@ jobs:
             echo "runner_arch=${RUNNER_ARCH:-unknown}"
             uname -a
             echo "available_repair_providers:"
-            for tool in gemini opencode aider openhands claude codex; do
+            for tool in openhands gemini opencode aider claude codex; do
               command -v "$tool" 2>/dev/null || true
             done
           } > "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}/runner.txt"
@@ -80,6 +80,15 @@ jobs:
           npm run lint 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/lint.log"
           npm test 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/test.log"
 
+      - name: Verify OpenHands service
+        shell: bash
+        run: |
+          set +e
+          cd "$CAREER_OS_RUNTIME"
+          npm run openhands:start 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/openhands-service.log"
+          npm run openhands:status 2>&1 | tee -a ".career-os-ci/${GITHUB_RUN_ID}/openhands-service.log"
+          exit 0
+
       - name: Execute, observe, repair, retry
         if: github.event_name == 'push' || inputs.run_canary == true
         shell: bash
@@ -96,7 +105,9 @@ jobs:
           cd "$CAREER_OS_RUNTIME"
           npm run worker:health 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/worker-health-final.log"
           npm run report:career-os 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/production-report-final.log"
+          npm run openhands:status 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/openhands-status-final.log"
           cp -R .career-os-browser-worker ".career-os-ci/${GITHUB_RUN_ID}/browser-worker" 2>/dev/null || true
+          cp -R .career-os-control ".career-os-ci/${GITHUB_RUN_ID}/control-plane" 2>/dev/null || true
           cp -R playwright-report ".career-os-ci/${GITHUB_RUN_ID}/playwright-report" 2>/dev/null || true
           cp -R test-results ".career-os-ci/${GITHUB_RUN_ID}/test-results" 2>/dev/null || true
           find . -maxdepth 6 \( -name '*.zip' -o -name '*.trace' -o -name '*production-report*.md' -o -name '*.png' \) -print > ".career-os-ci/${GITHUB_RUN_ID}/artifact-index.txt"
