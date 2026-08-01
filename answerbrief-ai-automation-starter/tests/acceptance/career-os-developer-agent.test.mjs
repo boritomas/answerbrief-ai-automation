@@ -33,7 +33,7 @@ test('creates a human-gated OpenHands configuration', () => {
   });
   assert.equal(config.preflight.ready, true);
   assert.equal(config.requireHumanMerge, true);
-  assert.deepEqual(buildProviderCommand(config, 'Implement the approved issue'), ['openhands', '--task', 'Implement the approved issue']);
+  assert.deepEqual(buildProviderCommand(config, 'Implement the approved issue'), ['openhands', '--headless', '-t', 'Implement the approved issue']);
 });
 
 test('supports Aider as a secondary provider', () => {
@@ -53,19 +53,20 @@ test('falls back to built-in provider priority', () => {
   assert.equal(selectAvailableProvider({ aider: true, gemini: true }), 'aider');
 });
 
-test('defines open-source executor providers', () => {
+test('defines open-source executor providers and npx Gemini fallback', () => {
   const definitions = providerDefinitions();
   assert.ok(definitions.openhands);
   assert.ok(definitions.aider);
   assert.ok(definitions.opencode);
   assert.ok(definitions.gemini);
+  assert.ok(definitions.gemini.binaries.includes('npx'));
 });
 
 test('supports OpenCode and Gemini commands', () => {
   const opencode = createDeveloperAgentConfig({ provider: 'opencode', capabilities: fullCapabilities });
   const gemini = createDeveloperAgentConfig({ provider: 'gemini', capabilities: fullCapabilities });
   assert.deepEqual(buildProviderCommand(opencode, 'Fix it'), ['opencode', 'run', 'Fix it']);
-  assert.deepEqual(buildProviderCommand(gemini, 'Fix it'), ['gemini', '--yolo', '--prompt', 'Fix it']);
+  assert.deepEqual(buildProviderCommand(gemini, 'Fix it'), ['npx', '-y', '@google/gemini-cli', '--yolo', '--prompt', 'Fix it']);
 });
 
 test('rejects unsupported providers', () => {

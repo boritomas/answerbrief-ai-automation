@@ -2,7 +2,7 @@ const PROVIDER_DEFINITIONS = {
   openhands: { binaries: ['openhands'], priority: 10 },
   aider: { binaries: ['aider'], priority: 20 },
   opencode: { binaries: ['opencode'], priority: 30 },
-  gemini: { binaries: ['gemini'], priority: 40 },
+  gemini: { binaries: ['gemini', 'npx'], priority: 40 },
   'claude-code': { binaries: ['claude'], priority: 50 },
   codex: { binaries: ['codex'], priority: 60 },
 };
@@ -66,9 +66,9 @@ export function buildProviderCommand(config, task) {
   if (!config?.preflight?.ready) throw new Error(`Developer agent preflight failed: ${(config?.preflight?.missing || []).join(', ')}`);
 
   if (config.provider === 'aider') return ['aider', '--yes-always', '--message', prompt];
-  if (config.provider === 'openhands') return ['openhands', '--task', prompt];
+  if (config.provider === 'openhands') return ['openhands', '--headless', '-t', prompt];
   if (config.provider === 'opencode') return ['opencode', 'run', prompt];
-  if (config.provider === 'gemini') return ['gemini', '--yolo', '--prompt', prompt];
+  if (config.provider === 'gemini') return ['npx', '-y', '@google/gemini-cli', '--yolo', '--prompt', prompt];
   if (config.provider === 'codex') return ['codex', 'exec', prompt];
   return ['claude', '--print', prompt];
 }
