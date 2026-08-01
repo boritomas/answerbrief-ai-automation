@@ -16,6 +16,7 @@
     "executor:dry-run": "node ./scripts/answerbrief-executor.mjs --dry-run",
     "supervisor": "node ./scripts/career-os-autonomous-supervisor.mjs",
     "supervisor:no-repair": "CAREER_OS_AUTO_REPAIR=0 node ./scripts/career-os-autonomous-supervisor.mjs",
+    "mcp": "node ./scripts/career-os-mcp-server.mjs",
     "health:career-os": "node ./scripts/career-os-production-health.mjs",
     "worker:pair": "node ./scripts/career-os-browser-companion.mjs pair",
     "worker:start": "node ./scripts/career-os-browser-companion.mjs start",
@@ -29,7 +30,9 @@
     "linkedin:discover": "node ./scripts/career-os-linkedin-discovery.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.4",
     "@stripe/stripe-js": "^4.0.0",
+    "express": "^5.1.0",
     "next": "^16.2.12",
     "pg": "^8.22.0",
     "playwright": "^1.54.2",
