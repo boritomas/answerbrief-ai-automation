@@ -51,7 +51,8 @@ test('founder dashboard uses action-specific signed production controls', async 
   assert.match(source, /ownerEmail=\{status\.evidence\.ownerEmail\}/);
   assert.match(controls, /runNowToken/);
   assert.match(controls, /refreshDiscoveryToken/);
-  assert.match(controls, /fetch\('\/api\/career-os\/actions'/);
+  assert.match(controls, /\/api\/career-os\/run-one/);
+  assert.match(controls, /\/api\/career-os\/actions/);
 });
 
 test('founder dashboard exposes verified browser-worker execution state', async () => {
