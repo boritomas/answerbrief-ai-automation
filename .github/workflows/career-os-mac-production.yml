@@ -25,14 +25,21 @@ jobs:
     runs-on: [self-hosted]
     timeout-minutes: 120
     env:
-      CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
+      CAREER_OS_RUNTIME: ${{ github.workspace }}/answerbrief-ai-automation-starter
       CAREER_OS_DEBUG_CLAIM: '1'
       CAREER_OS_DAILY_LIMIT: '1'
       CAREER_OS_AUTO_REPAIR: '1'
       CAREER_OS_SUPERVISOR_MAX_ATTEMPTS: '3'
       ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER: openhands,gemini,opencode,aider,claude-code,codex
     steps:
-      - name: Verify runner and local runtime
+      - name: Checkout current main without deleting local environment
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          clean: false
+
+      - name: Verify runner and workspace
         shell: bash
         run: |
           set -euo pipefail
@@ -40,11 +47,13 @@ jobs:
           test -d "$CAREER_OS_RUNTIME"
           test -f "$CAREER_OS_RUNTIME/package.json"
           if test ! -f "$CAREER_OS_RUNTIME/.env" && test ! -f "$CAREER_OS_RUNTIME/.env.local"; then
-            echo "Career OS runtime environment file is missing."
+            echo "Career OS environment file is missing from $CAREER_OS_RUNTIME."
             exit 1
           fi
           mkdir -p "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}"
           {
+            echo "workspace=${GITHUB_WORKSPACE}"
+            echo "runtime=${CAREER_OS_RUNTIME}"
             echo "runner_name=${RUNNER_NAME:-unknown}"
             echo "runner_os=${RUNNER_OS:-unknown}"
             echo "runner_arch=${RUNNER_ARCH:-unknown}"
@@ -54,21 +63,8 @@ jobs:
               command -v "$tool" 2>/dev/null || true
             done
           } > "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}/runner.txt"
-
-      - name: Preserve local state and update code
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$CAREER_OS_RUNTIME"
-          git status --short > ".career-os-ci/${GITHUB_RUN_ID}/git-status-before.txt"
-          if test -n "$(git status --porcelain --untracked-files=no)"; then
-            echo "Tracked local changes detected; refusing to overwrite the production runtime." | tee ".career-os-ci/${GITHUB_RUN_ID}/blocked-local-changes.txt"
-            exit 1
-          fi
-          git fetch origin main
-          git checkout main
-          git merge --ff-only origin/main
-          git rev-parse HEAD > ".career-os-ci/${GITHUB_RUN_ID}/commit.txt"
+          git -C "$GITHUB_WORKSPACE" status --short > "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}/git-status-before.txt"
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD > "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}/commit.txt"
 
       - name: Install and validate
         shell: bash
@@ -89,7 +85,7 @@ jobs:
           npm run openhands:status 2>&1 | tee -a ".career-os-ci/${GITHUB_RUN_ID}/openhands-service.log"
           exit 0
 
-      - name: Execute, observe, repair, retry
+      - name: Execute observe repair and retry
         if: github.event_name == 'push' || inputs.run_canary == true
         shell: bash
         run: |
@@ -111,13 +107,13 @@ jobs:
           cp -R playwright-report ".career-os-ci/${GITHUB_RUN_ID}/playwright-report" 2>/dev/null || true
           cp -R test-results ".career-os-ci/${GITHUB_RUN_ID}/test-results" 2>/dev/null || true
           find . -maxdepth 6 \( -name '*.zip' -o -name '*.trace' -o -name '*production-report*.md' -o -name '*.png' \) -print > ".career-os-ci/${GITHUB_RUN_ID}/artifact-index.txt"
-          git status --short > ".career-os-ci/${GITHUB_RUN_ID}/git-status-after.txt"
+          git -C "$GITHUB_WORKSPACE" status --short > ".career-os-ci/${GITHUB_RUN_ID}/git-status-after.txt"
 
       - name: Upload production evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: career-os-production-${{ github.run_id }}
-          path: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.career-os-ci/${{ github.run_id }}
+          path: ${{ github.workspace }}/answerbrief-ai-automation-starter/.career-os-ci/${{ github.run_id }}
           if-no-files-found: error
           retention-days: 30
