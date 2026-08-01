@@ -1,6 +1,6 @@
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
 import { getCareerOsStatus } from '@/lib/career-os-status';
-import { RunNowControl } from '../career-os/action-controls';
+import { FounderRunControls } from './founder-run-controls';
 import styles from './founder-dashboard.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -17,8 +17,13 @@ export default async function FounderDashboardPage() {
   const execution = status.applicationExecution;
   const queueStates = execution.queueStates;
   const actionTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
-  const actionToken = createCareerOsActionToken({
-    action: 'founder_dashboard',
+  const runNowToken = createCareerOsActionToken({
+    action: 'run_now',
+    expiresAt: actionTokenExpiresAt,
+    ownerEmail: status.evidence.ownerEmail,
+  });
+  const refreshDiscoveryToken = createCareerOsActionToken({
+    action: 'refresh_discovery',
     expiresAt: actionTokenExpiresAt,
     ownerEmail: status.evidence.ownerEmail,
   });
@@ -104,7 +109,12 @@ export default async function FounderDashboardPage() {
           </div>
           <span className={styles.badge}>{workflow.immediateQueueProcessor.status}</span>
         </div>
-        <RunNowControl actionToken={actionToken} actionTokenExpiresAt={actionTokenExpiresAt} ownerEmail={status.evidence.ownerEmail} />
+        <FounderRunControls
+          ownerEmail={status.evidence.ownerEmail}
+          runNowToken={runNowToken}
+          refreshDiscoveryToken={refreshDiscoveryToken}
+          tokenExpiresAt={actionTokenExpiresAt}
+        />
       </section>
 
       <section className={styles.panel} aria-label="Browser worker status">
