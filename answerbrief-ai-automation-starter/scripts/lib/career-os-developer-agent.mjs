@@ -66,7 +66,7 @@ export function buildProviderCommand(config, task) {
   if (!config?.preflight?.ready) throw new Error(`Developer agent preflight failed: ${(config?.preflight?.missing || []).join(', ')}`);
 
   if (config.provider === 'aider') return ['aider', '--yes-always', '--message', prompt];
-  if (config.provider === 'openhands') return ['openhands', '--headless', '-t', prompt];
+  if (config.provider === 'openhands') return ['openhands', '--headless', '--json', '--exit-without-confirmation', '-t', prompt];
   if (config.provider === 'opencode') return ['opencode', 'run', prompt];
   if (config.provider === 'gemini') return ['npx', '-y', '@google/gemini-cli', '--yolo', '--prompt', prompt];
   if (config.provider === 'codex') return ['codex', 'exec', prompt];
