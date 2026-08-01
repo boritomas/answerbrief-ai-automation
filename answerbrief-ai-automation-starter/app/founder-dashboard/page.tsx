@@ -1,39 +1,109 @@
+import { getCareerOsStatus } from '@/lib/career-os-status';
 import styles from './founder-dashboard.module.css';
 
-const metrics = [
-  { label: 'Applications submitted', value: '0', note: 'Connect production application data' },
-  { label: 'Active applications', value: '0', note: 'Open and awaiting outcome' },
-  { label: 'Recruiter responses', value: '0', note: 'Replies and screening outreach' },
-  { label: 'Interviews scheduled', value: '0', note: 'Upcoming interview events' },
-  { label: 'Offers', value: '0', note: 'Received offers' },
-];
+export const dynamic = 'force-dynamic';
 
-const pipeline = [
-  'Discovered',
-  'Qualified',
-  'Tailoring',
-  'Applied',
-  'Recruiter Review',
-  'Interview',
-  'Offer',
-  'Closed',
-];
+type Metric = {
+  label: string;
+  value: string | number;
+  note: string;
+};
 
-const intelligence = [
-  ['Current resume version', 'Not connected'],
-  ['ATS score', 'Not measured'],
-  ['Resume health', 'Not measured'],
-  ['AI readiness', 'Not measured'],
-  ['Last optimization', 'Not available'],
-];
+type PipelineStage = {
+  label: string;
+  value: number;
+};
 
-const priorities = [
-  'Connect existing application records to the dashboard',
-  'Confirm the current production resume version',
-  'Review new recruiter responses and outcomes',
-];
+export default async function FounderDashboardPage() {
+  const status = await getCareerOsStatus();
+  const trust = status.operationalTrust;
+  const counts = trust.verifiedCounts;
+  const workflow = status.dailyWorkflow;
+  const pipelineHealth = workflow.pipelineHealth;
 
-export default function FounderDashboardPage() {
+  const activeApplications =
+    counts.reviewQueue +
+    counts.actionCenter +
+    counts.readyToResume +
+    counts.applying;
+
+  const metrics: Metric[] = [
+    {
+      label: 'Applications submitted',
+      value: counts.submitted,
+      note: 'Verified submitted applications',
+    },
+    {
+      label: 'Active applications',
+      value: activeApplications,
+      note: 'Verified review, action, resume, and applying states',
+    },
+    {
+      label: 'Recruiter responses',
+      value: pipelineHealth.recruiterResponses,
+      note: 'Confirmed recruiter responses in production',
+    },
+    {
+      label: 'Interviews scheduled',
+      value: counts.interviews,
+      note: 'Verified interview evidence',
+    },
+    {
+      label: 'Offers',
+      value: 0,
+      note: 'No verified offer record connected yet',
+    },
+  ];
+
+  const pipeline: PipelineStage[] = [
+    { label: 'Discovered', value: workflow.marketCoverage.rawJobsReviewed },
+    { label: 'Qualified', value: workflow.marketCoverage.qualifiedMatches },
+    { label: 'Review Queue', value: counts.reviewQueue },
+    { label: 'Action Center', value: counts.actionCenter },
+    { label: 'Applying', value: counts.applying },
+    { label: 'Submitted', value: counts.submitted },
+    { label: 'Interview', value: counts.interviews },
+    { label: 'Closed', value: 0 },
+  ];
+
+  const intelligence = [
+    ['Current resume version', status.evidence.artifacts.some((artifact) => artifact.artifact_type === 'targeted_resume') ? 'Targeted resume available' : 'No verified targeted resume'],
+    ['ATS score', 'Use per-role package evidence'],
+    ['Resume health', 'Use verified package evidence'],
+    ['AI readiness', status.productionEvidenceReady ? 'Production evidence ready' : 'Evidence incomplete'],
+    ['Last status refresh', status.generatedAt],
+  ];
+
+  const priorities = [
+    counts.actionCenter > 0
+      ? `Resolve ${counts.actionCenter} verified action-center item${counts.actionCenter === 1 ? '' : 's'}`
+      : 'No verified human-action items',
+    counts.readyToResume > 0
+      ? `Resume ${counts.readyToResume} verified application checkpoint${counts.readyToResume === 1 ? '' : 's'}`
+      : 'No verified resumable checkpoints',
+    pipelineHealth.recruiterResponses > 0
+      ? `Review ${pipelineHealth.recruiterResponses} recruiter response${pipelineHealth.recruiterResponses === 1 ? '' : 's'}`
+      : 'Continue sourcing and submitting qualified roles',
+  ];
+
+  const activity = [
+    {
+      label: 'Last autonomous run',
+      value: workflow.status,
+      detail: workflow.dailyReportStatus,
+    },
+    {
+      label: 'Queue processor',
+      value: workflow.immediateQueueProcessor.status,
+      detail: `${workflow.immediateQueueProcessor.runningNow} running now; ${workflow.immediateQueueProcessor.submittedThisRun} submitted this run`,
+    },
+    {
+      label: 'Next scheduled run',
+      value: workflow.immediateQueueProcessor.nextScheduledRun,
+      detail: `Generated ${status.generatedAt}`,
+    },
+  ];
+
   return (
     <main className={styles.page}>
       <header className={styles.header}>
@@ -41,10 +111,10 @@ export default function FounderDashboardPage() {
           <p className={styles.eyebrow}>Founder validation</p>
           <h1>Founder Success Dashboard</h1>
           <p className={styles.subtitle}>
-            One command center for Tomas&apos;s live executive job search. Values remain explicit until production data is connected.
+            Live, verified Career OS production data for Tomas&apos;s executive job search.
           </p>
         </div>
-        <a className={styles.homeLink} href="/">AnswerBrief AI</a>
+        <a className={styles.homeLink} href="/career-os">Open Career OS</a>
       </header>
 
       <section className={styles.metricGrid} aria-label="Founder success metrics">
@@ -61,15 +131,15 @@ export default function FounderDashboardPage() {
         <div className={styles.sectionHeading}>
           <div>
             <p className={styles.eyebrow}>Application pipeline</p>
-            <h2>Current funnel</h2>
+            <h2>Current verified funnel</h2>
           </div>
-          <span className={styles.badge}>Live data pending</span>
+          <span className={styles.badge}>Live production data</span>
         </div>
         <div className={styles.pipeline}>
           {pipeline.map((stage) => (
-            <article className={styles.stage} key={stage}>
-              <strong>0</strong>
-              <span>{stage}</span>
+            <article className={styles.stage} key={stage.label}>
+              <strong>{stage.value}</strong>
+              <span>{stage.label}</span>
             </article>
           ))}
         </div>
@@ -115,12 +185,17 @@ export default function FounderDashboardPage() {
         <div className={styles.sectionHeading}>
           <div>
             <p className={styles.eyebrow}>Activity</p>
-            <h2>Recent job-search events</h2>
+            <h2>Production status</h2>
           </div>
         </div>
-        <div className={styles.emptyState}>
-          <strong>No activity loaded yet</strong>
-          <p>The next integration should map application, recruiter, resume, and interview events into this feed.</p>
+        <div className={styles.intelligenceList}>
+          {activity.map((item) => (
+            <div key={item.label}>
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+              <small>{item.detail}</small>
+            </div>
+          ))}
         </div>
       </section>
     </main>
