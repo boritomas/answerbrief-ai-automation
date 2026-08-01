@@ -11,6 +11,8 @@ test('founder dashboard exposes the approved production sections', async () => {
   for (const requiredText of [
     'Founder Success Dashboard',
     'Run Career OS',
+    'Browser worker',
+    'Live execution status',
     'Applications submitted',
     'Active applications',
     'Recruiter responses',
@@ -31,6 +33,7 @@ test('founder dashboard reads verified Career OS production status', async () =>
   assert.match(source, /status\.operationalTrust/);
   assert.match(source, /trust\.verifiedCounts/);
   assert.match(source, /status\.dailyWorkflow/);
+  assert.match(source, /status\.applicationExecution/);
   assert.match(source, /Live production data/);
   assert.doesNotMatch(source, /Applications submitted[^\n]*147/);
   assert.doesNotMatch(source, /Live data pending/);
@@ -44,6 +47,18 @@ test('founder dashboard exposes authenticated production controls', async () => 
   assert.match(source, /actionTokenExpiresAt/);
   assert.match(source, /ownerEmail=\{status\.evidence\.ownerEmail\}/);
   assert.match(source, /Refresh official job sources, queue eligible applications/);
+});
+
+test('founder dashboard exposes verified browser-worker execution state', async () => {
+  const source = await readFile(pagePath, 'utf8');
+
+  assert.match(source, /queueStates/);
+  assert.match(source, /Worker state/);
+  assert.match(source, /Running now/);
+  assert.match(source, /Retry scheduled/);
+  assert.match(source, /Technical blockers/);
+  assert.match(source, /applicationsProcessedToday/);
+  assert.match(source, /View current applications and checkpoints/);
 });
 
 test('founder dashboard preserves evidence-first offer reporting', async () => {
