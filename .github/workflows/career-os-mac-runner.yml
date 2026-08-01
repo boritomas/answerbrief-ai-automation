@@ -75,6 +75,9 @@ jobs:
           export CAREER_OS_MARKET="$(read_env CAREER_OS_MARKET)"
           export CAREER_OS_SOURCE_BOARDS="$(read_env CAREER_OS_SOURCE_BOARDS)"
           export CAREER_OS_MIN_FIT_SCORE="$(read_env CAREER_OS_MIN_FIT_SCORE)"
+          export CAREER_OS_GOOGLE_CAREERS_ENABLED="1"
+          export CAREER_OS_GOOGLE_CAREER_QUERIES="${CAREER_OS_GOOGLE_CAREER_QUERIES:-product manager,senior product manager,director product management,product operations,ai product}"
+          export CAREER_OS_GOOGLE_CAREERS_DETAIL_LIMIT="${CAREER_OS_GOOGLE_CAREERS_DETAIL_LIMIT:-40}"
           export CAREER_OS_INVOKED_BY="github-actions-mac-runner"
           cd "$GITHUB_WORKSPACE"
           node scripts/run-career-os-source.mjs --persist

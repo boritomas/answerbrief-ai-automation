@@ -55,18 +55,27 @@ const boards = argValue('--boards', process.env.CAREER_OS_SOURCE_BOARDS || expan
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
+const googleCareersEnabled = process.env.CAREER_OS_GOOGLE_CAREERS_ENABLED !== '0';
+const googleCareerQueries = argValue(
+  '--google-career-queries',
+  process.env.CAREER_OS_GOOGLE_CAREER_QUERIES || 'product manager,senior product manager,director product management,product operations,ai product'
+)
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+const googleCareersDetailLimit = Number(argValue('--google-careers-detail-limit', process.env.CAREER_OS_GOOGLE_CAREERS_DETAIL_LIMIT || '40'));
 const persist = process.argv.includes('--persist') || process.env.CAREER_OS_SOURCE_PERSIST === '1';
 const minFitScore = Number(argValue('--min-fit-score', process.env.CAREER_OS_MIN_FIT_SCORE || (market === 'telecom' ? '85' : '70')));
 const executedAt = new Date().toISOString();
 const runDay = executedAt.slice(0, 10);
-const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:${market}:greenhouse:${boards.join(',')}:${runDay}`);
+const sourceRunId = deterministicUuid(`career-os-source-run:${ownerEmail}:${market}:workday-linkedin-google:${boards.join(',')}:${googleCareerQueries.join(',')}:${runDay}`);
 
 const sourceRun = {
   id: sourceRunId,
   owner_email: ownerEmail,
-  source_type: 'expanded_public_ats_api',
-  source_name: 'Expanded broader-market Greenhouse and Oracle product-management discovery',
-  source_url: 'https://boards-api.greenhouse.io/v1/boards plus Oracle Candidate Experience official sources',
+  source_type: 'expanded_public_source_discovery',
+  source_name: 'Expanded Workday, LinkedIn, Google, Greenhouse, and Oracle product-management discovery',
+  source_url: 'https://boards-api.greenhouse.io/v1/boards plus Google Careers public pages plus Oracle Candidate Experience official sources',
   status: 'succeeded',
   executed_at: executedAt,
   number_reviewed: 0,
@@ -100,6 +109,14 @@ const sourceRun = {
     ],
     min_fit_score: minFitScore,
     role_policy_version: rolePolicyVersion,
+    production_focus_sources: ['workday', 'linkedin', 'google_careers'],
+    greenhouse_status: 'parked_for_rotating_email_code_loop',
+    google_careers: {
+      enabled: googleCareersEnabled,
+      queries: googleCareerQueries,
+      source_url: 'https://www.google.com/about/careers/applications/jobs/results/',
+      execution_policy: 'discover_and_score; apply only after supported browser route is verified',
+    },
     texas_remote_filter: 'remote_us_texas_or_reasonable_texas_markets',
     location_policy: 'verify remote from Texas, employment from Texas, Dallas-Fort Worth, or Texas hybrid before package generation',
     freshness_windows: ['24_hours', '3_days', '7_days', '14_days_if_active_exceptional_fit'],
@@ -162,6 +179,14 @@ for (const job of await fetchJpmorganOraclePilot(executedAt, sourceRunId)) {
   postings.push(job);
 }
 
+if (googleCareersEnabled) {
+  for (const job of await fetchGoogleCareersPilot(executedAt, sourceRunId)) {
+    sourceRun.number_reviewed += 1;
+    if (job.fit_score < minFitScore) sourceRun.number_skipped += 1;
+    postings.push(job);
+  }
+}
+
 postings.sort((a, b) => b.fit_score - a.fit_score || a.company.localeCompare(b.company));
 sourceRun.number_accepted = postings.length;
 sourceRun.evidence = postings.slice(0, 10).map((posting) => ({
@@ -171,8 +196,9 @@ sourceRun.evidence = postings.slice(0, 10).map((posting) => ({
   canonical_url: posting.canonical_url,
   fit_score: posting.fit_score,
 }));
-postings.forEach((posting, index) => {
-  posting.selected_for_pilot = index === 0;
+const pilotPosting = postings.find((posting) => posting.fit_score >= minFitScore && posting.status !== 'ineligible');
+postings.forEach((posting) => {
+  posting.selected_for_pilot = posting === pilotPosting;
 });
 
 if (persist) {
@@ -277,6 +303,157 @@ async function fetchJpmorganOraclePilot(lastCheckedAt, sourceRunId) {
   return Array.from(seen.values());
 }
 
+async function fetchGoogleCareersPilot(lastCheckedAt, sourceRunId) {
+  const seen = new Map();
+  let remainingDetails = Number.isFinite(googleCareersDetailLimit) ? googleCareersDetailLimit : 40;
+
+  for (const query of googleCareerQueries) {
+    const resultsUrl = `https://www.google.com/about/careers/applications/jobs/results/?q=${encodeURIComponent(query)}&location=United%20States`;
+    let html = '';
+    try {
+      html = await fetchText(resultsUrl);
+    } catch (error) {
+      console.warn(`Google Careers query "${query}" skipped: ${error.message}`);
+      continue;
+    }
+
+    const cards = parseGoogleCareersResults(html, query);
+    for (const card of cards) {
+      if (seen.has(card.id)) continue;
+      let detail = card;
+      if (remainingDetails > 0) {
+        remainingDetails -= 1;
+        try {
+          const detailHtml = await fetchText(card.canonical_url);
+          detail = { ...card, ...parseGoogleCareersDetail(detailHtml, card) };
+        } catch (error) {
+          detail = {
+            ...card,
+            job_description: `${card.title}\n${card.location || ''}\n${card.summary || ''}`.trim(),
+            detail_fetch_error: error.message,
+          };
+        }
+      }
+      seen.set(card.id, normalizeGoogleCareerPosting(detail, lastCheckedAt, sourceRunId));
+      await sleep(150);
+    }
+  }
+
+  return Array.from(seen.values());
+}
+
+function parseGoogleCareersResults(html, query) {
+  const cards = [];
+  const chunks = String(html || '').split(/<li class="lLd3Je"[^>]*>/);
+
+  for (const chunk of chunks) {
+    const anchor = chunk.match(/<a\b[^>]+href="(jobs\/results\/([0-9]+)-[^"]*)"[^>]+aria-label="Learn more about ([^"]+)"/);
+    if (!anchor) continue;
+    const href = decodeHtmlEntities(anchor[1]);
+    const id = String(anchor[2] || '').trim();
+    const title = decodeHtmlEntities(anchor[3]);
+    const canonicalUrl = new URL(href, 'https://www.google.com/about/careers/applications/').toString();
+    const locations = uniqueValues([...chunk.matchAll(/<span class="r0wTof[^"]*">\s*([^<]+)<\/span>/g)]
+      .map((match) => decodeHtmlEntities(match[1])));
+    const experience = decodeHtmlEntities(chunk.match(/aria-label="([^"]+), Learn more about experience filters\./)?.[1] || '');
+
+    cards.push({
+      id,
+      query,
+      company: 'Google',
+      title,
+      location: locations.join('; '),
+      locations,
+      experience,
+      canonical_url: canonicalUrl,
+      summary: htmlToText(chunk).slice(0, 4000),
+    });
+  }
+
+  return cards;
+}
+
+function parseGoogleCareersDetail(html, fallback) {
+  const text = htmlToText(html);
+  const locationMatch = text.match(/preferred working location from the following:\s*([^]+?)\s*\.\s*Minimum qualifications:/i);
+  const start = text.search(/Minimum qualifications:/i);
+  const endCandidates = [
+    text.search(/Google is proud to be an equal opportunity/i),
+    text.search(/Information collected and processed as part of your Google Careers profile/i),
+  ].filter((index) => index > start);
+  const end = endCandidates.length ? Math.min(...endCandidates) : text.length;
+  const description = start >= 0 ? text.slice(Math.max(0, start - 350), end).trim() : text.slice(0, 12000).trim();
+  const detailLocations = locationMatch
+    ? uniqueValues(locationMatch[1].split(';'))
+    : fallback.locations;
+
+  return {
+    title: fallback.title,
+    company: 'Google',
+    location: locationMatch ? detailLocations.join('; ') : fallback.location,
+    locations: detailLocations,
+    job_description: description.slice(0, 12000),
+  };
+}
+
+function normalizeGoogleCareerPosting(job, lastCheckedAt, sourceRunId) {
+  const title = String(job.title || '').trim();
+  const description = String(job.job_description || job.summary || title || '').trim();
+  const rolePolicy = classifyRolePolicy(title, description);
+  const compensation = extractCompensation(description);
+  const fitScore = rolePolicy.excluded ? 0 : scorePosting({ title, location: { name: job.location || '' } }, description);
+  const requisition = String(job.id || deterministicUuid(`${title}:${job.canonical_url}`));
+
+  return {
+    id: `google-careers-${slug(requisition)}`,
+    source_run_id: sourceRunId,
+    owner_email: ownerEmail,
+    company: 'Google',
+    title,
+    location: String(job.location || ''),
+    work_arrangement: /remote/i.test(`${job.location || ''} ${description}`) ? 'remote' : /hybrid/i.test(`${job.location || ''} ${description}`) ? 'hybrid' : 'unknown',
+    compensation_min_usd: compensation.minUsd,
+    compensation_max_usd: compensation.maxUsd,
+    compensation_text: compensation.text,
+    canonical_url: job.canonical_url,
+    external_requisition_id: requisition,
+    job_description: description,
+    normalized_description: description.slice(0, 12000),
+    normalized_role_level: rolePolicy.normalizedLevel,
+    deterministic_filter_reason: rolePolicy.reason,
+    posting_validation_status: 'active',
+    last_checked_at: lastCheckedAt,
+    raw_record: {
+      source: 'google_careers_public_page',
+      query: job.query,
+      experience: job.experience,
+      locations: job.locations,
+      detail_fetch_error: job.detail_fetch_error,
+    },
+    fit_score: fitScore,
+    ats_analysis: {
+      score: fitScore,
+      signals: matchingSignals({ title, location: { name: job.location || '' } }, description),
+      risks: ['Google Careers browser application route must be verified before autonomous submit.'],
+      method: 'deterministic_google_careers_source_runner_v1',
+    },
+    ai_readiness_analysis: {
+      score: rolePolicy.excluded ? 0 : scoreAiReadiness(description),
+      signals: ['platform strategy', 'automation', 'customer experience', 'ai'].filter((signal) => hasAny(description, signal)),
+      method: 'answerbrief_deterministic_readiness_v1',
+    },
+    recruiter_intelligence: {
+      score: rolePolicy.excluded ? 0 : scoreRecruiterFit({ title, location: { name: job.location || '' } }, description),
+      salary: compensation.text || 'not published',
+      location: job.location || 'not published',
+      decision: fitScore >= minFitScore ? 'worth_reviewing_google_route' : 'skip',
+    },
+    hiring_manager_evidence_matrix: buildEvidenceMatrix(description),
+    selected_for_pilot: false,
+    status: rolePolicy.excluded ? 'ineligible' : fitScore >= minFitScore ? 'discovered' : 'qualification_pending',
+  };
+}
+
 function normalizeOraclePosting(job, lastCheckedAt, sourceRunId) {
   const title = String(job.Title || '').trim();
   const description = [job.ShortDescriptionStr, job.ExternalResponsibilitiesStr, job.ExternalQualificationsStr].filter(Boolean).join('\n\n');
@@ -374,27 +551,42 @@ async function persistToSupabase(sourceRun, postings) {
     `Normalized ${normalizedPostings.length} job rows across ${postingColumns.length} columns.`
   );
 
-  const batchSize = 200;
-const totalBatches = Math.ceil(normalizedPostings.length / batchSize);
+    const batchSize = 200;
+    const totalBatches = Math.ceil(normalizedPostings.length / batchSize);
 
-for (let start = 0; start < normalizedPostings.length; start += batchSize) {
-  const batch = normalizedPostings.slice(start, start + batchSize);
-  const batchNumber = Math.floor(start / batchSize) + 1;
+    for (let start = 0; start < normalizedPostings.length; start += batchSize) {
+      const batch = normalizedPostings.slice(start, start + batchSize);
+      const batchNumber = Math.floor(start / batchSize) + 1;
 
-  console.log(
-    `Uploading job batch ${batchNumber}/${totalBatches} (${batch.length} rows).`
-  );
+      console.log(
+        `Uploading job batch ${batchNumber}/${totalBatches} (${batch.length} rows).`
+      );
 
-  await supabaseUpsert(
-    supabaseUrl,
-    serviceRoleKey,
-    'career_os_job_postings',
-    batch
-  );
+      await supabaseUpsertWithRetry(
+        supabaseUrl,
+        serviceRoleKey,
+        'career_os_job_postings',
+        batch
+      );
 
-  await new Promise((resolve) => setTimeout(resolve, 250));
+      await sleep(250);
+    }
+  }
 }
-}
+
+async function supabaseUpsertWithRetry(supabaseUrl, serviceRoleKey, table, rows) {
+  const maxAttempts = Number(process.env.CAREER_OS_SUPABASE_UPSERT_ATTEMPTS || '4');
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows);
+    } catch (error) {
+      const retryable = isRetryableSupabaseError(error);
+      if (!retryable || attempt === maxAttempts) throw error;
+      const delayMs = error.retryAfterMs || Math.min(60000, 2000 * 2 ** (attempt - 1));
+      console.warn(`Supabase ${table} transient failure ${error.status || ''}; retrying attempt ${attempt + 1}/${maxAttempts} after ${Math.round(delayMs / 1000)}s.`);
+      await sleep(delayMs);
+    }
+  }
 }
 
 async function supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows) {
@@ -411,10 +603,17 @@ async function supabaseUpsert(supabaseUrl, serviceRoleKey, table, rows) {
 
   if (!response.ok) {
     const message = await response.text();
-console.error("Status:", response.status);
-console.error("Headers:", Object.fromEntries(response.headers.entries()));
-console.error("Body:", message);
-throw new Error(`Supabase ${table} upsert failed with ${response.status}`);  }
+    console.error("Status:", response.status);
+    console.error("Body:", message);
+    const error = new Error(`Supabase ${table} upsert failed with ${response.status}`);
+    error.status = response.status;
+    error.retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+    throw error;
+  }
+}
+
+function isRetryableSupabaseError(error) {
+  return error?.status === 429 || error?.status >= 500;
 }
 
 function scorePosting(job, description) {
@@ -540,6 +739,49 @@ function htmlToText(html) {
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+async function fetchText(url) {
+  const response = await fetch(url, {
+    headers: {
+      accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'user-agent': 'Mozilla/5.0 CareerOS/1.0 (+https://answerbrief.ai)',
+    },
+  });
+  if (!response.ok) throw new Error(`${url} returned ${response.status}`);
+  return response.text();
+}
+
+function decodeHtmlEntities(value) {
+  return htmlToText(String(value || '')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"'));
+}
+
+function normalizeWhitespace(value) {
+  return decodeHtmlEntities(value)
+    .replace(/\+\d+\s+more/gi, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s;]+|[\s;]+$/g, '')
+    .trim();
+}
+
+function uniqueValues(values) {
+  return Array.from(new Set(values.map((value) => normalizeWhitespace(value)).filter(Boolean)));
+}
+
+function parseRetryAfterMs(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return null;
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(trimmed);
+  if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+  return null;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function companyName(board, job) {
