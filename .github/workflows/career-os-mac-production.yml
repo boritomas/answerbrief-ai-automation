@@ -19,6 +19,7 @@ permissions:
   contents: write
   actions: read
   pull-requests: write
+  issues: write
 
 jobs:
   production-canary:
@@ -31,74 +32,82 @@ jobs:
       CAREER_OS_AUTO_REPAIR: '1'
       CAREER_OS_SUPERVISOR_MAX_ATTEMPTS: '3'
       ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER: openhands,gemini,opencode,aider,claude-code,codex
+    defaults:
+      run:
+        shell: bash
+        working-directory: answerbrief-ai-automation-starter
     steps:
-      - name: Checkout current main without deleting local environment
+      - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: main
-          fetch-depth: 0
           clean: false
+          fetch-depth: 0
 
-      - name: Verify runner and workspace
-        shell: bash
+      - name: Report runner start
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 49,
+              body: `Mac production runner started.\n\n- Run: ${context.runId}\n- Commit: ${context.sha}\n- Runner: ${process.env.RUNNER_NAME || 'unknown'}\n- Time: ${new Date().toISOString()}`
+            });
+
+      - name: Verify runner and runtime
         run: |
           set -euo pipefail
           test "$(uname -s)" = "Darwin"
-          test -d "$CAREER_OS_RUNTIME"
-          test -f "$CAREER_OS_RUNTIME/package.json"
-          if test ! -f "$CAREER_OS_RUNTIME/.env" && test ! -f "$CAREER_OS_RUNTIME/.env.local"; then
-            echo "Career OS environment file is missing from $CAREER_OS_RUNTIME."
+          test -f package.json
+          if test ! -f .env && test ! -f .env.local; then
+            echo "Career OS runtime environment file is missing."
             exit 1
           fi
-          mkdir -p "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}"
+          mkdir -p ".career-os-ci/${GITHUB_RUN_ID}"
           {
-            echo "workspace=${GITHUB_WORKSPACE}"
-            echo "runtime=${CAREER_OS_RUNTIME}"
             echo "runner_name=${RUNNER_NAME:-unknown}"
             echo "runner_os=${RUNNER_OS:-unknown}"
             echo "runner_arch=${RUNNER_ARCH:-unknown}"
+            echo "workspace=${GITHUB_WORKSPACE}"
             uname -a
             echo "available_repair_providers:"
             for tool in openhands gemini opencode aider claude codex; do
               command -v "$tool" 2>/dev/null || true
             done
-          } > "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}/runner.txt"
-          git -C "$GITHUB_WORKSPACE" status --short > "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}/git-status-before.txt"
-          git -C "$GITHUB_WORKSPACE" rev-parse HEAD > "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}/commit.txt"
+          } > ".career-os-ci/${GITHUB_RUN_ID}/runner.txt"
 
-      - name: Install and validate
-        shell: bash
+      - name: Preserve local state
         run: |
           set -euo pipefail
-          cd "$CAREER_OS_RUNTIME"
+          git status --short > ".career-os-ci/${GITHUB_RUN_ID}/git-status-before.txt"
+          git rev-parse HEAD > ".career-os-ci/${GITHUB_RUN_ID}/commit.txt"
+
+      - name: Install and validate
+        run: |
+          set -euo pipefail
           npm ci
           npm run typecheck 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/typecheck.log"
           npm run lint 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/lint.log"
           npm test 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/test.log"
 
       - name: Verify OpenHands service
-        shell: bash
         run: |
           set +e
-          cd "$CAREER_OS_RUNTIME"
           npm run openhands:start 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/openhands-service.log"
           npm run openhands:status 2>&1 | tee -a ".career-os-ci/${GITHUB_RUN_ID}/openhands-service.log"
           exit 0
 
-      - name: Execute observe repair and retry
+      - name: Execute, observe, repair, retry
         if: github.event_name == 'push' || inputs.run_canary == true
-        shell: bash
         run: |
           set -o pipefail
-          cd "$CAREER_OS_RUNTIME"
           npm run supervisor 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/supervisor.log"
 
       - name: Capture final production evidence
         if: always()
-        shell: bash
         run: |
           set +e
-          cd "$CAREER_OS_RUNTIME"
+          mkdir -p ".career-os-ci/${GITHUB_RUN_ID}"
           npm run worker:health 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/worker-health-final.log"
           npm run report:career-os 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/production-report-final.log"
           npm run openhands:status 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/openhands-status-final.log"
@@ -107,7 +116,7 @@ jobs:
           cp -R playwright-report ".career-os-ci/${GITHUB_RUN_ID}/playwright-report" 2>/dev/null || true
           cp -R test-results ".career-os-ci/${GITHUB_RUN_ID}/test-results" 2>/dev/null || true
           find . -maxdepth 6 \( -name '*.zip' -o -name '*.trace' -o -name '*production-report*.md' -o -name '*.png' \) -print > ".career-os-ci/${GITHUB_RUN_ID}/artifact-index.txt"
-          git -C "$GITHUB_WORKSPACE" status --short > ".career-os-ci/${GITHUB_RUN_ID}/git-status-after.txt"
+          git status --short > ".career-os-ci/${GITHUB_RUN_ID}/git-status-after.txt"
 
       - name: Upload production evidence
         if: always()
@@ -115,5 +124,17 @@ jobs:
         with:
           name: career-os-production-${{ github.run_id }}
           path: ${{ github.workspace }}/answerbrief-ai-automation-starter/.career-os-ci/${{ github.run_id }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
+
+      - name: Report runner completion
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 49,
+              body: `Mac production runner finished.\n\n- Run: ${context.runId}\n- Commit: ${context.sha}\n- Result: ${{ job.status }}\n- Evidence artifact: career-os-production-${context.runId}\n- Time: ${new Date().toISOString()}`
+            });
