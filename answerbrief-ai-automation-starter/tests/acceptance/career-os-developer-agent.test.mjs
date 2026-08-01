@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildProviderCommand, createDeveloperAgentConfig, developerAgentPreflight } from '../../scripts/lib/career-os-developer-agent.mjs';
+import {
+  buildProviderCommand,
+  createDeveloperAgentConfig,
+  developerAgentPreflight,
+  providerDefinitions,
+  selectAvailableProvider,
+} from '../../scripts/lib/career-os-developer-agent.mjs';
 
 const fullCapabilities = {
   writeFiles: true,
@@ -33,6 +39,33 @@ test('creates a human-gated OpenHands configuration', () => {
 test('supports Aider as a secondary provider', () => {
   const config = createDeveloperAgentConfig({ provider: 'aider', capabilities: fullCapabilities });
   assert.deepEqual(buildProviderCommand(config, 'Fix the failing test'), ['aider', '--yes-always', '--message', 'Fix the failing test']);
+});
+
+test('selects the first available provider in the preferred order', () => {
+  const selected = selectAvailableProvider(
+    { openhands: false, aider: true, opencode: true },
+    ['openhands', 'opencode', 'aider'],
+  );
+  assert.equal(selected, 'opencode');
+});
+
+test('falls back to built-in provider priority', () => {
+  assert.equal(selectAvailableProvider({ aider: true, gemini: true }), 'aider');
+});
+
+test('defines open-source executor providers', () => {
+  const definitions = providerDefinitions();
+  assert.ok(definitions.openhands);
+  assert.ok(definitions.aider);
+  assert.ok(definitions.opencode);
+  assert.ok(definitions.gemini);
+});
+
+test('supports OpenCode and Gemini commands', () => {
+  const opencode = createDeveloperAgentConfig({ provider: 'opencode', capabilities: fullCapabilities });
+  const gemini = createDeveloperAgentConfig({ provider: 'gemini', capabilities: fullCapabilities });
+  assert.deepEqual(buildProviderCommand(opencode, 'Fix it'), ['opencode', 'run', 'Fix it']);
+  assert.deepEqual(buildProviderCommand(gemini, 'Fix it'), ['gemini', '--yolo', '--prompt', 'Fix it']);
 });
 
 test('rejects unsupported providers', () => {
