@@ -5,16 +5,8 @@ import styles from './founder-dashboard.module.css';
 
 export const dynamic = 'force-dynamic';
 
-type Metric = {
-  label: string;
-  value: string | number;
-  note: string;
-};
-
-type PipelineStage = {
-  label: string;
-  value: number;
-};
+type Metric = { label: string; value: string | number; note: string };
+type PipelineStage = { label: string; value: number };
 
 export default async function FounderDashboardPage() {
   const status = await getCareerOsStatus();
@@ -22,6 +14,8 @@ export default async function FounderDashboardPage() {
   const counts = trust.verifiedCounts;
   const workflow = status.dailyWorkflow;
   const pipelineHealth = workflow.pipelineHealth;
+  const execution = status.applicationExecution;
+  const queueStates = execution.queueStates;
   const actionTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
   const actionToken = createCareerOsActionToken({
     action: 'founder_dashboard',
@@ -29,38 +23,22 @@ export default async function FounderDashboardPage() {
     ownerEmail: status.evidence.ownerEmail,
   });
 
-  const activeApplications =
-    counts.reviewQueue +
-    counts.actionCenter +
-    counts.readyToResume +
-    counts.applying;
+  const activeApplications = counts.reviewQueue + counts.actionCenter + counts.readyToResume + counts.applying;
+  const workerState = workflow.immediateQueueProcessor.runningNow > 0
+    ? 'Running'
+    : counts.systemIssues > 0
+      ? 'Blocked'
+      : 'Idle';
+  const workerProgress = queueStates.running > 0
+    ? `${execution.applicationsProcessedToday} processed today; ${queueStates.running} running`
+    : `${execution.applicationsProcessedToday} processed today`;
 
   const metrics: Metric[] = [
-    {
-      label: 'Applications submitted',
-      value: counts.submitted,
-      note: 'Verified submitted applications',
-    },
-    {
-      label: 'Active applications',
-      value: activeApplications,
-      note: 'Verified review, action, resume, and applying states',
-    },
-    {
-      label: 'Recruiter responses',
-      value: pipelineHealth.recruiterResponses,
-      note: 'Confirmed recruiter responses in production',
-    },
-    {
-      label: 'Interviews scheduled',
-      value: counts.interviews,
-      note: 'Verified interview evidence',
-    },
-    {
-      label: 'Offers',
-      value: 0,
-      note: 'No verified offer record connected yet',
-    },
+    { label: 'Applications submitted', value: counts.submitted, note: 'Verified submitted applications' },
+    { label: 'Active applications', value: activeApplications, note: 'Verified review, action, resume, and applying states' },
+    { label: 'Recruiter responses', value: pipelineHealth.recruiterResponses, note: 'Confirmed recruiter responses in production' },
+    { label: 'Interviews scheduled', value: counts.interviews, note: 'Verified interview evidence' },
+    { label: 'Offers', value: 0, note: 'No verified offer record connected yet' },
   ];
 
   const pipeline: PipelineStage[] = [
@@ -74,6 +52,18 @@ export default async function FounderDashboardPage() {
     { label: 'Closed', value: 0 },
   ];
 
+  const workerDetails = [
+    ['Worker state', workerState],
+    ['Queue processor', workflow.immediateQueueProcessor.status],
+    ['Running now', String(workflow.immediateQueueProcessor.runningNow)],
+    ['Queued', String(queueStates.queued)],
+    ['Retry scheduled', String(queueStates.retry_scheduled)],
+    ['Waiting on Tomas', String(counts.actionCenter)],
+    ['Technical blockers', String(counts.systemIssues)],
+    ['Progress', workerProgress],
+    ['Last verified refresh', status.generatedAt],
+  ];
+
   const intelligence = [
     ['Current resume version', status.evidence.artifacts.some((artifact) => artifact.artifact_type === 'targeted_resume') ? 'Targeted resume available' : 'No verified targeted resume'],
     ['ATS score', 'Use per-role package evidence'],
@@ -83,33 +73,15 @@ export default async function FounderDashboardPage() {
   ];
 
   const priorities = [
-    counts.actionCenter > 0
-      ? `Resolve ${counts.actionCenter} verified action-center item${counts.actionCenter === 1 ? '' : 's'}`
-      : 'No verified human-action items',
-    counts.readyToResume > 0
-      ? `Resume ${counts.readyToResume} verified application checkpoint${counts.readyToResume === 1 ? '' : 's'}`
-      : 'No verified resumable checkpoints',
-    pipelineHealth.recruiterResponses > 0
-      ? `Review ${pipelineHealth.recruiterResponses} recruiter response${pipelineHealth.recruiterResponses === 1 ? '' : 's'}`
-      : 'Continue sourcing and submitting qualified roles',
+    counts.actionCenter > 0 ? `Resolve ${counts.actionCenter} verified action-center item${counts.actionCenter === 1 ? '' : 's'}` : 'No verified human-action items',
+    counts.readyToResume > 0 ? `Resume ${counts.readyToResume} verified application checkpoint${counts.readyToResume === 1 ? '' : 's'}` : 'No verified resumable checkpoints',
+    pipelineHealth.recruiterResponses > 0 ? `Review ${pipelineHealth.recruiterResponses} recruiter response${pipelineHealth.recruiterResponses === 1 ? '' : 's'}` : 'Continue sourcing and submitting qualified roles',
   ];
 
   const activity = [
-    {
-      label: 'Last autonomous run',
-      value: workflow.status,
-      detail: workflow.dailyReportStatus,
-    },
-    {
-      label: 'Queue processor',
-      value: workflow.immediateQueueProcessor.status,
-      detail: `${workflow.immediateQueueProcessor.runningNow} running now; ${workflow.immediateQueueProcessor.submittedThisRun} submitted this run`,
-    },
-    {
-      label: 'Next scheduled run',
-      value: workflow.immediateQueueProcessor.nextScheduledRun,
-      detail: `Generated ${status.generatedAt}`,
-    },
+    { label: 'Last autonomous run', value: workflow.status, detail: workflow.dailyReportStatus },
+    { label: 'Queue processor', value: workflow.immediateQueueProcessor.status, detail: `${workflow.immediateQueueProcessor.runningNow} running now; ${workflow.immediateQueueProcessor.submittedThisRun} submitted this run` },
+    { label: 'Next scheduled run', value: workflow.immediateQueueProcessor.nextScheduledRun, detail: `Generated ${status.generatedAt}` },
   ];
 
   return (
@@ -118,9 +90,7 @@ export default async function FounderDashboardPage() {
         <div>
           <p className={styles.eyebrow}>Founder validation</p>
           <h1>Founder Success Dashboard</h1>
-          <p className={styles.subtitle}>
-            Live, verified Career OS production data for Tomas&apos;s executive job search.
-          </p>
+          <p className={styles.subtitle}>Live, verified Career OS production data for Tomas&apos;s executive job search.</p>
         </div>
         <a className={styles.homeLink} href="/career-os">Open Career OS</a>
       </header>
@@ -134,93 +104,51 @@ export default async function FounderDashboardPage() {
           </div>
           <span className={styles.badge}>{workflow.immediateQueueProcessor.status}</span>
         </div>
-        <RunNowControl
-          actionToken={actionToken}
-          actionTokenExpiresAt={actionTokenExpiresAt}
-          ownerEmail={status.evidence.ownerEmail}
-        />
+        <RunNowControl actionToken={actionToken} actionTokenExpiresAt={actionTokenExpiresAt} ownerEmail={status.evidence.ownerEmail} />
+      </section>
+
+      <section className={styles.panel} aria-label="Browser worker status">
+        <div className={styles.sectionHeading}>
+          <div>
+            <p className={styles.eyebrow}>Browser worker</p>
+            <h2>Live execution status</h2>
+            <p>Verified queue, progress, blocker, and refresh information from the Career OS runtime.</p>
+          </div>
+          <span className={styles.badge}>{workerState}</span>
+        </div>
+        <dl className={styles.intelligenceList}>
+          {workerDetails.map(([label, value]) => (
+            <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+          ))}
+        </dl>
+        <p><a className={styles.homeLink} href="/career-os#applications">View current applications and checkpoints</a></p>
       </section>
 
       <section className={styles.metricGrid} aria-label="Founder success metrics">
         {metrics.map((metric) => (
-          <article className={styles.metricCard} key={metric.label}>
-            <span>{metric.label}</span>
-            <strong>{metric.value}</strong>
-            <small>{metric.note}</small>
-          </article>
+          <article className={styles.metricCard} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.note}</small></article>
         ))}
       </section>
 
       <section className={styles.panel}>
-        <div className={styles.sectionHeading}>
-          <div>
-            <p className={styles.eyebrow}>Application pipeline</p>
-            <h2>Current verified funnel</h2>
-          </div>
-          <span className={styles.badge}>Live production data</span>
-        </div>
-        <div className={styles.pipeline}>
-          {pipeline.map((stage) => (
-            <article className={styles.stage} key={stage.label}>
-              <strong>{stage.value}</strong>
-              <span>{stage.label}</span>
-            </article>
-          ))}
-        </div>
+        <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>Application pipeline</p><h2>Current verified funnel</h2></div><span className={styles.badge}>Live production data</span></div>
+        <div className={styles.pipeline}>{pipeline.map((stage) => <article className={styles.stage} key={stage.label}><strong>{stage.value}</strong><span>{stage.label}</span></article>)}</div>
       </section>
 
       <section className={styles.twoColumn}>
         <article className={styles.panel}>
-          <div className={styles.sectionHeading}>
-            <div>
-              <p className={styles.eyebrow}>Resume intelligence</p>
-              <h2>Current application package</h2>
-            </div>
-          </div>
-          <dl className={styles.intelligenceList}>
-            {intelligence.map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
+          <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>Resume intelligence</p><h2>Current application package</h2></div></div>
+          <dl className={styles.intelligenceList}>{intelligence.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         </article>
-
         <article className={styles.panel}>
-          <div className={styles.sectionHeading}>
-            <div>
-              <p className={styles.eyebrow}>Daily focus</p>
-              <h2>Next actions</h2>
-            </div>
-          </div>
-          <ul className={styles.priorityList}>
-            {priorities.map((priority) => (
-              <li key={priority}>
-                <span aria-hidden="true">□</span>
-                {priority}
-              </li>
-            ))}
-          </ul>
+          <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>Daily focus</p><h2>Next actions</h2></div></div>
+          <ul className={styles.priorityList}>{priorities.map((priority) => <li key={priority}><span aria-hidden="true">□</span>{priority}</li>)}</ul>
         </article>
       </section>
 
       <section className={styles.panel}>
-        <div className={styles.sectionHeading}>
-          <div>
-            <p className={styles.eyebrow}>Activity</p>
-            <h2>Production status</h2>
-          </div>
-        </div>
-        <div className={styles.intelligenceList}>
-          {activity.map((item) => (
-            <div key={item.label}>
-              <dt>{item.label}</dt>
-              <dd>{item.value}</dd>
-              <small>{item.detail}</small>
-            </div>
-          ))}
-        </div>
+        <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>Activity</p><h2>Production status</h2></div></div>
+        <div className={styles.intelligenceList}>{activity.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd><small>{item.detail}</small></div>)}</div>
       </section>
     </main>
   );
