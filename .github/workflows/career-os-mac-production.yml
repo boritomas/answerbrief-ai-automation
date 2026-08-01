@@ -52,6 +52,38 @@ jobs:
               body: `Mac production runner started.\n\n- Run: ${context.runId}\n- Commit: ${context.sha}\n- Runner: ${process.env.RUNNER_NAME || 'unknown'}\n- Time: ${new Date().toISOString()}`
             });
 
+      - name: Repair package lock when manifest changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CAREER_OS_SOURCE"
+          node <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const root = lock.packages?.[''] || {};
+          const expected = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+          const actual = { ...(root.dependencies || {}), ...(root.devDependencies || {}) };
+          const missing = Object.keys(expected).filter((name) => actual[name] !== expected[name]);
+          if (missing.length) {
+            console.error(`package-lock.json is missing or stale for: ${missing.join(', ')}`);
+            process.exit(42);
+          }
+          NODE
+          status=$?
+          if [ "$status" -eq 42 ]; then
+            npm install --package-lock-only --ignore-scripts
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            if ! git diff --cached --quiet; then
+              git commit -m "fix(career-os): synchronize package lock"
+              git push origin HEAD:main
+            fi
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+
       - name: Back up and deploy to canonical runtime
         shell: bash
         run: |
