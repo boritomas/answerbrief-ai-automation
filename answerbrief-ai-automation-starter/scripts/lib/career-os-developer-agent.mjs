@@ -1,4 +1,13 @@
-const PROVIDERS = new Set(['openhands', 'aider', 'codex', 'claude-code']);
+const PROVIDER_DEFINITIONS = {
+  openhands: { binaries: ['openhands'], priority: 10 },
+  aider: { binaries: ['aider'], priority: 20 },
+  opencode: { binaries: ['opencode'], priority: 30 },
+  gemini: { binaries: ['gemini'], priority: 40 },
+  'claude-code': { binaries: ['claude'], priority: 50 },
+  codex: { binaries: ['codex'], priority: 60 },
+};
+
+const PROVIDERS = new Set(Object.keys(PROVIDER_DEFINITIONS));
 
 function clean(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -31,6 +40,26 @@ export function createDeveloperAgentConfig(input = {}) {
   };
 }
 
+export function providerDefinitions() {
+  return structuredClone(PROVIDER_DEFINITIONS);
+}
+
+export function selectAvailableProvider(availability = {}, preferred = []) {
+  const ordered = [
+    ...preferred.map((value) => clean(value).toLowerCase()),
+    ...Object.entries(PROVIDER_DEFINITIONS)
+      .sort((left, right) => left[1].priority - right[1].priority)
+      .map(([name]) => name),
+  ];
+  const seen = new Set();
+  for (const provider of ordered) {
+    if (seen.has(provider) || !PROVIDERS.has(provider)) continue;
+    seen.add(provider);
+    if (availability[provider] === true) return provider;
+  }
+  return '';
+}
+
 export function buildProviderCommand(config, task) {
   const prompt = clean(task);
   if (!prompt) throw new Error('Developer agent task is required.');
@@ -38,6 +67,8 @@ export function buildProviderCommand(config, task) {
 
   if (config.provider === 'aider') return ['aider', '--yes-always', '--message', prompt];
   if (config.provider === 'openhands') return ['openhands', '--task', prompt];
+  if (config.provider === 'opencode') return ['opencode', 'run', prompt];
+  if (config.provider === 'gemini') return ['gemini', '--yolo', '--prompt', prompt];
   if (config.provider === 'codex') return ['codex', 'exec', prompt];
   return ['claude', '--print', prompt];
 }
