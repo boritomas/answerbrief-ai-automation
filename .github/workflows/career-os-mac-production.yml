@@ -1,0 +1,98 @@
+name: Career OS Mac Production Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_canary:
+        description: Run exactly one controlled browser-worker task
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches: [main]
+
+concurrency:
+  group: career-os-mac-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  production-canary:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-career-os-canary]')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 45
+    env:
+      CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
+      CAREER_OS_DEBUG_CLAIM: '1'
+      CAREER_OS_DAILY_LIMIT: '1'
+    steps:
+      - name: Verify local runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$CAREER_OS_RUNTIME"
+          test -f "$CAREER_OS_RUNTIME/package.json"
+          test -f "$CAREER_OS_RUNTIME/.env.local"
+          mkdir -p "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}"
+
+      - name: Preserve local state and update code
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CAREER_OS_RUNTIME"
+          git status --short > ".career-os-ci/${GITHUB_RUN_ID}/git-status-before.txt"
+          if test -n "$(git status --porcelain --untracked-files=no)"; then
+            echo "Tracked local changes detected; refusing to overwrite the production runtime." | tee ".career-os-ci/${GITHUB_RUN_ID}/blocked-local-changes.txt"
+            exit 1
+          fi
+          git fetch origin main
+          git checkout main
+          git merge --ff-only origin/main
+          git rev-parse HEAD > ".career-os-ci/${GITHUB_RUN_ID}/commit.txt"
+
+      - name: Install and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CAREER_OS_RUNTIME"
+          npm ci
+          npm run typecheck 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/typecheck.log"
+          npm run lint 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/lint.log"
+          npm test 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/test.log"
+
+      - name: Check worker health
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CAREER_OS_RUNTIME"
+          npm run worker:health 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/worker-health-before.log"
+
+      - name: Run one production canary
+        if: github.event_name == 'push' || inputs.run_canary == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CAREER_OS_RUNTIME"
+          npm run worker:run-once 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/worker-run-once.log"
+
+      - name: Generate production report
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          cd "$CAREER_OS_RUNTIME"
+          npm run worker:health 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/worker-health-after.log"
+          npm run report:career-os 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/production-report.log"
+          cp -R .career-os-browser-worker/screenshots ".career-os-ci/${GITHUB_RUN_ID}/screenshots" 2>/dev/null || true
+          find . -maxdepth 4 \( -name '*.zip' -o -name '*.trace' -o -name '*production-report*.md' \) -print > ".career-os-ci/${GITHUB_RUN_ID}/artifact-index.txt"
+
+      - name: Upload production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: career-os-production-${{ github.run_id }}
+          path: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.career-os-ci/${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
