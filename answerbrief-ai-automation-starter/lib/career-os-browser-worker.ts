@@ -457,10 +457,38 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
       });
       return;
     }
+    const emailConfirmationEvidence = submissionConfirmationEmailEvidence(report);
+    if (report.status === 'submitted_confirmed' && !emailConfirmationEvidence) {
+      const pageEvidence = report.evidenceText || 'Submission confirmation page was detected, but no matching employer confirmation email has been captured yet.';
+      await patchApplication(application.id, {
+        lifecycle_stage: 'submitted_email_confirmation_pending',
+        next_action: 'Application page indicated submission, but Career OS still needs the employer confirmation email before counting it as confirmed.',
+        raw_record: {
+          ...nextRaw,
+          confirmation_email_required: true,
+          confirmation_email_status: 'pending',
+          confirmation_page_evidence: {
+            captured_at: now,
+            current_url: report.evidenceUrl || currentUrl || '',
+            evidence_text: pageEvidence,
+            screenshot_path: screenshotPath || '',
+          },
+          confirmation_url: report.evidenceUrl || currentUrl || raw.confirmation_url,
+          production_outcome: 'submitted_email_confirmation_pending',
+        },
+        updated_at: now,
+      });
+      await appendWorkflowEvent(application, 'browser_worker_submission_email_pending', 'submitted_email_confirmation_pending', pageEvidence, now, runId, report.evidenceUrl || currentUrl || undefined, {
+        confirmation_email_required: true,
+        screenshot_path: screenshotPath || undefined,
+        ...details,
+      });
+      return;
+    }
     const confirmationNumber = cleanEnv(report.confirmationNumber) || `browser-worker-${application.id}-confirmation`;
     const confirmed = report.status === 'confirmed' || report.status === 'submitted_confirmed';
     const submissionEvidence = report.evidenceText || (confirmed
-      ? 'Submission confirmation was captured by the Career OS browser companion.'
+      ? 'Submission confirmation email was captured by the Career OS browser companion.'
       : 'Submission was completed by the Career OS browser companion.');
     await patchApplication(application.id, {
       confirmation_number: confirmationNumber,
@@ -470,6 +498,9 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
         : 'Application submitted by the browser companion; awaiting confirmation evidence review.',
       raw_record: {
         ...nextRaw,
+        confirmation_email_evidence: emailConfirmationEvidence || raw.confirmation_email_evidence,
+        confirmation_email_required: report.status === 'submitted_confirmed' ? true : raw.confirmation_email_required,
+        confirmation_email_status: emailConfirmationEvidence ? 'verified' : raw.confirmation_email_status,
         confirmation_url: report.evidenceUrl || currentUrl || raw.confirmation_url,
       },
       submission_evidence: submissionEvidence,
@@ -1601,6 +1632,7 @@ function normalizeProductionOutcome(status: WorkerStatus, explicitOutcome: strin
     'review_ready',
     'retryable_failure',
     'submission_uncertain',
+    'submitted_email_confirmation_pending',
     'terminal_failure',
     'unsupported_workday_state',
     'unsupported_manual_required',
@@ -1612,6 +1644,36 @@ function normalizeProductionOutcome(status: WorkerStatus, explicitOutcome: strin
     'waiting_for_user_decision',
   ].includes(status)) return status;
   return '';
+}
+
+function submissionConfirmationEmailEvidence(report: WorkerReport) {
+  const details = asRecord(report.details);
+  const candidates = [
+    details.confirmationEmail,
+    details.confirmation_email,
+    details.confirmationEmailEvidence,
+    details.confirmation_email_evidence,
+    details.submissionConfirmationEmail,
+    details.submission_confirmation_email,
+    details.submissionConfirmationEvidence,
+    details.submission_confirmation_evidence,
+  ].map(asRecord);
+  const direct = candidates.find((item) => {
+    const kind = cleanEnv(item.kind || item.type || item.evidence_kind || item.evidenceType).toLowerCase();
+    return kind.includes('email') && Boolean(cleanEnv(item.subject || item.sender || item.from || item.messageId || item.message_id || item.evidencePath || item.evidence_path));
+  });
+  if (direct) {
+    return {
+      evidence_hash: cleanEnv(direct.evidence_hash || direct.hash),
+      evidence_path: cleanEnv(direct.evidencePath || direct.evidence_path || direct.sourcePath || direct.source_path),
+      from: cleanEnv(direct.from || direct.sender),
+      kind: 'submission_confirmation_email',
+      message_id: cleanEnv(direct.messageId || direct.message_id || direct.id),
+      received_at: cleanEnv(direct.receivedAt || direct.received_at || direct.date || direct.timestamp),
+      subject: cleanEnv(direct.subject),
+    };
+  }
+  return null;
 }
 
 function mergeProductionDecisionQueue(existing: unknown, incoming: unknown, timestamp: string) {

@@ -75,7 +75,7 @@ export function classifyOutcomeEmail(input = {}) {
     status = 'withdrawn_or_closed';
     confidence = 0.78;
     reasons.push('role closed or filled language detected');
-  } else if (/thank you for applying|received your application|application received|we have received/i.test(text)) {
+  } else if (/thank you for applying|received your application|application received|we have received|thank you for your application|your application (?:to|for).{0,120}(?:was|has been)?\s*(?:received|submitted)/i.test(text)) {
     status = 'submitted_confirmed';
     confidence = 0.72;
     reasons.push('application received confirmation language detected');
@@ -300,10 +300,10 @@ export function generateTailoredCoverLetter(input = {}) {
   const description = clean(posting.job_description || posting.normalized_description);
   const signals = keywordSignals(description);
   const profileFacts = [
-    'nearly 30 years of Verizon product, platform, and customer-experience leadership',
-    'enterprise product strategy and roadmap execution',
-    'digital transformation across complex customer and operational journeys',
-    'cross-functional stakeholder alignment in high-trust operating environments',
+    'nearly 30 years of product management and digital transformation leadership at Verizon, a Fortune 50 telecommunications company',
+    'enterprise product strategy, roadmap execution, and customer-experience modernization',
+    'cross-functional stakeholder alignment across business, technology, operations, legal, compliance, analytics, and channel teams',
+    'AI-enabled product and workflow transformation experience grounded in verified, non-confidential career facts',
   ];
   const name = clean(profile.display_name) || 'Tomas Nieves';
   const body = [
@@ -313,9 +313,9 @@ export function generateTailoredCoverLetter(input = {}) {
     '',
     `I am interested in the ${role} opportunity because it aligns with the product leadership work I have done across enterprise platforms, digital transformation, and customer-experience modernization. ${employer}'s need for disciplined product execution, clear prioritization, and measurable customer impact is the kind of environment where my background can contribute quickly.`,
     '',
-    `My experience includes ${profileFacts[0]}, with product ownership spanning strategy, roadmap development, governance, and delivery across complex stakeholder groups. The role's emphasis on ${signals.slice(0, 3).join(', ') || 'product leadership, platform execution, and customer outcomes'} maps well to my verified Career OS profile and the resume selected for this application.`,
+    `My experience includes ${profileFacts[0]}, with product ownership spanning strategy, roadmap development, governance, and delivery across complex stakeholder groups. The role's emphasis on ${signals.slice(0, 3).join(', ') || 'product leadership, platform execution, and customer outcomes'} aligns with the executive product leadership, platform modernization, and customer-experience work reflected in my resume.`,
     '',
-    `I bring concrete operating depth: leading product work through ambiguity, modernizing customer and associate-facing journeys, aligning technical and business teams, and translating strategic priorities into executable roadmaps. I have also invested in current AI fluency through approved AI-focused credentials and practical workflow transformation work, while keeping application materials limited to verified, non-confidential facts.`,
+    `I bring concrete operating depth: leading product work through ambiguity, modernizing customer and associate-facing journeys, aligning technical and business teams, and translating strategic priorities into executable roadmaps. I have also invested in current AI fluency through AI-focused credentials and practical workflow transformation work, while keeping application materials limited to verified, non-confidential facts.`,
     '',
     `After a long Verizon tenure, I offer the depth of an operator who has seen platforms, customers, and organizations evolve over time. That experience is directly relevant to senior product roles that require judgment, resilience, and the ability to create alignment across business, technology, and customer needs.`,
     '',

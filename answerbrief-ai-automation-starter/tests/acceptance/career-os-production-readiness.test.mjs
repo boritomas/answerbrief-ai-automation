@@ -47,6 +47,7 @@ test('production capability matrix declares controlled launch boundaries', () =>
   assert.equal(matrix.adapters.workday.submitPolicy.standingAuthorizationMode, 'workday_first_submit');
   assert.equal(matrix.adapters.unsupported.supported, false);
   assert.ok(matrix.outcomeStatuses.includes('submitted_confirmed'));
+  assert.ok(matrix.outcomeStatuses.includes('submitted_email_confirmation_pending'));
   assert.ok(matrix.outcomeStatuses.includes('review_ready'));
   assert.ok(matrix.outcomeStatuses.includes('deferred_phase_two_greenhouse'));
   assert.ok(matrix.outcomeStatuses.includes('canary_stopped'));

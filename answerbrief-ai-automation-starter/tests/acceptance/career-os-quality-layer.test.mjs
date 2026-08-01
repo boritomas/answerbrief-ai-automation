@@ -64,6 +64,16 @@ test('rejection emails classify decided-not-to-move-forward wording', () => {
   assert.equal(result.rejectionType, 'generic_rejection');
 });
 
+test('confirmation emails classify as submitted confirmed evidence', () => {
+  const result = classifyOutcomeEmail({
+    from: 'recruiting@example.com',
+    subject: 'Your application to ExampleCo has been received',
+    body: 'Thank you for your application. We received your application for Director, Product Management.',
+  });
+  assert.equal(result.status, 'submitted_confirmed');
+  assert.match(result.reasons.join(' '), /confirmation language/i);
+});
+
 test('outcome statuses include the requested production vocabulary', () => {
   for (const status of [
     'submitted_confirmed',
@@ -257,7 +267,7 @@ test('cover letter generation is role-specific and avoids unsupported numeric cl
   });
   assert.match(letter.content, /Capital One/);
   assert.match(letter.content, /Director, Product Management/);
-  assert.match(letter.content, /nearly 30 years of Verizon/);
+  assert.match(letter.content, /nearly 30 years of product management and digital transformation leadership at Verizon, a Fortune 50 telecommunications company/);
   assert.doesNotMatch(letter.content, /\d+%|\$\d/);
 });
 

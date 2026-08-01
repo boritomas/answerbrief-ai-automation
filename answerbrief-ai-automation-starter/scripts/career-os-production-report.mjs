@@ -32,6 +32,7 @@ const totals = {
   duplicate_submission_detected: 0,
   withdrawn_or_closed: 0,
   outcome_unknown: 0,
+  submitted_email_confirmation_pending: 0,
   completed_waiting_for_user: 0,
   inspected_assisted: 0,
   waiting_for_sign_in: 0,
@@ -114,6 +115,7 @@ function productionOutcome(row) {
   const explicit = clean(raw.production_outcome);
   if (explicit) return explicit;
   const statusText = `${row.lifecycle_stage || ''} ${clean(raw.execution_status)} ${clean(raw.application_status)} ${clean(asRecord(raw.browser_worker_last_report).status)}`.toLowerCase();
+  if (/submitted_email_confirmation_pending|email confirmation pending|confirmation_email_status.{0,40}pending/.test(statusText)) return 'submitted_email_confirmation_pending';
   if (row.confirmation_number || row.submission_evidence || /(^|[_\\s-])(confirmed|submitted_confirmed|externally_submitted|submitted)([_\\s-]|$)/.test(statusText)) return 'submitted_confirmed';
   if (/queued|ready_for_autonomous_replay/.test(statusText)) return 'assisted_in_progress';
   const text = `${row.lifecycle_stage || ''} ${row.next_action || ''} ${clean(asRecord(raw.browser_worker_last_report).status)}`.toLowerCase();

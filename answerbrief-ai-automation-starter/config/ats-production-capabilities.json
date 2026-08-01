@@ -12,6 +12,7 @@
   ],
   "outcomeStatuses": [
     "submitted_confirmed",
+    "submitted_email_confirmation_pending",
     "completed_waiting_for_user",
     "inspected_assisted",
     "waiting_for_sign_in",

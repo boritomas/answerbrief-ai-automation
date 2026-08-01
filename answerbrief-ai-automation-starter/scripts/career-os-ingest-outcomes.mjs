@@ -75,13 +75,28 @@ for (const record of records) {
 
   if (application?.id && link.linked) {
     const raw = asRecord(application.raw_record);
+    const submissionConfirmationPatch = classification.status === 'submitted_confirmed'
+      ? {
+          confirmation_number: clean(application.confirmation_number) || `email-confirmed-${eventId.slice(0, 12)}`,
+          submission_evidence: publicEvidenceText(record, classification),
+        }
+      : {};
     patches.push({
       id: application.id,
       patch: {
+        ...submissionConfirmationPatch,
         lifecycle_stage: outcomeLifecycleStage(classification.status, application.lifecycle_stage),
         next_action: outcomeNextAction(classification.status),
         raw_record: {
           ...raw,
+          ...(classification.status === 'submitted_confirmed' ? {
+            confirmation_email_event_id: eventId,
+            confirmation_email_required: true,
+            confirmation_email_status: 'verified',
+            confirmation_evidence: publicEvidenceText(record, classification),
+            confirmation_evidence_type: 'email',
+            production_outcome: 'submitted_confirmed',
+          } : {}),
           latest_outcome: {
             classified_at: now,
             confidence: classification.confidence,
