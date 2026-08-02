@@ -13,14 +13,12 @@ on:
         required: true
         default: 'tomas@nieves.com'
         type: string
-  schedule:
-    - cron: '*/5 * * * *'
 
-# Keep exactly one authoritative queue drain. A newly requested or scheduled run
-# cancels stale queued/running copies instead of waiting behind them forever.
+# Allow the authoritative queue drain to finish. New requests wait rather than
+# canceling an active browser-submission run.
 concurrency:
   group: career-os-approved-queue-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
