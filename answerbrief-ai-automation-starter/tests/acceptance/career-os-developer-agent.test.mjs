@@ -33,7 +33,14 @@ test('creates a human-gated OpenHands configuration', () => {
   });
   assert.equal(config.preflight.ready, true);
   assert.equal(config.requireHumanMerge, true);
-  assert.deepEqual(buildProviderCommand(config, 'Implement the approved issue'), ['openhands', '--headless', '-t', 'Implement the approved issue']);
+  assert.deepEqual(buildProviderCommand(config, 'Implement the approved issue'), [
+    'openhands',
+    '--headless',
+    '--json',
+    '--exit-without-confirmation',
+    '-t',
+    'Implement the approved issue',
+  ]);
 });
 
 test('supports Aider as a secondary provider', () => {
