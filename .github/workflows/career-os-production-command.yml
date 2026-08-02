@@ -16,11 +16,22 @@ jobs:
       contains(github.event.comment.body, 'TRIGGER_PRODUCTION_CANARY')
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch Mac production canary
+      - name: Cancel stale production run and dispatch canary
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const staleRunId = 30729185178;
+            try {
+              await github.rest.actions.cancelWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: staleRunId
+              });
+            } catch (error) {
+              core.info(`Stale run ${staleRunId} could not be canceled or was already complete: ${error.message}`);
+            }
+
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -33,5 +44,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 49,
-              body: `Career OS production command accepted.\n\n- Requested by: ${context.actor}\n- Target workflow: career-os-mac-production.yml\n- Ref: ${context.payload.repository.default_branch}\n- Time: ${new Date().toISOString()}`
+              body: `Career OS production command accepted.\n\n- Requested by: ${context.actor}\n- Stale run cancellation attempted: ${staleRunId}\n- Target workflow: career-os-mac-production.yml\n- Ref: ${context.payload.repository.default_branch}\n- Time: ${new Date().toISOString()}`
             });
