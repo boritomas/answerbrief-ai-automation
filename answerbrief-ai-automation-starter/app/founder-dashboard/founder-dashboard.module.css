@@ -102,50 +102,50 @@
   font-weight: 700;
 }
 
-:global(.qualified-role-grid) {
+.page :global(.qualified-role-grid) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   margin-top: 18px;
 }
 
-:global(.career-os-action-control) {
+.page :global(.career-os-action-control) {
   border: 1px solid #d0d5dd;
   border-radius: 16px;
   padding: 20px;
   background: #ffffff;
 }
 
-:global(.career-os-action-control.selected) {
+.page :global(.career-os-action-control.selected) {
   border-color: #6941c6;
   box-shadow: 0 0 0 3px rgba(105, 65, 198, 0.12);
 }
 
-:global(.role-selector) {
+.page :global(.role-selector) {
   display: flex;
   align-items: flex-start;
   gap: 12px;
   cursor: pointer;
 }
 
-:global(.role-selector input) {
+.page :global(.role-selector input) {
   width: 20px;
   height: 20px;
   margin-top: 2px;
 }
 
-:global(.role-selector span),
-:global(.role-selector strong),
-:global(.role-selector small) {
+.page :global(.role-selector span),
+.page :global(.role-selector strong),
+.page :global(.role-selector small) {
   display: block;
 }
 
-:global(.role-selector small) {
+.page :global(.role-selector small) {
   margin-top: 6px;
   color: #667085;
 }
 
-:global(.role-status) {
+.page :global(.role-status) {
   display: inline-flex;
   align-items: center;
   color: #475467;
@@ -153,14 +153,14 @@
   font-weight: 700;
 }
 
-:global(.cta-row) {
+.page :global(.cta-row) {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   margin: 16px 0;
 }
 
-:global(.button) {
+.page :global(.button) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -173,17 +173,17 @@
   cursor: pointer;
 }
 
-:global(.button.primary) {
+.page :global(.button.primary) {
   background: #6941c6;
   color: #ffffff;
 }
 
-:global(.button.secondary) {
+.page :global(.button.secondary) {
   background: #ffffff;
   color: #6941c6;
 }
 
-:global(.button:disabled) {
+.page :global(.button:disabled) {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -206,11 +206,11 @@
   }
 
   .metricGrid,
-  :global(.qualified-role-grid) {
+  .page :global(.qualified-role-grid) {
     grid-template-columns: 1fr;
   }
 
-  :global(.cta-row .button) {
+  .page :global(.cta-row .button) {
     width: 100%;
   }
 }
