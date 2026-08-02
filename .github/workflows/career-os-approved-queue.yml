@@ -81,8 +81,15 @@ jobs:
       - name: Drain approved application queue
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           cd "$CAREER_OS_RUNTIME"
+          set -a
+          if [ -f .env ]; then . ./.env; fi
+          if [ -f .env.local ]; then . ./.env.local; fi
+          set +a
+          export CAREER_OS_OWNER_EMAIL="${CAREER_OS_OWNER_EMAIL:-tomas@nieves.com}"
+          export CAREER_OS_QUEUE_ENABLED="1"
+          export CAREER_OS_DAILY_LIMIT="${CAREER_OS_DAILY_LIMIT:-165}"
           mkdir -p ".career-os-ci/${GITHUB_RUN_ID}"
           npm run supervisor 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-supervisor.log"
 
@@ -92,6 +99,10 @@ jobs:
         run: |
           set +e
           cd "$CAREER_OS_RUNTIME"
+          set -a
+          if [ -f .env ]; then . ./.env; fi
+          if [ -f .env.local ]; then . ./.env.local; fi
+          set +a
           EVIDENCE_DIR=".career-os-ci/${GITHUB_RUN_ID}"
           mkdir -p "$EVIDENCE_DIR/screenshots"
           npm run worker:health 2>&1 | tee "$EVIDENCE_DIR/worker-health-final.log"
