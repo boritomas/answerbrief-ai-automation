@@ -1,0 +1,120 @@
+name: Career OS Autonomous Incident Manager
+
+on:
+  workflow_run:
+    workflows: ["Career OS Mac Production Canary"]
+    types: [completed]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: career-os-autonomous-incident-manager
+  cancel-in-progress: false
+
+jobs:
+  manage-production:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate production state and act
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = 49;
+            const workflowId = 'career-os-mac-production.yml';
+            const maxRetries = 3;
+
+            const commentsResponse = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number, per_page: 100 }
+            );
+            const comments = commentsResponse.map(c => c.body || '');
+            const retryCount = comments.filter(body => body.includes('AUTONOMOUS_RETRY')).length;
+            const successSeen = comments.some(body => /submitted_confirmed/i.test(body));
+            const humanCheckpoint = comments.slice(-20).some(body =>
+              /(CAPTCHA|MFA|identity verification|administrator password|security approval|legal question|human intervention required)/i.test(body)
+            );
+
+            if (successSeen) {
+              core.info('Production milestone already reached: submitted_confirmed. No further action.');
+              return;
+            }
+
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: workflowId,
+              branch: context.payload.repository?.default_branch || 'main',
+              per_page: 10
+            });
+
+            const latest = runs.data.workflow_runs[0];
+            if (!latest) {
+              core.info('No production run exists. Dispatching initial canary.');
+              await github.rest.actions.createWorkflowDispatch({
+                owner, repo, workflow_id: workflowId, ref: 'main', inputs: { run_canary: 'true' }
+              });
+              return;
+            }
+
+            const startedAt = new Date(latest.run_started_at || latest.created_at);
+            const ageMinutes = (Date.now() - startedAt.getTime()) / 60000;
+
+            if (latest.status !== 'completed') {
+              if (ageMinutes > 20 && (latest.status === 'queued' || latest.status === 'in_progress')) {
+                await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: latest.id }).catch(() => {});
+                if (retryCount < maxRetries) {
+                  await github.rest.actions.createWorkflowDispatch({
+                    owner, repo, workflow_id: workflowId, ref: 'main', inputs: { run_canary: 'true' }
+                  });
+                  await github.rest.issues.createComment({
+                    owner, repo, issue_number,
+                    body: `AUTONOMOUS_RETRY\n\nCareerOS incident manager replaced a stale production run.\n\n- Stale run: ${latest.id}\n- Prior status: ${latest.status}\n- Age minutes: ${Math.round(ageMinutes)}\n- Retry: ${retryCount + 1}/${maxRetries}\n- Time: ${new Date().toISOString()}`
+                  });
+                } else {
+                  await github.rest.issues.createComment({
+                    owner, repo, issue_number,
+                    body: `HUMAN_INTERVENTION_REQUIRED\n\nCareerOS exhausted ${maxRetries} automatic retries while the Mac production job remained stale or unclaimed. Check runner service, labels, network connectivity, and macOS security prompts.\n\n- Latest run: ${latest.id}\n- Status: ${latest.status}\n- Time: ${new Date().toISOString()}`
+                  });
+                }
+              } else {
+                core.info(`Latest production run ${latest.id} is ${latest.status}; no action yet.`);
+              }
+              return;
+            }
+
+            if (latest.conclusion === 'success') {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `PRODUCTION_MILESTONE_REVIEW\n\nProduction workflow ${latest.id} completed successfully. Validate browser evidence, employer confirmation email, evidence archive, and final state submitted_confirmed before closing the incident.\n\n- Run: ${latest.id}\n- Commit: ${latest.head_sha}\n- Time: ${new Date().toISOString()}`
+              });
+              return;
+            }
+
+            if (humanCheckpoint) {
+              core.info('A genuine human checkpoint is present. Automatic retry suppressed.');
+              return;
+            }
+
+            if (retryCount < maxRetries) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner, repo, workflow_id: workflowId, ref: 'main', inputs: { run_canary: 'true' }
+              });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `AUTONOMOUS_RETRY\n\nCareerOS incident manager retried the failed production canary.\n\n- Failed run: ${latest.id}\n- Conclusion: ${latest.conclusion}\n- Retry: ${retryCount + 1}/${maxRetries}\n- Time: ${new Date().toISOString()}`
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `HUMAN_INTERVENTION_REQUIRED\n\nCareerOS exhausted ${maxRetries} evidence-backed automatic retries without reaching submitted_confirmed. Review the latest production artifact and first failed checkpoint before resuming.\n\n- Latest run: ${latest.id}\n- Conclusion: ${latest.conclusion}\n- Time: ${new Date().toISOString()}`
+              });
+            }
