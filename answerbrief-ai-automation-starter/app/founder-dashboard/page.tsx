@@ -43,7 +43,7 @@ export default async function FounderDashboardPage() {
     }))
     .filter((role) => Boolean(role.id));
 
-  const queued = queueStates.queued + queueStates.package_ready + queueStates.qualified;
+  const queued = queueStates.queued + queueStates.package_ready;
   const running = queueStates.running;
   const submitted = counts.submitted;
   const blocked = counts.actionCenter + counts.systemIssues;
