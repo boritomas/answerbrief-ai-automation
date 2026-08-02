@@ -14,9 +14,11 @@ on:
         default: 'tomas@nieves.com'
         type: string
 
+# Keep exactly one authoritative queue drain. A newly requested production run
+# cancels stale queued/running copies instead of waiting behind them forever.
 concurrency:
-  group: career-os-approved-queue
-  cancel-in-progress: false
+  group: career-os-approved-queue-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
