@@ -13,7 +13,6 @@ jobs:
   dispatch-production-canary:
     if: >-
       github.event.issue.number == 49 &&
-      github.event.comment.user.login == 'boritomas' &&
       contains(github.event.comment.body, 'TRIGGER_PRODUCTION_CANARY')
     runs-on: ubuntu-latest
     steps:
