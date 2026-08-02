@@ -58,6 +58,31 @@ jobs:
               return cancelled;
             }
 
+            if (body.includes('START_APPROVED_QUEUE')) {
+              const match = body.match(/LIMIT\s*=\s*(\d+)/i);
+              const applicationLimit = match ? String(Math.min(200, Math.max(1, Number(match[1])))) : '165';
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: 'career-os-approved-queue.yml',
+                ref: context.payload.repository.default_branch,
+                inputs: {
+                  application_limit: applicationLimit,
+                  owner_email: 'tomas@nieves.com'
+                }
+              });
+              await comment([
+                'Career OS approved queue command accepted.',
+                '',
+                '- Command: START_APPROVED_QUEUE',
+                `- Application limit: ${applicationLimit}`,
+                '- Target workflow: career-os-approved-queue.yml',
+                `- Ref: ${context.payload.repository.default_branch}`,
+                `- Time: ${new Date().toISOString()}`
+              ].join('\n'));
+              return;
+            }
+
             if (body.includes('TRIGGER_PRODUCTION_CANARY') || body.includes('RETRY_FAILED_STAGE')) {
               const cancelled = await cancelStaleProductionRuns();
               await github.rest.actions.createWorkflowDispatch({
