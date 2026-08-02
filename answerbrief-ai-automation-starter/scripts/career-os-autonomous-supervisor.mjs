@@ -40,7 +40,6 @@ function run(name, command, args = [], options = {}) {
 
 function collectArtifacts() {
   const candidates = [
-    '.career-os-browser-worker',
     'playwright-report',
     'test-results',
     'career-os-production-report.md',
@@ -53,13 +52,19 @@ function collectArtifacts() {
   fs.writeFileSync(path.join(evidenceDir, 'artifact-index.json'), JSON.stringify(index, null, 2));
 }
 
+function parseClaimed(stdout) {
+  const matches = [...String(stdout || '').matchAll(/\{[\s\S]*?"claimed"\s*:\s*(true|false)[\s\S]*?\}/g)];
+  if (!matches.length) return null;
+  return matches.at(-1)[1] === 'true';
+}
+
 function repairTask(attempt, workerResult, healthResult) {
   const combined = [healthResult.stdout, healthResult.stderr, workerResult.stdout, workerResult.stderr]
     .filter(Boolean)
     .join('\n')
     .slice(-18000);
   return [
-    'Career OS production canary failed.',
+    'Career OS production canary failed after a task was claimed.',
     `Attempt: ${attempt} of ${maxAttempts}.`,
     'Diagnose and repair the smallest verified code or configuration defect in this repository.',
     'Do not weaken CAPTCHA, MFA, identity, legal, duplicate, compensation, or confirmation-email safeguards.',
@@ -96,6 +101,7 @@ function main() {
       },
       timeout: 30 * 60 * 1000,
     });
+    const claimed = parseClaimed(worker.stdout);
     const report = run(`${attempt}-production-report`, 'npm', ['run', 'report:career-os']);
     collectArtifacts();
 
@@ -103,15 +109,24 @@ function main() {
       attempt,
       healthOk: health.ok,
       workerOk: worker.ok,
+      claimed,
       reportOk: report.ok,
       at: new Date().toISOString(),
     });
 
-    if (worker.ok && report.ok) {
-      journal.outcome = 'canary_completed';
+    if (worker.ok && claimed === true && report.ok) {
+      journal.outcome = 'canary_task_executed';
       journal.finishedAt = new Date().toISOString();
       fs.writeFileSync(path.join(evidenceDir, 'journal.json'), JSON.stringify(journal, null, 2));
       process.exit(0);
+    }
+
+    if (worker.ok && claimed === false) {
+      journal.outcome = 'no_eligible_canary';
+      journal.finishedAt = new Date().toISOString();
+      journal.nextAction = 'Refresh and validate live postings, then authorize exactly one package-ready application before retrying.';
+      fs.writeFileSync(path.join(evidenceDir, 'journal.json'), JSON.stringify(journal, null, 2));
+      process.exit(2);
     }
 
     if (!autoRepair || attempt === maxAttempts) break;
