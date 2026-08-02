@@ -4,7 +4,23 @@ import path from 'node:path';
 import test from 'node:test';
 
 const root = process.cwd();
-const repositoryRoot = process.env.GITHUB_WORKSPACE || path.resolve(root, '..');
+
+function findRepositoryRoot(start = root) {
+  const candidates = [
+    process.env.GITHUB_WORKSPACE,
+    start,
+    path.resolve(start, '..'),
+    path.resolve(start, '../..'),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, '.github', 'workflows', 'career-os-mac-production.yml'))) {
+      return candidate;
+    }
+  }
+  return start;
+}
+
+const repositoryRoot = findRepositoryRoot();
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const readRepositoryFile = (relative) => fs.readFileSync(path.join(repositoryRoot, relative), 'utf8');
 
