@@ -1,9 +1,9 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
 
 type Props = {
+  approvedCount: number;
   ownerEmail: string;
   runNowToken: string;
   refreshDiscoveryToken: string;
@@ -14,90 +14,65 @@ type ActionResult = {
   applicationId?: string;
   employer?: string;
   position?: string;
-  dailyDiscovery?: {
-    errors: string[];
-    postingsAccepted: number;
-    postingsPersisted?: number;
-    postingsReviewed: number;
-  };
   error?: string;
   message?: string;
   ok?: boolean;
-  queueResult?: {
-    applicationsAudited: number;
-    automaticallyQueued: number;
-    errors?: string[];
-    processed: number;
-    technical: number;
-    waitingOnTomas: number;
-  };
   status?: 'blocked' | 'error' | 'success';
 };
 
-export function FounderRunControls({
-  ownerEmail,
-  runNowToken,
-  refreshDiscoveryToken,
-  tokenExpiresAt,
-}: Props) {
-  const [message, setMessage] = useState('Choose Step 1 to find roles, approve a role below, then choose Step 3 to process one application.');
-  const [state, setState] = useState<'idle' | 'loading' | 'success' | 'blocked' | 'error'>('idle');
-  const [isPending, startTransition] = useTransition();
-  const router = useRouter();
+export function FounderRunControls({ approvedCount, ownerEmail, runNowToken, tokenExpiresAt }: Props) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(approvedCount > 0
+    ? `${approvedCount} approved application${approvedCount === 1 ? '' : 's'} ready to process.`
+    : 'Approve qualified roles above to build your application queue.');
 
-  function execute(action: 'run_now' | 'refresh_discovery', actionToken: string) {
-    startTransition(async () => {
-      setState('loading');
-      setMessage(action === 'run_now' ? 'Starting one approved application...' : 'Requesting a fresh job-pool update...');
+  async function processApprovedQueue() {
+    if (busy || approvedCount < 1) return;
+    setBusy(true);
+    let started = 0;
+    const results: string[] = [];
 
-      const endpoint = action === 'run_now'
-        ? '/api/career-os/run-one'
-        : '/api/career-os/actions';
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          actionToken,
-          actionTokenExpiresAt: tokenExpiresAt,
-          ownerEmail,
-        }),
-      });
-      const result = await response.json().catch(() => ({})) as ActionResult;
-
-      if (!response.ok || !result.ok) {
-        setState(result.status === 'blocked' ? 'blocked' : 'error');
-        setMessage(result.error || result.message || `${action} failed.`);
-        return;
+    for (let index = 0; index < approvedCount; index += 1) {
+      setMessage(`Starting approved application ${index + 1} of ${approvedCount}…`);
+      try {
+        const response = await fetch('/api/career-os/run-one', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'run_now',
+            actionToken: runNowToken,
+            actionTokenExpiresAt: tokenExpiresAt,
+            ownerEmail,
+          }),
+        });
+        const result = await response.json().catch(() => ({})) as ActionResult;
+        if (!response.ok || !result.ok) {
+          if (response.status === 409) break;
+          results.push(result.error || result.message || `HTTP ${response.status}`);
+          continue;
+        }
+        started += 1;
+      } catch (error) {
+        results.push(error instanceof Error ? error.message : 'Queue request failed.');
       }
+    }
 
-      setState('success');
-      if (action === 'refresh_discovery' && result.dailyDiscovery) {
-        setMessage(`Job pool updated: ${result.dailyDiscovery.postingsAccepted} qualified roles found. Review the role cards below.`);
-      } else if (action === 'run_now' && result.queueResult) {
-        const role = [result.employer, result.position].filter(Boolean).join(' - ');
-        setMessage(`Application processing started${role ? ` for ${role}` : ''}. Refresh status in a few minutes to see progress.`);
-      } else {
-        setMessage('Request accepted. Refresh status in a few minutes.');
-      }
-      router.refresh();
-    });
+    setMessage(results.length
+      ? `Started ${started} application${started === 1 ? '' : 's'}. ${results.length} request${results.length === 1 ? '' : 's'} need attention: ${results.join('; ')}`
+      : `Started ${started} approved application${started === 1 ? '' : 's'}. Career OS will continue until a human-only checkpoint is reached.`);
+    setBusy(false);
   }
 
   return (
-    <div className={`career-os-action-control ${state}`} aria-live="polite">
+    <div className="career-os-action-control" aria-live="polite">
       <div className="cta-row">
-        <button className="button secondary" disabled={isPending} onClick={() => execute('refresh_discovery', refreshDiscoveryToken)} type="button">
-          1. Find New Roles
+        <button className="button primary" disabled={busy || approvedCount < 1} onClick={() => void processApprovedQueue()} type="button">
+          {busy ? 'Starting Approved Queue…' : `Start All ${approvedCount} Approved Application${approvedCount === 1 ? '' : 's'}`}
         </button>
-        <button className="button primary" disabled={isPending} onClick={() => execute('run_now', runNowToken)} type="button">
-          3. Process One Approved Role
-        </button>
-        <button className="button secondary" disabled={isPending} onClick={() => window.location.reload()} type="button">
-          Check Progress
-        </button>
+        <button className="button secondary" disabled={busy} onClick={() => window.location.reload()} type="button">Refresh Counts</button>
+        <a className="button secondary" href="/career-os#applications">View Applications</a>
       </div>
-      <small><strong>{state === 'idle' ? 'Next step' : state}:</strong> {message}</small>
+      <p><small><strong>Status:</strong> {message}</small></p>
     </div>
   );
 }
