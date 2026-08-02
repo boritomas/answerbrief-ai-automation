@@ -1,7 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 type QualifiedRole = {
   id: string;
@@ -9,7 +8,7 @@ type QualifiedRole = {
   title: string;
   location: string;
   fitScore: number;
-  url?: string;
+  applicationUrl: string;
 };
 
 type Props = {
@@ -23,81 +22,91 @@ type ActionResult = {
   error?: string;
   message?: string;
   ok?: boolean;
-  status?: string;
 };
 
 export function QualifiedRoleControls({ actionToken, ownerEmail, roles, tokenExpiresAt }: Props) {
-  const [message, setMessage] = useState(roles.length ? 'Step 2: review the best matches and approve the roles you want Career OS to process.' : 'No qualified roles are currently available. Use Find New Roles above.');
-  const [activeRoleId, setActiveRoleId] = useState('');
-  const [approvedRoleIds, setApprovedRoleIds] = useState<string[]>([]);
-  const router = useRouter();
+  const [selected, setSelected] = useState<string[]>(roles.map((role) => role.id));
+  const [approved, setApproved] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(roles.length ? `${roles.length} qualified roles selected.` : 'No qualified roles are currently available.');
 
-  async function approve(role: QualifiedRole) {
-    if (activeRoleId || approvedRoleIds.includes(role.id)) return;
+  const selectedRoles = useMemo(() => roles.filter((role) => selected.includes(role.id)), [roles, selected]);
 
-    setActiveRoleId(role.id);
-    setMessage(`Adding ${role.company} - ${role.title} to your application queue...`);
+  function toggle(roleId: string) {
+    setSelected((current) => current.includes(roleId) ? current.filter((id) => id !== roleId) : [...current, roleId]);
+  }
 
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15000);
+  async function approveSelected() {
+    if (busy || selectedRoles.length === 0) return;
+    setBusy(true);
+    let succeeded = 0;
+    const failures: string[] = [];
 
-    try {
-      const response = await fetch('/api/career-os/approve-role', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          actionToken,
-          actionTokenExpiresAt: tokenExpiresAt,
-          employer: role.company,
-          opportunityId: role.id,
-          ownerEmail,
-        }),
-        signal: controller.signal,
-      });
-      const result = await response.json().catch(() => ({})) as ActionResult;
-      if (!response.ok || !result.ok) {
-        setMessage(result.error || result.message || `Role approval failed with HTTP ${response.status}.`);
-        return;
+    for (const role of selectedRoles) {
+      if (approved.includes(role.id)) continue;
+      setMessage(`Approving ${succeeded + 1} of ${selectedRoles.length}: ${role.company} — ${role.title}`);
+      try {
+        const response = await fetch('/api/career-os/approve-role', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            actionToken,
+            actionTokenExpiresAt: tokenExpiresAt,
+            employer: role.company,
+            opportunityId: role.id,
+            ownerEmail,
+          }),
+        });
+        const result = await response.json().catch(() => ({})) as ActionResult;
+        if (!response.ok || !result.ok) {
+          failures.push(`${role.company}: ${result.error || result.message || `HTTP ${response.status}`}`);
+          continue;
+        }
+        succeeded += 1;
+        setApproved((current) => current.includes(role.id) ? current : [...current, role.id]);
+      } catch (error) {
+        failures.push(`${role.company}: ${error instanceof Error ? error.message : 'request failed'}`);
       }
-      setApprovedRoleIds((current) => current.concat(role.id));
-      setMessage(`${role.company} was added to your queue. Approve another role or use Process One Approved Role above.`);
-      router.refresh();
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        setMessage('The approval request timed out. The role was not added; retry this card.');
-      } else {
-        setMessage(error instanceof Error ? error.message : 'Role approval failed before the server returned a response.');
-      }
-    } finally {
-      window.clearTimeout(timeout);
-      setActiveRoleId('');
     }
+
+    setMessage(failures.length
+      ? `Approved ${succeeded}. ${failures.length} need attention: ${failures.join('; ')}`
+      : `Approved ${succeeded} role${succeeded === 1 ? '' : 's'}. They are now in your application queue.`);
+    setBusy(false);
   }
 
   return (
     <div aria-live="polite">
-      {roles.length > 0 ? (
-        <div className="career-os-role-grid">
-          {roles.map((role, index) => {
-            const approving = activeRoleId === role.id;
-            const approved = approvedRoleIds.includes(role.id);
-            return (
-              <article className="career-os-action-control" key={role.id}>
-                <small>Priority {index + 1} · {role.fitScore}% match</small>
-                <h3>{role.title}</h3>
-                <p><strong>{role.company}</strong><br />{role.location || 'Location not published'}</p>
-                <div className="cta-row">
-                  <button className="button primary" disabled={approving || approved} onClick={() => void approve(role)} type="button">
-                    {approving ? 'Adding…' : approved ? 'Added to Queue' : 'Approve This Role'}
-                  </button>
-                  {role.url ? <a className="button secondary" href={role.url} rel="noreferrer" target="_blank">Open Job Posting</a> : null}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      ) : null}
-      <p><small><strong>What to do:</strong> {message}</small></p>
+      <div className="cta-row">
+        <button className="button secondary" disabled={busy || roles.length === 0} onClick={() => setSelected(roles.map((role) => role.id))} type="button">Select All</button>
+        <button className="button secondary" disabled={busy || selected.length === 0} onClick={() => setSelected([])} type="button">Clear Selection</button>
+        <button className="button primary" disabled={busy || selectedRoles.length === 0} onClick={() => void approveSelected()} type="button">
+          {busy ? 'Approving Selected Roles…' : `Approve ${selectedRoles.length} Selected Role${selectedRoles.length === 1 ? '' : 's'}`}
+        </button>
+      </div>
+
+      <div className="qualified-role-grid">
+        {roles.map((role) => {
+          const checked = selected.includes(role.id);
+          const isApproved = approved.includes(role.id);
+          return (
+            <article className={`career-os-action-control ${checked ? 'selected' : ''}`} key={role.id}>
+              <label className="role-selector">
+                <input checked={checked} disabled={busy || isApproved} onChange={() => toggle(role.id)} type="checkbox" />
+                <span>
+                  <strong>{role.company} — {role.title}</strong>
+                  <small>{role.location} · {role.fitScore}% match</small>
+                </span>
+              </label>
+              <div className="cta-row">
+                {role.applicationUrl ? <a className="button secondary" href={role.applicationUrl} rel="noreferrer" target="_blank">Open Application</a> : null}
+                <span className="role-status">{isApproved ? 'Approved and queued' : checked ? 'Selected' : 'Not selected'}</span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <p><small>{message}</small></p>
     </div>
   );
 }
