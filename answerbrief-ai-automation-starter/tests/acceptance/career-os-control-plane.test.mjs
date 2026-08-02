@@ -4,7 +4,9 @@ import path from 'node:path';
 import test from 'node:test';
 
 const root = process.cwd();
+const repositoryRoot = process.env.GITHUB_WORKSPACE || path.resolve(root, '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
+const readRepositoryFile = (relative) => fs.readFileSync(path.join(repositoryRoot, relative), 'utf8');
 
 test('MCP control plane exposes only bounded CareerOS tools', () => {
   const source = read('scripts/career-os-mcp-server.mjs');
@@ -24,13 +26,13 @@ test('MCP control plane exposes only bounded CareerOS tools', () => {
 
 test('OpenHands is the first repair provider', () => {
   const executor = read('scripts/answerbrief-executor.mjs');
-  const workflow = read('../.github/workflows/career-os-mac-production.yml');
+  const workflow = readRepositoryFile('.github/workflows/career-os-mac-production.yml');
   assert.match(executor, /openhands,gemini,opencode,aider,claude-code,codex/);
   assert.match(workflow, /ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER: openhands,gemini,opencode,aider,claude-code,codex/);
 });
 
 test('Mac installer activates runner, control plane, and OpenHands integration', () => {
-  const installer = read('../INSTALL_CAREER_OS_RUNNER.command');
+  const installer = readRepositoryFile('INSTALL_CAREER_OS_RUNNER.command');
   assert.match(installer, /bootstrap-career-os-mac-runner\.sh/);
   assert.match(installer, /install-career-os-control-plane\.sh/);
   assert.match(installer, /CareerOS-Control-Plane\.txt/);
