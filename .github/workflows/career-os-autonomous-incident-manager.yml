@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows: ["Career OS Mac Production Canary"]
     types: [completed]
+  issue_comment:
+    types: [created]
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
@@ -19,6 +21,9 @@ concurrency:
 
 jobs:
   manage-production:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.number == 49 && contains(github.event.comment.body, 'START_AUTONOMOUS_INCIDENT_MANAGER'))
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate production state and act
@@ -58,9 +63,12 @@ jobs:
 
             const latest = runs.data.workflow_runs[0];
             if (!latest) {
-              core.info('No production run exists. Dispatching initial canary.');
               await github.rest.actions.createWorkflowDispatch({
                 owner, repo, workflow_id: workflowId, ref: 'main', inputs: { run_canary: 'true' }
+              });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `AUTONOMOUS_INCIDENT_MANAGER_ACTIVE\n\nNo production run existed, so the incident manager dispatched the initial canary.\n\n- Time: ${new Date().toISOString()}`
               });
               return;
             }
@@ -86,7 +94,10 @@ jobs:
                   });
                 }
               } else {
-                core.info(`Latest production run ${latest.id} is ${latest.status}; no action yet.`);
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number,
+                  body: `AUTONOMOUS_INCIDENT_MANAGER_ACTIVE\n\nMonitoring production run ${latest.id}. No action is required yet.\n\n- Status: ${latest.status}\n- Age minutes: ${Math.round(ageMinutes)}\n- Time: ${new Date().toISOString()}`
+                });
               }
               return;
             }
