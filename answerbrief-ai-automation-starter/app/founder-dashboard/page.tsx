@@ -1,5 +1,5 @@
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
-import { careerOsSelectRows } from '@/lib/career-os-supabase';
+import { getCareerOsStatus } from '@/lib/career-os-status';
 import { FounderRunControls } from './founder-run-controls';
 import { QualifiedRoleControls } from './qualified-role-controls';
 import styles from './founder-dashboard.module.css';
@@ -12,23 +12,16 @@ function asRecord(value: unknown): JsonRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
-function stateText(row: JsonRecord) {
-  const raw = asRecord(row.raw_record);
-  return `${row.lifecycle_stage || ''} ${row.status || ''} ${row.next_action || ''} ${raw.execution_status || ''}`.toLowerCase();
-}
-
 export default async function FounderDashboardPage() {
-  const ownerEmail = process.env.CAREER_OS_OWNER_EMAIL || 'tomas@nieves.com';
-  const [postingRows, applicationRows] = await Promise.all([
-    careerOsSelectRows('career_os_job_postings', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=fit_score.desc&limit=100`),
-    careerOsSelectRows('career_os_applications', `select=*&owner_email=eq.${encodeURIComponent(ownerEmail)}&order=updated_at.desc&limit=200`),
-  ]);
-
+  const status = await getCareerOsStatus();
+  const ownerEmail = status.evidence.ownerEmail;
+  const counts = status.operationalTrust.verifiedCounts;
+  const queueStates = status.applicationExecution.queueStates;
   const actionTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
   const runNowToken = createCareerOsActionToken({ action: 'run_now', expiresAt: actionTokenExpiresAt, ownerEmail });
   const reviewOpportunityToken = createCareerOsActionToken({ action: 'review_opportunity', expiresAt: actionTokenExpiresAt, ownerEmail });
 
-  const qualifiedRoles = postingRows
+  const qualifiedRoles = status.evidence.jobPostings
     .map((posting) => asRecord(posting))
     .filter((posting) => {
       const raw = asRecord(posting.raw_record);
@@ -39,6 +32,7 @@ export default async function FounderDashboardPage() {
         && !['approved', 'reject_similar', 'skip', 'hidden'].includes(reviewDecision)
         && !['inactive', 'ineligible', 'poor_fit', 'duplicate'].some((value) => postingStatus.includes(value));
     })
+    .sort((left, right) => Number(right.fit_score || 0) - Number(left.fit_score || 0))
     .map((posting) => ({
       id: String(posting.id || ''),
       company: String(posting.company || 'Employer'),
@@ -49,11 +43,10 @@ export default async function FounderDashboardPage() {
     }))
     .filter((role) => Boolean(role.id));
 
-  const applications = applicationRows.map((row) => asRecord(row));
-  const submitted = applications.filter((row) => /submitted|confirmed/.test(stateText(row))).length;
-  const queued = applications.filter((row) => /queued|qualified_pending_application|package_ready|ready_for_automation/.test(stateText(row)) && !/submitted|confirmed/.test(stateText(row))).length;
-  const blocked = applications.filter((row) => /waiting_on_tomas|captcha|mfa|identity|legal|technical blocker|blocked_technical/.test(stateText(row))).length;
-  const running = applications.filter((row) => /running|applying/.test(stateText(row))).length;
+  const queued = queueStates.queued + queueStates.package_ready + queueStates.qualified;
+  const running = queueStates.running;
+  const submitted = counts.submitted;
+  const blocked = counts.actionCenter + counts.systemIssues;
 
   return (
     <main className={styles.page}>
@@ -110,7 +103,11 @@ export default async function FounderDashboardPage() {
 
       <section className={styles.panel}>
         <div className={styles.sectionHeading}>
-          <div><p className={styles.eyebrow}>Step 3</p><h2>Track progress</h2><p>Refresh this page only when you want updated counts. Normal approval actions no longer force a full page reload.</p></div>
+          <div>
+            <p className={styles.eyebrow}>Step 3</p>
+            <h2>Track progress</h2>
+            <p>Refresh this page when you want updated counts, or open the full application checkpoint view.</p>
+          </div>
         </div>
         <p><a className={styles.homeLink} href="/career-os#applications">Open applications and checkpoints</a></p>
       </section>
