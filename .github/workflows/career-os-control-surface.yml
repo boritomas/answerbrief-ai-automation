@@ -1,0 +1,126 @@
+name: Career OS Control Surface
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  route-command:
+    if: >-
+      github.event.issue.number == 49 &&
+      github.event.comment.user.login == 'boritomas'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Route production command
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const body = context.payload.comment.body || '';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = 49;
+
+            async function comment(message) {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: message });
+            }
+
+            async function listRuns(workflow_id, status) {
+              const response = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id,
+                status,
+                per_page: 20
+              });
+              return response.data.workflow_runs || [];
+            }
+
+            async function cancelStaleProductionRuns() {
+              const active = [
+                ...(await listRuns('career-os-mac-production.yml', 'in_progress')),
+                ...(await listRuns('career-os-mac-production.yml', 'queued'))
+              ];
+              const cancelled = [];
+              for (const run of active) {
+                try {
+                  await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: run.id });
+                  cancelled.push(run.id);
+                } catch (error) {
+                  core.warning(`Unable to cancel run ${run.id}: ${error.message}`);
+                }
+              }
+              return cancelled;
+            }
+
+            if (body.includes('TRIGGER_PRODUCTION_CANARY') || body.includes('RETRY_FAILED_STAGE')) {
+              const cancelled = await cancelStaleProductionRuns();
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: 'career-os-mac-production.yml',
+                ref: context.payload.repository.default_branch,
+                inputs: { run_canary: 'true' }
+              });
+              await comment([
+                'Career OS control command accepted.',
+                '',
+                `- Command: ${body.includes('RETRY_FAILED_STAGE') ? 'RETRY_FAILED_STAGE' : 'TRIGGER_PRODUCTION_CANARY'}`,
+                `- Cancelled stale runs: ${cancelled.length ? cancelled.join(', ') : 'none'}`,
+                '- Target workflow: career-os-mac-production.yml',
+                `- Ref: ${context.payload.repository.default_branch}`,
+                `- Time: ${new Date().toISOString()}`
+              ].join('\n'));
+              return;
+            }
+
+            if (body.includes('CAREER_OS_STATUS') || body.includes('FETCH_LATEST_EVIDENCE')) {
+              const response = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: 'career-os-mac-production.yml',
+                per_page: 5
+              });
+              const run = response.data.workflow_runs?.[0];
+              if (!run) {
+                await comment('Career OS status: no production workflow runs found.');
+                return;
+              }
+              await comment([
+                'Career OS production status.',
+                '',
+                `- Run: ${run.id}`,
+                `- Status: ${run.status}`,
+                `- Conclusion: ${run.conclusion || 'pending'}`,
+                `- Commit: ${run.head_sha}`,
+                `- Event: ${run.event}`,
+                `- Updated: ${run.updated_at}`,
+                `- Evidence artifact: career-os-production-${run.id}`
+              ].join('\n'));
+              return;
+            }
+
+            if (body.includes('CLEANUP_AND_HEALTHCHECK')) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: 'career-os-mac-production.yml',
+                ref: context.payload.repository.default_branch,
+                inputs: { run_canary: 'false' }
+              });
+              await comment([
+                'Career OS cleanup and healthcheck accepted.',
+                '',
+                '- Application canary: disabled',
+                '- Disk, Docker, dependencies, runtime, and worker evidence: enabled',
+                `- Time: ${new Date().toISOString()}`
+              ].join('\n'));
+              return;
+            }
+
+            core.info('No recognized Career OS command found.');
