@@ -41,15 +41,10 @@
   text-decoration: none;
 }
 
-.metricGrid,
-.pipeline,
-.twoColumn {
-  display: grid;
-  gap: 16px;
-}
-
 .metricGrid {
+  display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
   max-width: 1280px;
   margin: 0 auto 24px;
 }
@@ -107,100 +102,11 @@
   font-weight: 700;
 }
 
-.pipeline {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-}
-
-.stage {
-  border-radius: 14px;
-  padding: 16px;
-  background: #f9fafb;
-  text-align: center;
-}
-
-.stage strong {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 1.4rem;
-}
-
-.stage span {
-  color: #475467;
-  font-size: 0.9rem;
-}
-
-.twoColumn {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-width: 1280px;
-  margin: 0 auto;
-}
-
-.twoColumn .panel {
-  width: auto;
-  margin: 0 0 24px;
-}
-
-.intelligenceList {
-  margin: 0;
-}
-
-.intelligenceList div {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 13px 0;
-  border-bottom: 1px solid #eaecf0;
-}
-
-.intelligenceList div:last-child {
-  border-bottom: 0;
-}
-
-.intelligenceList dt {
-  color: #475467;
-}
-
-.intelligenceList dd {
-  margin: 0;
-  font-weight: 700;
-}
-
-.priorityList {
-  display: grid;
-  gap: 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.priorityList li {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  color: #344054;
-}
-
-.emptyState {
-  border: 1px dashed #d0d5dd;
-  border-radius: 14px;
-  padding: 32px;
-  text-align: center;
-  color: #667085;
-}
-
-.emptyState strong {
-  color: #101828;
-}
-
-.emptyState p {
-  margin: 8px auto 0;
-  max-width: 620px;
-}
-
-:global(.career-os-role-grid) {
+:global(.qualified-role-grid) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  margin-top: 18px;
 }
 
 :global(.career-os-action-control) {
@@ -210,13 +116,41 @@
   background: #ffffff;
 }
 
-:global(.career-os-action-control h3) {
-  margin: 8px 0;
-  font-size: 1.05rem;
+:global(.career-os-action-control.selected) {
+  border-color: #6941c6;
+  box-shadow: 0 0 0 3px rgba(105, 65, 198, 0.12);
 }
 
-:global(.career-os-action-control small) {
+:global(.role-selector) {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+:global(.role-selector input) {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+
+:global(.role-selector span),
+:global(.role-selector strong),
+:global(.role-selector small) {
+  display: block;
+}
+
+:global(.role-selector small) {
+  margin-top: 6px;
   color: #667085;
+}
+
+:global(.role-status) {
+  display: inline-flex;
+  align-items: center;
+  color: #475467;
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 
 :global(.cta-row) {
@@ -258,10 +192,6 @@
   .metricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .pipeline {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 720px) {
@@ -276,9 +206,7 @@
   }
 
   .metricGrid,
-  .pipeline,
-  .twoColumn,
-  :global(.career-os-role-grid) {
+  :global(.qualified-role-grid) {
     grid-template-columns: 1fr;
   }
 
