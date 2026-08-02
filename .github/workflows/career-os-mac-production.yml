@@ -22,7 +22,23 @@ permissions:
   issues: write
 
 jobs:
+  trigger-monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report workflow acceptance
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 49,
+              body: `Career OS workflow accepted by GitHub.\n\n- Run: ${context.runId}\n- Commit: ${context.sha}\n- Event: ${context.eventName}\n- Waiting for Mac runner: true\n- Time: ${new Date().toISOString()}`
+            });
+
   production-canary:
+    needs: trigger-monitor
     runs-on: [self-hosted]
     timeout-minutes: 120
     env:
