@@ -1,0 +1,86 @@
+name: Career OS Job Inbox
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 13,18,23 * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/career-os-job-inbox.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: career-os-job-inbox
+  cancel-in-progress: false
+
+jobs:
+  build-job-inbox:
+    runs-on: [self-hosted]
+    timeout-minutes: 60
+    env:
+      CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
+      CAREER_OS_SOURCE: ${{ github.workspace }}/answerbrief-ai-automation-starter
+      PATH: /Users/tomasnieves/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 1
+
+      - name: Sync runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$CAREER_OS_RUNTIME"
+          rsync -a --delete --exclude '.env' --exclude 'node_modules' "$CAREER_OS_SOURCE/" "$CAREER_OS_RUNTIME/"
+
+      - name: Discover and refresh opportunity queue
+        id: discover
+        shell: bash
+        run: |
+          set -o pipefail
+          cd "$CAREER_OS_RUNTIME"
+          LOG="$RUNNER_TEMP/career-os-job-inbox-${GITHUB_RUN_ID}.log"
+          {
+            echo "=== LINKEDIN DISCOVERY ==="
+            npm run linkedin:discover || true
+            echo "=== PRODUCTION REPORT ==="
+            npm run report:career-os || true
+          } 2>&1 | tee "$LOG"
+          echo "log=$LOG" >> "$GITHUB_OUTPUT"
+
+      - name: Publish today queue notification
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          INBOX_LOG: ${{ steps.discover.outputs.log }}
+        with:
+          script: |
+            const fs = require('fs');
+            let text = 'Job inbox refresh completed. Open the CareerOS dashboard and review the Ready to Apply queue.';
+            try {
+              const raw = fs.readFileSync(process.env.INBOX_LOG, 'utf8');
+              const lines = raw.split(/\r?\n/).filter(Boolean);
+              text = lines.slice(-45).join('\n').slice(0, 5500) || text;
+            } catch (e) {
+              core.warning(`Could not read inbox log: ${e.message}`);
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 49,
+              body: `CAREER_OS_JOB_INBOX_READY\n\nThe opportunity discovery cycle finished and the Ready to Apply bucket has been refreshed.\n\nRun: ${context.runId}\nTime: ${new Date().toISOString()}\n\n\`\`\`text\n${text}\n\`\`\``
+            });
+
+      - name: Archive inbox evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: career-os-job-inbox-${{ github.run_id }}
+          path: ${{ steps.discover.outputs.log }}
+          if-no-files-found: warn
+          retention-days: 14
