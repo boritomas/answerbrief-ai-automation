@@ -13,8 +13,10 @@ on:
         required: true
         default: 'tomas@nieves.com'
         type: string
+  schedule:
+    - cron: '*/5 * * * *'
 
-# Keep exactly one authoritative queue drain. A newly requested production run
+# Keep exactly one authoritative queue drain. A newly requested or scheduled run
 # cancels stale queued/running copies instead of waiting behind them forever.
 concurrency:
   group: career-os-approved-queue-${{ github.ref }}
@@ -32,9 +34,9 @@ jobs:
     env:
       CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
       CAREER_OS_SOURCE: ${{ github.workspace }}/answerbrief-ai-automation-starter
-      CAREER_OS_OWNER_EMAIL: ${{ inputs.owner_email }}
+      CAREER_OS_OWNER_EMAIL: ${{ inputs.owner_email || 'tomas@nieves.com' }}
       CAREER_OS_QUEUE_ENABLED: '1'
-      CAREER_OS_DAILY_LIMIT: ${{ inputs.application_limit }}
+      CAREER_OS_DAILY_LIMIT: ${{ inputs.application_limit || '165' }}
       CAREER_OS_DEBUG_CLAIM: '1'
       CAREER_OS_AUTO_REPAIR: '1'
       CAREER_OS_SUPERVISOR_MAX_ATTEMPTS: '3'
@@ -55,7 +57,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 49,
-              body: `CAREER_OS_APPROVED_QUEUE_STARTED\n\n- Run: ${context.runId}\n- Limit: ${{ inputs.application_limit }}\n- Owner: ${{ inputs.owner_email }}\n- Runner: ${process.env.RUNNER_NAME || 'unknown'}\n- Time: ${new Date().toISOString()}`
+              body: `CAREER_OS_APPROVED_QUEUE_STARTED\n\n- Run: ${context.runId}\n- Limit: ${process.env.CAREER_OS_DAILY_LIMIT}\n- Owner: ${process.env.CAREER_OS_OWNER_EMAIL}\n- Trigger: ${context.eventName}\n- Runner: ${process.env.RUNNER_NAME || 'unknown'}\n- Time: ${new Date().toISOString()}`
             });
 
       - name: Deploy current main to canonical runtime
