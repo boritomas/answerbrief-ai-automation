@@ -24,6 +24,7 @@ jobs:
     env:
       CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
       CAREER_OS_SOURCE: ${{ github.workspace }}/answerbrief-ai-automation-starter
+      CAREER_OS_DASHBOARD_URL: https://www.answer-brief.com/founder-dashboard
       PATH: /Users/tomasnieves/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
       - uses: actions/checkout@v4
@@ -58,6 +59,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           INBOX_LOG: ${{ steps.discover.outputs.log }}
+          DASHBOARD_URL: ${{ env.CAREER_OS_DASHBOARD_URL }}
         with:
           script: |
             const fs = require('fs');
@@ -73,7 +75,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 49,
-              body: `CAREER_OS_JOB_INBOX_READY\n\nThe opportunity discovery cycle finished and the Ready to Apply bucket has been refreshed.\n\nRun: ${context.runId}\nTime: ${new Date().toISOString()}\n\n\`\`\`text\n${text}\n\`\`\``
+              body: `CAREER_OS_JOB_INBOX_READY\n\nThe opportunity discovery cycle finished and the Ready to Apply bucket has been refreshed.\n\nDashboard: ${process.env.DASHBOARD_URL}\nRun: ${context.runId}\nTime: ${new Date().toISOString()}\n\n\`\`\`text\n${text}\n\`\`\``
             });
 
       - name: Archive inbox evidence
