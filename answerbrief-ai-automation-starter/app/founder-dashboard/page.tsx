@@ -5,7 +5,6 @@ import { QualifiedRoleControls } from './qualified-role-controls';
 import styles from './founder-dashboard.module.css';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 15;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -27,7 +26,6 @@ export default async function FounderDashboardPage() {
 
   const actionTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
   const runNowToken = createCareerOsActionToken({ action: 'run_now', expiresAt: actionTokenExpiresAt, ownerEmail });
-  const refreshDiscoveryToken = createCareerOsActionToken({ action: 'refresh_discovery', expiresAt: actionTokenExpiresAt, ownerEmail });
   const reviewOpportunityToken = createCareerOsActionToken({ action: 'review_opportunity', expiresAt: actionTokenExpiresAt, ownerEmail });
 
   const qualifiedRoles = postingRows
@@ -106,7 +104,6 @@ export default async function FounderDashboardPage() {
           approvedCount={queued}
           ownerEmail={ownerEmail}
           runNowToken={runNowToken}
-          refreshDiscoveryToken={refreshDiscoveryToken}
           tokenExpiresAt={actionTokenExpiresAt}
         />
       </section>
