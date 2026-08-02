@@ -10,63 +10,67 @@ type Props = {
 };
 
 type ActionResult = {
+  applicationsAudited?: number;
+  automaticallyQueued?: number;
+  confirmed?: number;
   error?: string;
-  message?: string;
+  errors?: string[];
   ok?: boolean;
+  processed?: number;
+  runId?: string;
+  submitted?: number;
+  technical?: number;
+  waitingOnTomas?: number;
 };
 
 export function FounderRunControls({ approvedCount, ownerEmail, runNowToken, tokenExpiresAt }: Props) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(
     approvedCount > 0
-      ? `${approvedCount} approved application${approvedCount === 1 ? '' : 's'} ready to process.`
+      ? `${approvedCount} approved application${approvedCount === 1 ? '' : 's'} ready for autonomous processing.`
       : 'Approve qualified roles above to build your application queue.',
   );
 
   async function processApprovedQueue() {
     if (busy || approvedCount < 1) return;
     setBusy(true);
-    let started = 0;
-    const failures: string[] = [];
+    setMessage(`Starting autonomous processing for ${approvedCount} approved application${approvedCount === 1 ? '' : 's'}...`);
 
-    for (let index = 0; index < approvedCount; index += 1) {
-      setMessage(`Starting approved application ${index + 1} of ${approvedCount}...`);
-      try {
-        const response = await fetch('/api/career-os/run-one', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            action: 'run_now',
-            actionToken: runNowToken,
-            actionTokenExpiresAt: tokenExpiresAt,
-            ownerEmail,
-          }),
-        });
-        const result = await response.json().catch(() => ({})) as ActionResult;
-        if (!response.ok || !result.ok) {
-          if (response.status === 409) break;
-          failures.push(result.error || result.message || `HTTP ${response.status}`);
-          continue;
-        }
-        started += 1;
-      } catch (error) {
-        failures.push(error instanceof Error ? error.message : 'Queue request failed.');
+    try {
+      const response = await fetch('/api/career-os/run-approved-queue', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          actionToken: runNowToken,
+          actionTokenExpiresAt: tokenExpiresAt,
+          ownerEmail,
+        }),
+      });
+      const result = await response.json().catch(() => ({})) as ActionResult;
+
+      if (!response.ok || !result.ok) {
+        const detail = result.error || result.errors?.join('; ') || `HTTP ${response.status}`;
+        setMessage(`The approved queue could not start: ${detail}`);
+        return;
       }
-    }
 
-    setMessage(
-      failures.length
-        ? `Started ${started}. ${failures.length} request${failures.length === 1 ? '' : 's'} need attention: ${failures.join('; ')}`
-        : `Started ${started} approved application${started === 1 ? '' : 's'}. Career OS will continue until a human-only checkpoint is reached.`,
-    );
-    setBusy(false);
+      setMessage(
+        `Autonomous queue started. Audited ${result.applicationsAudited || 0}, queued ${result.automaticallyQueued || 0}, `
+        + `processed ${result.processed || 0}. Human checkpoints: ${result.waitingOnTomas || 0}; technical blockers: ${result.technical || 0}. `
+        + `Run ${result.runId || 'created'}. Career OS will continue through the paired Mac browser worker.`,
+      );
+    } catch (error) {
+      setMessage(`The approved queue could not start: ${error instanceof Error ? error.message : 'request failed'}`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <div className="career-os-action-control" aria-live="polite">
       <div className="cta-row">
         <button className="button primary" disabled={busy || approvedCount < 1} onClick={() => void processApprovedQueue()} type="button">
-          {busy ? 'Starting Approved Queue...' : `Start All ${approvedCount} Approved Application${approvedCount === 1 ? '' : 's'}`}
+          {busy ? 'Starting Autonomous Queue...' : `Autonomously Process ${approvedCount} Approved Application${approvedCount === 1 ? '' : 's'}`}
         </button>
         <button className="button secondary" disabled={busy} onClick={() => window.location.reload()} type="button">Refresh Counts</button>
         <a className="button secondary" href="/career-os#applications">View Applications</a>
