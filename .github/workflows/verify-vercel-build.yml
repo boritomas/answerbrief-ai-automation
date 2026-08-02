@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,15 +18,90 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: answerbrief-ai-automation-starter/package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Production build
-        run: npm run build
+
+      - name: Validate install, typecheck, and production build
+        id: validate
+        shell: bash
+        run: |
+          set +e
+          npm ci > install.log 2>&1
+          install_code=$?
+
+          if [ "$install_code" -eq 0 ]; then
+            npm run typecheck > typecheck.log 2>&1
+            typecheck_code=$?
+            npm run build > build.log 2>&1
+            build_code=$?
+          else
+            typecheck_code=99
+            build_code=99
+            printf 'Skipped because npm ci failed.\n' > typecheck.log
+            printf 'Skipped because npm ci failed.\n' > build.log
+          fi
+
+          echo "install_code=$install_code" >> "$GITHUB_OUTPUT"
+          echo "typecheck_code=$typecheck_code" >> "$GITHUB_OUTPUT"
+          echo "build_code=$build_code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish validation result to issue 49
+        uses: actions/github-script@v7
+        env:
+          INSTALL_CODE: ${{ steps.validate.outputs.install_code }}
+          TYPECHECK_CODE: ${{ steps.validate.outputs.typecheck_code }}
+          BUILD_CODE: ${{ steps.validate.outputs.build_code }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const base = 'answerbrief-ai-automation-starter';
+            const readTail = (name) => {
+              const path = `${base}/${name}`;
+              if (!fs.existsSync(path)) return `${name} was not created.`;
+              const lines = fs.readFileSync(path, 'utf8').split('\n');
+              return lines.slice(-120).join('\n').slice(-12000);
+            };
+            const install = process.env.INSTALL_CODE;
+            const typecheck = process.env.TYPECHECK_CODE;
+            const build = process.env.BUILD_CODE;
+            const success = install === '0' && typecheck === '0' && build === '0';
+            const body = [
+              success ? 'CAREER_OS_BUILD_VALIDATION_PASSED' : 'CAREER_OS_BUILD_VALIDATION_FAILED',
+              '',
+              `Commit: ${context.sha}`,
+              `npm ci: ${install}`,
+              `typecheck: ${typecheck}`,
+              `production build: ${build}`,
+              '',
+              '<details><summary>Install log</summary>',
+              '',
+              '```text', readTail('install.log'), '```',
+              '</details>',
+              '',
+              '<details><summary>Typecheck log</summary>',
+              '',
+              '```text', readTail('typecheck.log'), '```',
+              '</details>',
+              '',
+              '<details><summary>Build log</summary>',
+              '',
+              '```text', readTail('build.log'), '```',
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 49,
+              body,
+            });
+
+      - name: Fail validation when a stage failed
+        if: steps.validate.outputs.install_code != '0' || steps.validate.outputs.typecheck_code != '0' || steps.validate.outputs.build_code != '0'
+        run: exit 1
