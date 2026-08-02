@@ -9,6 +9,7 @@ type QualifiedRole = {
   title: string;
   location: string;
   fitScore: number;
+  url?: string;
 };
 
 type Props = {
@@ -26,17 +27,16 @@ type ActionResult = {
 };
 
 export function QualifiedRoleControls({ actionToken, ownerEmail, roles, tokenExpiresAt }: Props) {
-  const [message, setMessage] = useState(roles.length ? 'Select one qualified role to approve and queue.' : 'No qualified roles are currently available for approval.');
+  const [message, setMessage] = useState(roles.length ? 'Step 2: review the best matches and approve the roles you want Career OS to process.' : 'No qualified roles are currently available. Use Find New Roles above.');
   const [activeRoleId, setActiveRoleId] = useState('');
-  const [approvedRoleId, setApprovedRoleId] = useState('');
+  const [approvedRoleIds, setApprovedRoleIds] = useState<string[]>([]);
   const router = useRouter();
 
   async function approve(role: QualifiedRole) {
-    if (activeRoleId) return;
+    if (activeRoleId || approvedRoleIds.includes(role.id)) return;
 
     setActiveRoleId(role.id);
-    setApprovedRoleId('');
-    setMessage(`Approving ${role.company} — ${role.title}...`);
+    setMessage(`Adding ${role.company} - ${role.title} to your application queue...`);
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 15000);
@@ -59,12 +59,12 @@ export function QualifiedRoleControls({ actionToken, ownerEmail, roles, tokenExp
         setMessage(result.error || result.message || `Role approval failed with HTTP ${response.status}.`);
         return;
       }
-      setApprovedRoleId(role.id);
-      setMessage(result.message || 'Approved and queued. Click Run One Production Application to execute this role.');
+      setApprovedRoleIds((current) => current.concat(role.id));
+      setMessage(`${role.company} was added to your queue. Approve another role or use Process One Approved Role above.`);
       router.refresh();
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        setMessage('Approval request timed out after 15 seconds. No role was queued. Review the Vercel function log for /api/career-os/approve-role, then retry.');
+        setMessage('The approval request timed out. The role was not added; retry this card.');
       } else {
         setMessage(error instanceof Error ? error.message : 'Role approval failed before the server returned a response.');
       }
@@ -77,23 +77,27 @@ export function QualifiedRoleControls({ actionToken, ownerEmail, roles, tokenExp
   return (
     <div aria-live="polite">
       {roles.length > 0 ? (
-        <div>
-          {roles.map((role) => {
+        <div className="career-os-role-grid">
+          {roles.map((role, index) => {
             const approving = activeRoleId === role.id;
-            const approved = approvedRoleId === role.id;
+            const approved = approvedRoleIds.includes(role.id);
             return (
               <article className="career-os-action-control" key={role.id}>
-                <strong>{role.company} — {role.title}</strong>
-                <p>{role.location || 'Location not published'} · Fit score {role.fitScore}</p>
-                <button className="button primary" disabled={approving || approved} onClick={() => void approve(role)} type="button">
-                  {approving ? 'Approving…' : approved ? 'Approved and queued' : 'Approve & Queue'}
-                </button>
+                <small>Priority {index + 1} · {role.fitScore}% match</small>
+                <h3>{role.title}</h3>
+                <p><strong>{role.company}</strong><br />{role.location || 'Location not published'}</p>
+                <div className="cta-row">
+                  <button className="button primary" disabled={approving || approved} onClick={() => void approve(role)} type="button">
+                    {approving ? 'Adding…' : approved ? 'Added to Queue' : 'Approve This Role'}
+                  </button>
+                  {role.url ? <a className="button secondary" href={role.url} rel="noreferrer" target="_blank">Open Job Posting</a> : null}
+                </div>
               </article>
             );
           })}
         </div>
       ) : null}
-      <small>{message}</small>
+      <p><small><strong>What to do:</strong> {message}</small></p>
     </div>
   );
 }
