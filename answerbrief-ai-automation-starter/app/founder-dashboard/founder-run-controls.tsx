@@ -10,14 +10,22 @@ type Props = {
 };
 
 type ActionResult = {
+  accepted?: boolean;
   applicationsAudited?: number;
   automaticallyQueued?: number;
   confirmed?: number;
   error?: string;
   errors?: string[];
+  message?: string;
   ok?: boolean;
   processed?: number;
   runId?: string;
+  runnerDispatch?: {
+    dispatched?: boolean;
+    error?: string;
+    workflow?: string;
+  };
+  status?: string;
   submitted?: number;
   technical?: number;
   waitingOnTomas?: number;
@@ -48,8 +56,23 @@ export function FounderRunControls({ approvedCount, ownerEmail, runNowToken, tok
       });
       const result = await response.json().catch(() => ({})) as ActionResult;
 
-      if (!response.ok || !result.ok) {
+      if (!response.ok) {
         const detail = result.error || result.errors?.join('; ') || `HTTP ${response.status}`;
+        setMessage(`The approved queue request failed: ${detail}`);
+        return;
+      }
+
+      if (result.accepted && result.status === 'queued_without_runner') {
+        const dispatchError = result.runnerDispatch?.error || result.message || 'The Mac runner could not be started.';
+        setMessage(
+          `Applications were queued successfully, but automatic runner startup failed. ${dispatchError} `
+          + `Run ${result.runId || 'created'} remains queued and no applications have been submitted yet.`,
+        );
+        return;
+      }
+
+      if (!result.ok) {
+        const detail = result.error || result.message || result.errors?.join('; ') || 'Unknown queue error.';
         setMessage(`The approved queue could not start: ${detail}`);
         return;
       }
@@ -60,7 +83,7 @@ export function FounderRunControls({ approvedCount, ownerEmail, runNowToken, tok
         + `Run ${result.runId || 'created'}. Career OS will continue through the paired Mac browser worker.`,
       );
     } catch (error) {
-      setMessage(`The approved queue could not start: ${error instanceof Error ? error.message : 'request failed'}`);
+      setMessage(`The approved queue request failed: ${error instanceof Error ? error.message : 'request failed'}`);
     } finally {
       setBusy(false);
     }
