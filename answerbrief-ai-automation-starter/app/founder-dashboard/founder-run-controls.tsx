@@ -40,7 +40,7 @@ export function FounderRunControls({
   refreshDiscoveryToken,
   tokenExpiresAt,
 }: Props) {
-  const [message, setMessage] = useState('Idle. Ready to refresh jobs or run one eligible production application.');
+  const [message, setMessage] = useState('Choose Step 1 to find roles, approve a role below, then choose Step 3 to process one application.');
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'blocked' | 'error'>('idle');
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -48,7 +48,7 @@ export function FounderRunControls({
   function execute(action: 'run_now' | 'refresh_discovery', actionToken: string) {
     startTransition(async () => {
       setState('loading');
-      setMessage(action === 'run_now' ? 'Starting one eligible production application...' : 'Refreshing official job sources...');
+      setMessage(action === 'run_now' ? 'Starting one approved application...' : 'Requesting a fresh job-pool update...');
 
       const endpoint = action === 'run_now'
         ? '/api/career-os/run-one'
@@ -73,13 +73,12 @@ export function FounderRunControls({
 
       setState('success');
       if (action === 'refresh_discovery' && result.dailyDiscovery) {
-        setMessage(`Discovery refreshed: reviewed ${result.dailyDiscovery.postingsReviewed}, persisted ${result.dailyDiscovery.postingsPersisted || 0}, qualified ${result.dailyDiscovery.postingsAccepted}.`);
+        setMessage(`Job pool updated: ${result.dailyDiscovery.postingsAccepted} qualified roles found. Review the role cards below.`);
       } else if (action === 'run_now' && result.queueResult) {
-        const queue = result.queueResult;
         const role = [result.employer, result.position].filter(Boolean).join(' - ');
-        setMessage(`Production run started${role ? ` for ${role}` : ''}: audited ${queue.applicationsAudited}, auto-queued ${queue.automaticallyQueued}, processed ${queue.processed}, waiting ${queue.waitingOnTomas}, technical ${queue.technical}.`);
+        setMessage(`Application processing started${role ? ` for ${role}` : ''}. Refresh status in a few minutes to see progress.`);
       } else {
-        setMessage('Career OS action completed.');
+        setMessage('Request accepted. Refresh status in a few minutes.');
       }
       router.refresh();
     });
@@ -88,11 +87,17 @@ export function FounderRunControls({
   return (
     <div className={`career-os-action-control ${state}`} aria-live="polite">
       <div className="cta-row">
-        <button className="button primary" disabled={isPending} onClick={() => execute('run_now', runNowToken)} type="button">Run One Production Application</button>
-        <button className="button secondary" disabled={isPending} onClick={() => execute('refresh_discovery', refreshDiscoveryToken)} type="button">Refresh Job Pool</button>
-        <button className="button secondary" disabled={isPending} onClick={() => window.location.reload()} type="button">Refresh Status</button>
+        <button className="button secondary" disabled={isPending} onClick={() => execute('refresh_discovery', refreshDiscoveryToken)} type="button">
+          1. Find New Roles
+        </button>
+        <button className="button primary" disabled={isPending} onClick={() => execute('run_now', runNowToken)} type="button">
+          3. Process One Approved Role
+        </button>
+        <button className="button secondary" disabled={isPending} onClick={() => window.location.reload()} type="button">
+          Check Progress
+        </button>
       </div>
-      <small>{state}: {message}</small>
+      <small><strong>{state === 'idle' ? 'Next step' : state}:</strong> {message}</small>
     </div>
   );
 }
