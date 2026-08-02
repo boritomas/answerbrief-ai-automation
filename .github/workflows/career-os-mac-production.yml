@@ -52,6 +52,72 @@ jobs:
               body: `Mac production runner started.\n\n- Run: ${context.runId}\n- Commit: ${context.sha}\n- Runner: ${process.env.RUNNER_NAME || 'unknown'}\n- Time: ${new Date().toISOString()}`
             });
 
+      - name: Emergency disk recovery and Docker cleanup
+        shell: bash
+        run: |
+          set -u
+          REPORT="$RUNNER_TEMP/career-os-disk-recovery-${GITHUB_RUN_ID}.log"
+          exec > >(tee -a "$REPORT") 2>&1
+
+          echo "=== BEFORE ==="
+          df -h / || true
+          df -k / | tail -1 | awk '{print "free_kb_before=" $4}'
+
+          echo "=== REMOVE OLD CAREER OS EVIDENCE ==="
+          if test -d "$CAREER_OS_RUNTIME/.career-os-ci"; then
+            find "$CAREER_OS_RUNTIME/.career-os-ci" -mindepth 1 -maxdepth 1 -type d -mtime +2 -print -exec rm -rf {} + || true
+          fi
+          find "$CAREER_OS_RUNTIME" -type d \( -name playwright-report -o -name test-results \) -prune -print -exec rm -rf {} + 2>/dev/null || true
+          if test -d "$CAREER_OS_RUNTIME/.career-os-browser-worker/screenshots"; then
+            find "$CAREER_OS_RUNTIME/.career-os-browser-worker/screenshots" -type f -mtime +7 -print -delete 2>/dev/null || true
+          fi
+          if test -d "$CAREER_OS_RUNTIME/.career-os-browser-worker/tmp"; then
+            find "$CAREER_OS_RUNTIME/.career-os-browser-worker/tmp" -mindepth 1 -mtime +1 -print -exec rm -rf {} + 2>/dev/null || true
+          fi
+
+          echo "=== REMOVE OLD BACKUPS ==="
+          if test -d "$HOME/CareerOSBackups"; then
+            find "$HOME/CareerOSBackups" -mindepth 1 -maxdepth 1 -type d -mtime +3 -print -exec rm -rf {} + || true
+          fi
+
+          echo "=== REMOVE OLD RUNNER DIAGNOSTICS ==="
+          if test -d "$HOME/actions-runner/_diag"; then
+            find "$HOME/actions-runner/_diag" -type f -mtime +7 -print -delete 2>/dev/null || true
+          fi
+
+          echo "=== CLEAN PACKAGE CACHES ==="
+          npm cache clean --force || true
+          if command -v brew >/dev/null 2>&1; then
+            brew cleanup --prune=all || true
+          fi
+
+          echo "=== PRUNE UNUSED DOCKER DATA ==="
+          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            docker system df || true
+            docker container prune -f || true
+            docker image prune -af || true
+            docker builder prune -af || true
+            docker network prune -f || true
+            docker system df || true
+          else
+            echo "docker_unavailable_or_unhealthy=true"
+          fi
+
+          echo "=== AFTER ==="
+          df -h / || true
+          FREE_KB=$(df -k / | tail -1 | awk '{print $4}')
+          FREE_GB=$((FREE_KB / 1024 / 1024))
+          echo "free_kb_after=$FREE_KB"
+          echo "free_gb_after=$FREE_GB"
+
+          mkdir -p "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}" 2>/dev/null || true
+          cp "$REPORT" "$CAREER_OS_RUNTIME/.career-os-ci/${GITHUB_RUN_ID}/disk-recovery.log" 2>/dev/null || true
+
+          if test "$FREE_GB" -lt 25; then
+            echo "Insufficient free disk after cleanup: ${FREE_GB} GB. Production is blocked to protect the Mac."
+            exit 1
+          fi
+
       - name: Validate dependency lock
         shell: bash
         run: |
@@ -80,6 +146,7 @@ jobs:
             --exclude='.next' \
             --exclude='.git' \
             --exclude='.career-os-browser-worker/chrome-profile' \
+            --exclude='.career-os-ci' \
             -C "$(dirname "$CAREER_OS_RUNTIME")" "$(basename "$CAREER_OS_RUNTIME")"
 
           rsync -a --delete \
@@ -162,7 +229,7 @@ jobs:
           name: career-os-production-${{ github.run_id }}
           path: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter/.career-os-ci/${{ github.run_id }}
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 7
 
       - name: Report runner completion
         if: always()
