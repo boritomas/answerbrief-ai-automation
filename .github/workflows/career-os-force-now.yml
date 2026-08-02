@@ -47,6 +47,7 @@ jobs:
             --exclude='.git/' \
             --exclude='.env' \
             --exclude='.env.local' \
+            --exclude='.env.production' \
             --exclude='node_modules/' \
             --exclude='.next/' \
             --exclude='.career-os-browser-worker/' \
@@ -61,13 +62,49 @@ jobs:
         run: |
           set -euo pipefail
           cd "$CAREER_OS_RUNTIME"
-          set -a
-          if [ -f .env ]; then . ./.env; fi
-          if [ -f .env.local ]; then . ./.env.local; fi
-          set +a
+
+          ENV_FILE=''
+          for candidate in \
+            "$CAREER_OS_RUNTIME/.env.local" \
+            "$CAREER_OS_RUNTIME/.env" \
+            "$CAREER_OS_RUNTIME/.env.production" \
+            "/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/.env.local" \
+            "/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/.env" \
+            "/Users/tomasnieves/.config/career-os/.env" \
+            "/Users/tomasnieves/.career-os/.env"; do
+            if [ -f "$candidate" ]; then
+              ENV_FILE="$candidate"
+              break
+            fi
+          done
+
+          if [ -n "$ENV_FILE" ]; then
+            echo "Loading Career OS environment from: $ENV_FILE"
+            set -a
+            . "$ENV_FILE"
+            set +a
+          else
+            echo "No Career OS environment file found in known runtime locations."
+          fi
+
           export CAREER_OS_OWNER_EMAIL="${CAREER_OS_OWNER_EMAIL:-tomas@nieves.com}"
           export CAREER_OS_QUEUE_ENABLED='1'
           export CAREER_OS_DAILY_LIMIT='165'
+          export CAREER_OS_EXECUTION_MODE="${CAREER_OS_EXECUTION_MODE:-workday_first_submit}"
+          export APP_BASE_URL="${APP_BASE_URL:-${NEXT_PUBLIC_BASE_URL:-https://www.answer-brief.com}}"
+
+          missing=0
+          for name in CAREER_OS_BROWSER_WORKER_TOKEN SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required environment variable: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Environment discovery completed but required secrets are still unavailable."
+            exit 1
+          fi
+
           mkdir -p ".career-os-ci/${GITHUB_RUN_ID}"
           npm run supervisor 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-supervisor.log"
 
