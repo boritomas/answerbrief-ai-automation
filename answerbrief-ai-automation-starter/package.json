@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack",
+    "build": "node ./scripts/apply-cloud-worker-auth-hotfix.mjs && next build --webpack",
     "start": "next start",
     "lint": "node ./scripts/lint-career-os-source.mjs",
     "typecheck": "tsc --noEmit",
