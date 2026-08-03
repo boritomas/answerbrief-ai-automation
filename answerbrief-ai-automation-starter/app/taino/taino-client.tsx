@@ -27,7 +27,15 @@ export default function TainoClient() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const assistantDraftRef = useRef('');
 
+  const [now, setNow] = useState<Date | null>(null);
   const statusLabel = useMemo(() => ({offline:'Standby',connecting:'Connecting',idle:'Online',listening:'Listening',thinking:'Thinking',speaking:'Speaking',error:'Attention required'}[presence]), [presence]);
+
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => () => stopSession(), []);
 
   function addTranscript(role: TranscriptItem['role'], text: string) {
@@ -101,7 +109,7 @@ export default function TainoClient() {
       </aside>
 
       <section className={styles.workspace}>
-        <header className={styles.topbar}><div><h2>TAINO</h2><p>CHIEF OF STAFF | ADVISOR | EXECUTOR</p></div><div className={styles.clock}><span>Thursday, May 15, 2025</span><strong>8:27 AM</strong></div></header>
+        <header className={styles.topbar}><div><h2>TAINO</h2><p>CHIEF OF STAFF | ADVISOR | EXECUTOR</p></div><div className={styles.clock}><span>{now ? now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) : '\u00a0'}</span><strong>{now ? now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '\u00a0'}</strong></div></header>
         <div className={styles.mainGrid}>
           <section className={styles.briefCard}>
             <h3>Good morning,<br/><em>Tomas.</em></h3>
