@@ -119,3 +119,5 @@ jobs:
               issue_number: 49,
               body: `CAREER_OS_FORCE_NOW_FINISHED\n\n- Run: ${context.runId}\n- Result: ${{ job.status }}\n- Time: ${new Date().toISOString()}`
             });
+
+# forced after local environment repair: 2026-08-03
