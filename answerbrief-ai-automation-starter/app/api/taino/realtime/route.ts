@@ -34,7 +34,7 @@ PERSONA
 `;
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env['OPENAI_API_KEY'];
   if (!apiKey) {
     return NextResponse.json(
       { error: 'TAINO is not configured. OPENAI_API_KEY is missing on the server.' },
