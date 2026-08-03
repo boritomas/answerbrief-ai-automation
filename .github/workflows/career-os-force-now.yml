@@ -113,3 +113,5 @@ jobs:
               issue_number: 49,
               body: `CAREER_OS_CLOUD_FORCE_NOW_FINISHED\n\n- Run: ${context.runId}\n- Result: ${{ job.status }}\n- Runner: ubuntu-latest\n- Time: ${new Date().toISOString()}`
             });
+
+# forced immediate validation: 2026-08-03T12:15:00Z
