@@ -1,0 +1,110 @@
+name: TAINO Cloud Runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Cloud task to execute
+        required: true
+        type: choice
+        default: validate
+        options:
+          - validate
+          - build
+          - test
+      retain_artifact:
+        description: Upload the production build as an artifact
+        required: false
+        type: boolean
+        default: true
+  push:
+    branches:
+      - feature/taino-realtime-voice-mvp
+    paths:
+      - 'answerbrief-ai-automation-starter/**'
+      - '.github/workflows/taino-cloud-runtime.yml'
+  pull_request:
+    paths:
+      - 'answerbrief-ai-automation-starter/**'
+      - '.github/workflows/taino-cloud-runtime.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taino-cloud-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: answerbrief-ai-automation-starter
+
+jobs:
+  cloud-runtime:
+    name: TAINO Linux cloud workstation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+      # Build-time placeholder only. Live voice remains disabled until the
+      # deployment environment contains the real server-side secret.
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: answerbrief-ai-automation-starter/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Run acceptance tests
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'validate' || inputs.mode == 'test' }}
+        run: npm run test:ats
+
+      - name: Build production application
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'validate' || inputs.mode == 'build' }}
+        run: npm run build
+
+      - name: Create runtime evidence
+        if: always()
+        run: |
+          mkdir -p cloud-runtime-evidence
+          {
+            echo "TAINO Cloud Runtime"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "ref=${GITHUB_REF}"
+            echo "sha=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > cloud-runtime-evidence/runtime.txt
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: taino-cloud-runtime-${{ github.run_id }}
+          path: answerbrief-ai-automation-starter/cloud-runtime-evidence
+          retention-days: 14
+
+      - name: Upload production build
+        if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.retain_artifact) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: taino-next-build-${{ github.run_id }}
+          path: answerbrief-ai-automation-starter/.next
+          include-hidden-files: true
+          retention-days: 7
