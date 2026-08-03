@@ -1,0 +1,52 @@
+name: TAINO Factory Task
+description: Submit an implementation task to the TAINO cloud factory.
+title: "[TAINO Factory] "
+labels:
+  - taino-factory
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: Describe the exact outcome TAINO Factory should produce.
+      placeholder: Build and validate...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List the observable checks that prove the task is complete.
+      placeholder: |
+        - Build passes
+        - Tests pass
+        - Feature works at /taino
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Execution mode
+      options:
+        - validate
+        - build
+        - test
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target path or module
+      placeholder: answerbrief-ai-automation-starter/app/taino
+    validations:
+      required: true
+  - type: checkboxes
+    id: controls
+    attributes:
+      label: Controls
+      options:
+        - label: Create evidence artifact
+          required: true
+        - label: Stop for credentials, deployment decisions, or security-sensitive actions
+          required: true
