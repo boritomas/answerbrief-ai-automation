@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: career-os-approved-queue-main
+  group: career-os-approved-queue-cloud
   cancel-in-progress: false
 
 permissions:
@@ -17,96 +17,79 @@ permissions:
 
 jobs:
   run-approved-queue:
-    runs-on: [self-hosted]
-    timeout-minutes: 720
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: answerbrief-ai-automation-starter
     env:
-      CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
-      CAREER_OS_SOURCE: ${{ github.workspace }}/answerbrief-ai-automation-starter
       CAREER_OS_OWNER_EMAIL: tomas@nieves.com
       CAREER_OS_QUEUE_ENABLED: '1'
       CAREER_OS_DAILY_LIMIT: '165'
       CAREER_OS_DEBUG_CLAIM: '1'
       CAREER_OS_AUTO_REPAIR: '1'
       CAREER_OS_SUPERVISOR_MAX_ATTEMPTS: '3'
-      ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER: openhands,gemini,opencode,aider,claude-code,codex
-      PATH: /Users/tomasnieves/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      CAREER_OS_EXECUTION_MODE: workday_first_submit
+      APP_BASE_URL: https://www.answer-brief.com
+      NEXT_PUBLIC_BASE_URL: https://www.answer-brief.com
+      CAREER_OS_BROWSER_WORKER_TOKEN: ${{ secrets.CAREER_OS_BROWSER_WORKER_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      WORKDAY_USERNAME: ${{ secrets.WORKDAY_USERNAME }}
+      WORKDAY_PASSWORD: ${{ secrets.WORKDAY_PASSWORD }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          clean: false
           fetch-depth: 1
 
-      - name: Deploy current main to canonical runtime
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: answerbrief-ai-automation-starter/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate production configuration
         shell: bash
         run: |
           set -euo pipefail
-          test "$(uname -s)" = "Darwin"
-          test -d "$CAREER_OS_RUNTIME"
-          test -f "$CAREER_OS_SOURCE/package.json"
-          rsync -a --delete \
-            --exclude='.git/' \
-            --exclude='.env' \
-            --exclude='.env.local' \
-            --exclude='.env.production' \
-            --exclude='node_modules/' \
-            --exclude='.next/' \
-            --exclude='.career-os-browser-worker/' \
-            --exclude='.career-os-control/' \
-            --exclude='.career-os-ci/' \
-            "$CAREER_OS_SOURCE/" "$CAREER_OS_RUNTIME/"
-          cd "$CAREER_OS_RUNTIME"
-          npm ci
-
-      - name: Drain approved application queue now
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$CAREER_OS_RUNTIME"
-
-          ENV_FILE=''
-          for candidate in \
-            "$CAREER_OS_RUNTIME/.env.local" \
-            "$CAREER_OS_RUNTIME/.env" \
-            "$CAREER_OS_RUNTIME/.env.production" \
-            "/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/.env.local" \
-            "/Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/.env" \
-            "/Users/tomasnieves/.config/career-os/.env" \
-            "/Users/tomasnieves/.career-os/.env"; do
-            if [ -f "$candidate" ]; then
-              ENV_FILE="$candidate"
-              break
-            fi
-          done
-
-          if [ -n "$ENV_FILE" ]; then
-            echo "Loading Career OS environment from: $ENV_FILE"
-            set -a
-            . "$ENV_FILE"
-            set +a
-          else
-            echo "No Career OS environment file found in known runtime locations."
-          fi
-
-          export CAREER_OS_OWNER_EMAIL="${CAREER_OS_OWNER_EMAIL:-tomas@nieves.com}"
-          export CAREER_OS_QUEUE_ENABLED='1'
-          export CAREER_OS_DAILY_LIMIT='165'
-          export CAREER_OS_EXECUTION_MODE="${CAREER_OS_EXECUTION_MODE:-workday_first_submit}"
-          export APP_BASE_URL="${APP_BASE_URL:-${NEXT_PUBLIC_BASE_URL:-https://www.answer-brief.com}}"
-
           missing=0
           for name in CAREER_OS_BROWSER_WORKER_TOKEN SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
             if [ -z "${!name:-}" ]; then
-              echo "Missing required environment variable: $name"
+              echo "Missing required GitHub Actions secret: $name"
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "Environment discovery completed but required secrets are still unavailable."
             exit 1
           fi
+          npm run health:career-os
 
+      - name: Drain approved application queue
+        shell: bash
+        run: |
+          set -euo pipefail
           mkdir -p ".career-os-ci/${GITHUB_RUN_ID}"
           npm run supervisor 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-supervisor.log"
+
+      - name: Upload execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: career-os-cloud-${{ github.run_id }}
+          path: |
+            answerbrief-ai-automation-starter/.career-os-ci/${{ github.run_id }}
+            answerbrief-ai-automation-starter/.career-os-browser-worker/evidence
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Report result
         if: always()
@@ -117,7 +100,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 49,
-              body: `CAREER_OS_FORCE_NOW_FINISHED\n\n- Run: ${context.runId}\n- Result: ${{ job.status }}\n- Time: ${new Date().toISOString()}`
+              body: `CAREER_OS_CLOUD_FORCE_NOW_FINISHED\n\n- Run: ${context.runId}\n- Result: ${{ job.status }}\n- Runner: ubuntu-latest\n- Time: ${new Date().toISOString()}`
             });
-
-# forced after verified local environment repair: 2026-08-03T06:20-05:00
