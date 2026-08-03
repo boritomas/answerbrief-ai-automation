@@ -3,12 +3,6 @@ name: Career OS Force Now
 on:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/career-os-force-now.yml'
-      - 'answerbrief-ai-automation-starter/package.json'
-      - 'answerbrief-ai-automation-starter/scripts/**'
-      - 'answerbrief-ai-automation-starter/lib/**'
-      - 'answerbrief-ai-automation-starter/app/api/**'
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
@@ -159,5 +153,3 @@ jobs:
                 `- Time: ${new Date().toISOString()}`,
               ].join('\n')
             });
-
-# three-application production canary: 2026-08-03T16:10:00Z
