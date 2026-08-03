@@ -112,4 +112,4 @@ jobs:
               body: `CAREER_OS_CLOUD_FORCE_NOW_FINISHED\n\n- Run: ${context.runId}\n- Result: ${{ job.status }}\n- Runner: ubuntu-latest\n- Time: ${new Date().toISOString()}`
             });
 
-# forced auth-aligned validation: 2026-08-03T12:17:00Z
+# forced post-deployment validation: 2026-08-03T12:27:00Z
