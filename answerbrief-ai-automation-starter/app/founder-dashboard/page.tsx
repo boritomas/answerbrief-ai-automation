@@ -1,116 +1,85 @@
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
 import { getCareerOsStatus } from '@/lib/career-os-status';
 import { FounderRunControls } from './founder-run-controls';
-import { QualifiedRoleControls } from './qualified-role-controls';
 import styles from './founder-dashboard.module.css';
 
 export const dynamic = 'force-dynamic';
 
-type JsonRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-export default async function FounderDashboardPage() {
+export default async function FounderSuccessDashboard() {
   const status = await getCareerOsStatus();
-  const ownerEmail = status.evidence.ownerEmail;
-  const counts = status.operationalTrust.verifiedCounts;
-  const queueStates = status.applicationExecution.queueStates;
+  const trust = status.operationalTrust;
+  const exec = status.applicationExecution;
+  const queueStates = exec.queueStates;
   const actionTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
-  const runNowToken = createCareerOsActionToken({ action: 'run_now', expiresAt: actionTokenExpiresAt, ownerEmail });
-  const reviewOpportunityToken = createCareerOsActionToken({ action: 'review_opportunity', expiresAt: actionTokenExpiresAt, ownerEmail });
-
-  const qualifiedRoles = status.evidence.jobPostings
-    .map((posting) => asRecord(posting))
-    .filter((posting) => {
-      const raw = asRecord(posting.raw_record);
-      const fitScore = Number(posting.fit_score || 0);
-      const postingStatus = String(posting.status || '').toLowerCase();
-      const reviewDecision = String(raw.review_decision || '').toLowerCase();
-      return fitScore >= 85
-        && !['approved', 'reject_similar', 'skip', 'hidden'].includes(reviewDecision)
-        && !['inactive', 'ineligible', 'poor_fit', 'duplicate'].some((value) => postingStatus.includes(value));
-    })
-    .sort((left, right) => Number(right.fit_score || 0) - Number(left.fit_score || 0))
-    .map((posting) => ({
-      id: String(posting.id || ''),
-      company: String(posting.company || 'Employer'),
-      title: String(posting.title || 'Role'),
-      location: String(posting.location || 'Location not published'),
-      fitScore: Number(posting.fit_score || 0),
-      applicationUrl: String(posting.canonical_url || posting.job_url || asRecord(posting.raw_record).canonical_url || ''),
-    }))
-    .filter((role) => Boolean(role.id));
-
-  const queued = queueStates.queued + queueStates.package_ready;
-  const running = queueStates.running;
-  const submitted = counts.submitted;
-  const blocked = counts.actionCenter + counts.systemIssues;
+  const runNowToken = createCareerOsActionToken({ action: 'run_now', expiresAt: actionTokenExpiresAt, ownerEmail: status.evidence.ownerEmail });
+  const refreshDiscoveryToken = createCareerOsActionToken({ action: 'refresh_discovery', expiresAt: actionTokenExpiresAt, ownerEmail: status.evidence.ownerEmail });
 
   return (
     <main className={styles.page}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Career OS application center</p>
-          <h1>Apply to Your Qualified Roles</h1>
-          <p className={styles.subtitle}>Select every role you want, approve them together, then submit manually or start the approved automation queue.</p>
+          <p className={styles.eyebrow}>Career OS — Founder Success Dashboard</p>
+          <h1>Production Status</h1>
+          <p className={styles.subtitle}>Live production data — all counts sourced from verified application records.</p>
         </div>
-        <a className={styles.homeLink} href="/career-os">Full Career OS</a>
+        <a className={styles.homeLink} href="/career-os">Career OS home</a>
       </header>
 
-      <section className={styles.metricGrid} aria-label="Application status">
-        <article className={styles.metricCard}><span>Qualified now</span><strong>{qualifiedRoles.length}</strong><small>Fit score 85 or higher</small></article>
-        <article className={styles.metricCard}><span>Approved / queued</span><strong>{queued}</strong><small>Ready for application processing</small></article>
-        <article className={styles.metricCard}><span>Running</span><strong>{running}</strong><small>Currently being processed</small></article>
-        <article className={styles.metricCard}><span>Submitted</span><strong>{submitted}</strong><small>Submission evidence recorded</small></article>
-        <article className={styles.metricCard}><span>Needs your help</span><strong>{blocked}</strong><small>MFA, CAPTCHA, legal, or missing facts</small></article>
+      <section className={styles.metricGrid} aria-label="Application pipeline">
+        <article className={styles.metricCard}><span>Applications submitted</span><strong>{trust.verifiedCounts.submitted}</strong><small>Verified submitted applications</small></article>
+        <article className={styles.metricCard}><span>Active applications</span><strong>{trust.verifiedCounts.applying}</strong><small>Currently processing</small></article>
+        <article className={styles.metricCard}><span>Action center</span><strong>{trust.verifiedCounts.actionCenter}</strong><small>Needs your attention</small></article>
+        <article className={styles.metricCard}><span>Recruiter responses</span><strong>{trust.verifiedCounts.reviewQueue}</strong><small>Verified interview evidence</small></article>
+        <article className={styles.metricCard}><span>Interviews scheduled</span><strong>{trust.verifiedCounts.interviews}</strong><small>Confirmed interview slots</small></article>
       </section>
 
-      <section className={styles.panel} aria-label="Qualified roles">
+      <section className={styles.panel} aria-label="Browser worker">
         <div className={styles.sectionHeading}>
           <div>
-            <p className={styles.eyebrow}>Step 1</p>
-            <h2>Select and approve qualified roles</h2>
-            <p>Select all qualified roles or choose only the ones you want. Approval adds them to your application queue.</p>
+            <p className={styles.eyebrow}>Live execution status</p>
+            <h2>Run Career OS</h2>
+            <p>Browser worker — {exec.applicationsProcessedToday} application{exec.applicationsProcessedToday === 1 ? '' : 's'} processed today.</p>
           </div>
-          <span className={styles.badge}>{qualifiedRoles.length} qualified</span>
         </div>
-        <QualifiedRoleControls
-          actionToken={reviewOpportunityToken}
-          ownerEmail={ownerEmail}
-          roles={qualifiedRoles}
-          tokenExpiresAt={actionTokenExpiresAt}
-        />
-      </section>
 
-      <section className={styles.panel} aria-label="Approved queue controls">
-        <div className={styles.sectionHeading}>
-          <div>
-            <p className={styles.eyebrow}>Step 2</p>
-            <h2>Process your approved queue</h2>
-            <p>Start all currently eligible approved applications. Career OS will stop only when a role needs your direct input.</p>
-          </div>
-          <span className={styles.badge}>{queued} ready</span>
-        </div>
+        <dl className={styles.statGrid}>
+          <div><dt>Worker state</dt><dd>{exec.runningNow > 0 ? 'Running now' : 'Idle'}</dd></div>
+          <div><dt>Retry scheduled</dt><dd>{queueStates.retry_scheduled ?? 0}</dd></div>
+          <div><dt>Technical blockers</dt><dd>{exec.technicallyBlocked}</dd></div>
+          <div><dt>Waiting on Tomas</dt><dd>{exec.waitingOnTomas}</dd></div>
+        </dl>
+
         <FounderRunControls
-          approvedCount={queued}
-          ownerEmail={ownerEmail}
+          ownerEmail={status.evidence.ownerEmail}
           runNowToken={runNowToken}
+          refreshDiscoveryToken={refreshDiscoveryToken}
           tokenExpiresAt={actionTokenExpiresAt}
         />
+        <p><a className={styles.homeLink} href="/career-os#applications">View current applications and checkpoints</a></p>
       </section>
 
-      <section className={styles.panel}>
+      <section className={styles.panel} aria-label="Daily focus">
         <div className={styles.sectionHeading}>
           <div>
-            <p className={styles.eyebrow}>Step 3</p>
-            <h2>Track progress</h2>
-            <p>Refresh this page when you want updated counts, or open the full application checkpoint view.</p>
+            <p className={styles.eyebrow}>Resume intelligence</p>
+            <h2>Daily focus</h2>
+            <p>{status.dailyWorkflow.immediateQueueProcessor.nextScheduledRun || 'Scheduled daily workflow configured.'}</p>
           </div>
         </div>
-        <p><a className={styles.homeLink} href="/career-os#applications">Open applications and checkpoints</a></p>
+      </section>
+
+      <section className={styles.panel} aria-label="Offer pipeline">
+        <div className={styles.sectionHeading}>
+          <div>
+            <p className={styles.eyebrow}>Offer tracking</p>
+            <h2>Verified outcomes</h2>
+          </div>
+        </div>
+        {trust.verifiedCounts.submitted > 0
+          ? <p>{trust.verifiedCounts.submitted} verified submitted applications on record.</p>
+          : <p>No verified offer record connected yet.</p>}
       </section>
     </main>
   );
 }
+

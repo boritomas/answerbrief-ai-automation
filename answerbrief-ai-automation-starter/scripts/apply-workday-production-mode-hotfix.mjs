@@ -6,7 +6,7 @@ import process from 'node:process';
 const target = path.join(process.cwd(), 'lib', 'career-os-browser-worker.ts');
 const source = fs.readFileSync(target, 'utf8');
 
-const rejectedBlockPattern = /\n?\s*if\s*\(platform\s*===\s*['"]workday['"]\s*&&\s*normalizedMode\s*===\s*['"]submit_enabled['"]\)\s*\{[\s\S]*?reason:\s*['"]Workday submit_enabled is rejected during controlled launch; Workday is assisted\/inspect only\.['"],[\s\S]*?\n\s*\}\s*\n?/m;
+const rejectedBlockPattern = /\n[ \t]*if\s*\(platform\s*===\s*['"]workday['"]\s*&&\s*normalizedMode\s*===\s*['"]submit_enabled['"]\)\s*\{[\s\S]*?Workday submit_enabled is rejected during controlled launch[\s\S]*?\n[ \t]*\}\n/m;
 const allowedModesBeforePattern = /\['inspect_only',\s*'assisted_apply',\s*'workday_single_canary',\s*'workday_first_submit'\]/g;
 const allowedModesAfter = "['inspect_only', 'assisted_apply', 'workday_single_canary', 'workday_first_submit', 'submit_enabled']";
 

@@ -253,10 +253,10 @@ async function verifyGitHubActionsOidc(token: string) {
     if (Number(payload.exp || 0) <= Math.floor(Date.now() / 1000)) return false;
     const response = await fetch('https://token.actions.githubusercontent.com/.well-known/jwks');
     if (!response.ok) return false;
-    const jwks = await response.json() as { keys?: JsonWebKey[] };
+    const jwks = await response.json() as { keys?: Array<Record<string, unknown>> };
     const jwk = jwks.keys?.find((key) => key.kid === header.kid);
     if (!jwk) return false;
-    const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    const publicKey = crypto.createPublicKey({ key: jwk as unknown as import('node:crypto').JsonWebKey, format: 'jwk' });
     const signingInput = parts[0] + '.' + parts[1];
     return crypto.verify('RSA-SHA256', Buffer.from(signingInput), publicKey, Buffer.from(parts[2], 'base64url'));
   } catch {
@@ -1403,8 +1403,6 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
         : 'CAREER_OS_EXECUTION_MODE is missing; automation is blocked.',
       status: 'terminal_failure',
     };
-  }
-;
   }
 
   if (platform === 'workday') {
