@@ -1,6 +1,21 @@
 name: TAINO Cloud Runtime
 
 on:
+  workflow_call:
+    inputs:
+      mode:
+        description: Cloud task to execute
+        required: false
+        type: string
+        default: validate
+      retain_artifact:
+        description: Upload the production build as an artifact
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      OPENAI_API_KEY:
+        required: false
   workflow_dispatch:
     inputs:
       mode:
@@ -47,8 +62,6 @@ jobs:
     env:
       CI: 'true'
       NEXT_TELEMETRY_DISABLED: '1'
-      # Build-time placeholder only. Live voice remains disabled until the
-      # deployment environment contains the real server-side secret.
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
     steps:
