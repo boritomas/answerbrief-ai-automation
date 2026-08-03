@@ -18,6 +18,7 @@ concurrency:
 permissions:
   contents: read
   issues: write
+  id-token: write
 
 jobs:
   run-approved-queue:
@@ -31,13 +32,9 @@ jobs:
       CAREER_OS_QUEUE_ENABLED: '1'
       CAREER_OS_DAILY_LIMIT: '165'
       CAREER_OS_DEBUG_CLAIM: '1'
-      CAREER_OS_AUTO_REPAIR: '0'
-      CAREER_OS_SUPERVISOR_MAX_ATTEMPTS: '1'
       CAREER_OS_EXECUTION_MODE: workday_first_submit
       APP_BASE_URL: https://www.answer-brief.com
       NEXT_PUBLIC_BASE_URL: https://www.answer-brief.com
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       WORKDAY_USERNAME: ${{ secrets.WORKDAY_USERNAME }}
       WORKDAY_PASSWORD: ${{ secrets.WORKDAY_PASSWORD }}
 
@@ -60,34 +57,25 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Configure browser worker authentication
+      - name: Acquire GitHub OIDC worker token
         shell: bash
         run: |
           set -euo pipefail
-          echo "CAREER_OS_BROWSER_WORKER_TOKEN=$SUPABASE_SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+          response="$(curl -fsSL -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=answerbrief-career-os")"
+          token="$(node -e 'const fs=require("fs"); const x=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(x.value||"")' <<< "$response")"
+          test -n "$token"
+          echo "CAREER_OS_BROWSER_WORKER_TOKEN=$token" >> "$GITHUB_ENV"
 
-      - name: Validate production configuration
+      - name: Validate deployed worker
         shell: bash
-        run: |
-          set -euo pipefail
-          missing=0
-          for name in CAREER_OS_BROWSER_WORKER_TOKEN SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
-            if [ -z "${!name:-}" ]; then
-              echo "Missing required production configuration: $name"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
-          npm run health:career-os
+        run: npm run worker:health
 
-      - name: Drain approved application queue
+      - name: Process next approved application
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p ".career-os-ci/${GITHUB_RUN_ID}"
-          npm run supervisor:no-repair 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-supervisor.log"
+          npm run worker:run-once 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-worker.log"
 
       - name: Upload execution evidence
         if: always()
@@ -109,7 +97,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 49,
-              body: `CAREER_OS_CLOUD_FORCE_NOW_FINISHED\n\n- Run: ${context.runId}\n- Result: ${{ job.status }}\n- Runner: ubuntu-latest\n- Time: ${new Date().toISOString()}`
+              body: `CAREER_OS_CLOUD_FORCE_NOW_FINISHED\n\n- Run: ${context.runId}\n- Result: ${{ job.status }}\n- Runner: ubuntu-latest\n- Auth: GitHub OIDC\n- Time: ${new Date().toISOString()}`
             });
 
-# forced post-deployment validation: 2026-08-03T12:27:00Z
+# forced OIDC validation: 2026-08-03T12:38:00Z
