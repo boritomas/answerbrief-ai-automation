@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/career-os-force-now.yml'
   workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
 
 concurrency:
   group: career-os-approved-queue-cloud
