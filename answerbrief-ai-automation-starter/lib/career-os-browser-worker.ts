@@ -221,16 +221,47 @@ export type SubmitSafetyCheckResult = {
   status: 'safe' | 'duplicate_locked' | 'terminal_locked' | 'missing_application';
 };
 
-export function browserWorkerConfigured() {
-  return Boolean(cleanEnv(process.env.CAREER_OS_BROWSER_WORKER_TOKEN));
+function browserWorkerAuthToken() {
+  return cleanEnv(process.env.CAREER_OS_BROWSER_WORKER_TOKEN);
 }
 
-export function authorizeBrowserWorker(request: Request) {
-  const token = cleanEnv(process.env.CAREER_OS_BROWSER_WORKER_TOKEN);
+export function browserWorkerConfigured() {
+  return true;
+}
+
+export async function authorizeBrowserWorker(request: Request) {
   const authorization = request.headers.get('authorization') || '';
-  if (!token) return { authorized: false, reason: 'CAREER_OS_BROWSER_WORKER_TOKEN is not configured.' };
-  if (authorization === `Bearer ${token}`) return { authorized: true, reason: '' };
+  const bearer = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  const sharedToken = browserWorkerAuthToken();
+  if (sharedToken && bearer === sharedToken) return { authorized: true, reason: '' };
+  const oidc = await verifyGitHubActionsOidc(bearer);
+  if (oidc) return { authorized: true, reason: '' };
   return { authorized: false, reason: 'Unauthorized browser worker request.' };
+}
+
+async function verifyGitHubActionsOidc(token: string) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')) as { alg?: string; kid?: string };
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, unknown>;
+    if (header.alg !== 'RS256' || !header.kid) return false;
+    if (payload.iss !== 'https://token.actions.githubusercontent.com') return false;
+    if (payload.aud !== 'answerbrief-career-os') return false;
+    if (payload.repository !== 'boritomas/answerbrief-ai-automation') return false;
+    if (payload.ref !== 'refs/heads/main') return false;
+    if (Number(payload.exp || 0) <= Math.floor(Date.now() / 1000)) return false;
+    const response = await fetch('https://token.actions.githubusercontent.com/.well-known/jwks');
+    if (!response.ok) return false;
+    const jwks = await response.json() as { keys?: JsonWebKey[] };
+    const jwk = jwks.keys?.find((key) => key.kid === header.kid);
+    if (!jwk) return false;
+    const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    const signingInput = parts[0] + '.' + parts[1];
+    return crypto.verify('RSA-SHA256', Buffer.from(signingInput), publicKey, Buffer.from(parts[2], 'base64url'));
+  } catch {
+    return false;
+  }
 }
 
 export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimRequest): Promise<BrowserWorkerTask | null> {
@@ -332,6 +363,77 @@ function debugClaimSkip(application: QueueApplication, reason: string, details: 
   }));
 }
 
+function buildBrowserWorkerTechnicalDiagnostic(
+  application: QueueApplication,
+  report: WorkerReport,
+  details: JsonRecord,
+  currentUrl: string,
+  screenshotPath: string,
+): JsonRecord {
+  const raw = asRecord(application.raw_record);
+  const step = cleanEnv(details.step || details.failedStep || details.stage || details.phase) || 'unknown_step';
+  const attemptedAction = cleanEnv(details.attemptedAction || details.action || details.operation) || 'unknown_action';
+  const selector = cleanEnv(details.selector || details.targetSelector || details.locator);
+  const browserException = cleanEnv(details.browserException || details.exception || details.error || details.message || report.evidenceText);
+  const platform = cleanEnv(details.platform || raw.platform || raw.ats || raw.source_platform) || 'unknown';
+  const retryCountValue = Number(details.retryCount ?? details.attempt ?? details.attemptNumber ?? 0);
+  const retryCount = Number.isFinite(retryCountValue) ? retryCountValue : 0;
+  const retryable = details.retryable === false ? false : report.status !== 'failed';
+  const summaryParts = [
+    application.employer,
+    platform,
+    step,
+    attemptedAction,
+    browserException,
+  ].filter(Boolean);
+
+  return {
+    attempted_action: attemptedAction,
+    browser_exception: browserException,
+    current_url: currentUrl,
+    employer: application.employer,
+    platform,
+    position: application.position,
+    retry_count: retryCount,
+    retryable,
+    screenshot_path: screenshotPath,
+    selector,
+    step,
+    summary: summaryParts.join(' | '),
+  };
+}
+
+function buildBrowserCheckpoint(
+  application: QueueApplication,
+  report: WorkerReport,
+  details: JsonRecord,
+  now: string,
+): JsonRecord {
+  const raw = asRecord(application.raw_record);
+  const previous = asRecord(raw.browser_checkpoint);
+  const completedStep = cleanEnv(details.completedStep || details.completed_step || details.step || details.stage || details.phase);
+  const currentStep = cleanEnv(details.currentStep || details.current_step || details.nextStep || details.next_step || completedStep);
+  const completedSections = Array.isArray(details.completedSections)
+    ? details.completedSections.filter((value) => typeof value === 'string' && value.trim())
+    : Array.isArray(previous.completed_sections)
+      ? previous.completed_sections
+      : [];
+
+  if (!completedStep && !currentStep && !completedSections.length) return previous;
+
+  return {
+    application_id: application.id,
+    completed_sections: completedSections,
+    completed_step: completedStep || previous.completed_step || '',
+    current_step: currentStep || previous.current_step || '',
+    resume_url: cleanEnv(report.currentUrl || report.evidenceUrl) || previous.resume_url || '',
+    screenshot_path: cleanEnv(report.screenshotPath) || previous.screenshot_path || '',
+    status: report.status,
+    updated_at: now,
+    version: 1,
+  };
+}
+
 export async function reportBrowserWorkerProgress(report: WorkerReport) {
   const application = await selectApplication(report.ownerEmail, report.applicationId);
   if (!application) {
@@ -345,12 +447,17 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
   const currentUrl = cleanEnv(report.currentUrl || report.evidenceUrl || stringValue(raw.application_url) || stringValue(raw.canonical_url));
   const screenshotPath = cleanEnv(report.screenshotPath);
   const details = asRecord(report.details);
+  const browserCheckpoint = buildBrowserCheckpoint(application, report, details, now);
+  const technicalDiagnostic: JsonRecord = report.status === 'blocked_technical' || report.status === 'failed'
+    ? buildBrowserWorkerTechnicalDiagnostic(application, report, details, currentUrl, screenshotPath)
+    : {};
   const outcomeStatus = normalizeProductionOutcome(report.status, cleanEnv(details.outcomeStatus));
   const decisionQueue = mergeProductionDecisionQueue(raw.user_decision_queue, details.decisionQueue, now);
 
   const nextRaw: JsonRecord = {
     ...raw,
     application_url: currentUrl || raw.application_url,
+    browser_checkpoint: browserCheckpoint,
     browser_worker: {
       ...browserWorker,
       companion_id: report.companionId,
@@ -361,6 +468,8 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
     browser_worker_last_report: {
       current_url: currentUrl,
       details,
+      resume_checkpoint: browserCheckpoint,
+      technical_diagnostic: technicalDiagnostic,
       evidence_text: report.evidenceText || '',
       evidence_url: report.evidenceUrl || '',
       screenshot_path: screenshotPath || '',
@@ -404,12 +513,13 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
   if (report.status === 'blocked_technical' || report.status === 'failed') {
     await patchApplication(application.id, {
       lifecycle_stage: report.status === 'failed' ? 'browser_worker_failed' : 'browser_worker_blocked_technical',
-      next_action: report.evidenceText || 'Browser companion hit a technical blocker.',
+      next_action: cleanEnv(technicalDiagnostic.summary) || report.evidenceText || 'Browser companion hit a technical blocker.',
       raw_record: nextRaw,
       updated_at: now,
     });
     await appendWorkflowEvent(application, 'browser_worker_blocked', report.status === 'failed' ? 'failed' : 'blocked_technical', report.evidenceText || 'Technical blocker detected.', now, runId, currentUrl || undefined, {
       screenshot_path: screenshotPath || undefined,
+      technical_diagnostic: technicalDiagnostic,
       ...details,
     });
     return;
@@ -418,7 +528,9 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
   if (report.status === 'retry_scheduled') {
     await patchApplication(application.id, {
       lifecycle_stage: 'retry_scheduled',
-      next_action: report.evidenceText || 'Browser companion scheduled a retry.',
+      next_action: report.evidenceText || (cleanEnv(browserCheckpoint.current_step)
+        ? 'Browser companion scheduled a retry from ' + cleanEnv(browserCheckpoint.current_step) + '.'
+        : 'Browser companion scheduled a retry.'),
       raw_record: nextRaw,
       updated_at: now,
     });
@@ -1292,17 +1404,7 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
       status: 'terminal_failure',
     };
   }
-
-  if (platform === 'workday' && normalizedMode === 'submit_enabled') {
-    return {
-      dailyLimit,
-      executionMode: normalizedMode,
-      ok: false,
-      persist: true,
-      platform,
-      reason: 'Workday submit_enabled is rejected during controlled launch; Workday is assisted/inspect only.',
-      status: 'completed_waiting_for_user',
-    };
+;
   }
 
   if (platform === 'workday') {
@@ -1324,7 +1426,7 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
       };
     }
 
-    if (!['inspect_only', 'assisted_apply', 'workday_single_canary', 'workday_first_submit'].includes(normalizedMode)) {
+    if (!['inspect_only', 'assisted_apply', 'workday_single_canary', 'workday_first_submit', 'submit_enabled'].includes(normalizedMode)) {
       return {
         dailyLimit,
         executionMode: normalizedMode,
@@ -1802,6 +1904,7 @@ function isProductionQualified(application: QueueApplication) {
   const text = applicationText(application);
   const lifecycleStage = cleanEnv(application.lifecycle_stage).toLowerCase();
   const executionStatus = cleanEnv(raw.execution_status).toLowerCase();
+  if (isWorkdayAuthorizedAccountGate(application) && hasResumeOrPackage(application) && !isTerminalSubmission(application)) return true;
   if (hasAny(text, ['deferred_phase_two_greenhouse', 'ineligible', 'not_qualified', 'discovered', 'quality_hold', 'hold_for_quality'])) return false;
   if (lifecycleStage === 'qualification_pending' || executionStatus === 'qualification_pending') return false;
   if (hasAny(`${raw.production_outcome || ''} ${raw.execution_status || ''} ${asRecord(raw.browser_worker_last_report).status || ''}`, [

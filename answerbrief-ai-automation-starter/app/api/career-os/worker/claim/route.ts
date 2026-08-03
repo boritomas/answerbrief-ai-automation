@@ -12,7 +12,7 @@ type ClaimBody = {
 };
 
 export async function POST(request: NextRequest) {
-  const auth = authorizeBrowserWorker(request);
+  const auth = await authorizeBrowserWorker(request);
   if (!auth.authorized) {
     return NextResponse.json({ ok: false, error: auth.reason }, { status: 401 });
   }
