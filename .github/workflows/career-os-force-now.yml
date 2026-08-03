@@ -19,14 +19,14 @@ permissions:
 jobs:
   run-approved-queue:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: answerbrief-ai-automation-starter
     env:
       CAREER_OS_OWNER_EMAIL: tomas@nieves.com
       CAREER_OS_QUEUE_ENABLED: '1'
-      CAREER_OS_DAILY_LIMIT: '3'
+      CAREER_OS_DAILY_LIMIT: '1'
       CAREER_OS_DEBUG_CLAIM: '1'
       CAREER_OS_EXECUTION_MODE: workday_first_submit
       APP_BASE_URL: https://www.answer-brief.com
@@ -66,24 +66,18 @@ jobs:
         shell: bash
         run: npm run worker:health
 
-      - name: Process three approved applications
+      - name: Process one approved application
         id: worker
         shell: bash
         run: |
           set +e
           dir=".career-os-ci/${GITHUB_RUN_ID}"
           mkdir -p "$dir"
-          overall=0
-          for attempt in 1 2 3; do
-            echo "=== CAREER OS APPLICATION ATTEMPT ${attempt} ===" | tee "$dir/attempt-${attempt}.log"
-            npm run worker:run-once 2>&1 | tee -a "$dir/attempt-${attempt}.log"
-            code=${PIPESTATUS[0]}
-            echo "exitCode=${code}" | tee -a "$dir/attempt-${attempt}.log"
-            if [ "$code" -ne 0 ]; then
-              overall="$code"
-            fi
-          done
-          exit "$overall"
+          echo "=== CAREER OS APPLICATION ATTEMPT 1 ===" | tee "$dir/attempt-1.log"
+          npm run worker:run-once 2>&1 | tee -a "$dir/attempt-1.log"
+          code=${PIPESTATUS[0]}
+          echo "exitCode=${code}" | tee -a "$dir/attempt-1.log"
+          exit "$code"
 
       - name: Create proof manifest
         if: always()
@@ -92,25 +86,14 @@ jobs:
           set +e
           dir=".career-os-ci/${GITHUB_RUN_ID}"
           mkdir -p "$dir"
-          submitted_count=0
-          blocker_count=0
-          for attempt in 1 2 3; do
-            log="$dir/attempt-${attempt}.log"
-            submitted=false
-            blocker=false
-            if [ -f "$log" ] && grep -Eiq 'submitted|application complete|thank you for applying|confirmation' "$log"; then
-              submitted=true
-              submitted_count=$((submitted_count + 1))
-            fi
-            if [ -f "$log" ] && grep -Eiq 'captcha|mfa|verification|required human|legal question|blocked' "$log"; then
-              blocker=true
-              blocker_count=$((blocker_count + 1))
-            fi
-            printf '{"attempt":%s,"submittedSignal":%s,"blockerSignal":%s}\n' "$attempt" "$submitted" "$blocker" > "$dir/attempt-${attempt}-proof.json"
-          done
+          log="$dir/attempt-1.log"
+          submitted=false
+          blocker=false
+          if [ -f "$log" ] && grep -Eiq 'submitted|application complete|thank you for applying|confirmation' "$log"; then submitted=true; fi
+          if [ -f "$log" ] && grep -Eiq 'captcha|mfa|verification|required human|legal question|blocked' "$log"; then blocker=true; fi
           screenshots=$(find .career-os-browser-worker/evidence -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' \) 2>/dev/null | wc -l | tr -d ' ')
-          printf '{\n  "runId": "%s",\n  "commit": "%s",\n  "ownerEmail": "tomas@nieves.com",\n  "attempted": 3,\n  "submittedSignals": %s,\n  "blockerSignals": %s,\n  "screenshotCount": %s,\n  "generatedAt": "%s"\n}\n' \
-            "$GITHUB_RUN_ID" "$GITHUB_SHA" "$submitted_count" "$blocker_count" "${screenshots:-0}" "$(date -u +%FT%TZ)" > "$dir/submission-proof.json"
+          printf '{\n  "runId": "%s",\n  "commit": "%s",\n  "ownerEmail": "tomas@nieves.com",\n  "attempted": 1,\n  "submittedSignal": %s,\n  "blockerSignal": %s,\n  "screenshotCount": %s,\n  "generatedAt": "%s"\n}\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_SHA" "$submitted" "$blocker" "${screenshots:-0}" "$(date -u +%FT%TZ)" > "$dir/submission-proof.json"
           cat "$dir/submission-proof.json"
 
       - name: Upload execution evidence
@@ -138,15 +121,15 @@ jobs:
               repo: context.repo.repo,
               issue_number: 49,
               body: [
-                'CAREER_OS_THREE_APPLICATION_CANARY_FINISHED',
+                'CAREER_OS_ONE_APPLICATION_CANARY_FINISHED',
                 '',
                 `- Run: ${context.runId}`,
                 `- Result: ${{ job.status }}`,
                 '- Runner: ubuntu-latest',
                 '- Auth: GitHub OIDC',
-                `- Attempts: ${proof?.attempted ?? 3}`,
-                `- Submitted signals: ${proof?.submittedSignals ?? 0}`,
-                `- Blocker signals: ${proof?.blockerSignals ?? 0}`,
+                `- Attempted: ${proof?.attempted ?? 1}`,
+                `- Submitted signal: ${proof?.submittedSignal ?? false}`,
+                `- Blocker signal: ${proof?.blockerSignal ?? false}`,
                 `- Screenshot evidence: ${proof?.screenshotCount ?? 0}`,
                 `- Evidence artifact: career-os-cloud-${context.runId}`,
                 '- Owner email: tomas@nieves.com',
