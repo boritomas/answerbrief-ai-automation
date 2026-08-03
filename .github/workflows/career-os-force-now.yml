@@ -100,4 +100,4 @@ jobs:
               body: `CAREER_OS_CLOUD_FORCE_NOW_FINISHED\n\n- Run: ${context.runId}\n- Result: ${{ job.status }}\n- Runner: ubuntu-latest\n- Auth: GitHub OIDC\n- Time: ${new Date().toISOString()}`
             });
 
-# forced OIDC validation: 2026-08-03T12:38:00Z
+# forced clean post-CSS OIDC validation: 2026-08-03T13:31:00Z
