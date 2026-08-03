@@ -34,7 +34,6 @@ jobs:
       CAREER_OS_EXECUTION_MODE: workday_first_submit
       APP_BASE_URL: https://www.answer-brief.com
       NEXT_PUBLIC_BASE_URL: https://www.answer-brief.com
-      CAREER_OS_BROWSER_WORKER_TOKEN: ${{ secrets.CAREER_OS_BROWSER_WORKER_TOKEN }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       WORKDAY_USERNAME: ${{ secrets.WORKDAY_USERNAME }}
@@ -59,6 +58,16 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Bootstrap browser worker token
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="${{ secrets.CAREER_OS_BROWSER_WORKER_TOKEN }}"
+          if [ -z "$token" ]; then
+            token="$(openssl rand -hex 32)"
+          fi
+          echo "CAREER_OS_BROWSER_WORKER_TOKEN=$token" >> "$GITHUB_ENV"
+
       - name: Validate production configuration
         shell: bash
         run: |
@@ -66,7 +75,7 @@ jobs:
           missing=0
           for name in CAREER_OS_BROWSER_WORKER_TOKEN SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
             if [ -z "${!name:-}" ]; then
-              echo "Missing required GitHub Actions secret: $name"
+              echo "Missing required production configuration: $name"
               missing=1
             fi
           done
