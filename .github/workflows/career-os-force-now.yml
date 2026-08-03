@@ -6,7 +6,9 @@ on:
     paths:
       - '.github/workflows/career-os-force-now.yml'
       - 'answerbrief-ai-automation-starter/package.json'
-      - 'answerbrief-ai-automation-starter/scripts/apply-cloud-worker-auth-hotfix.mjs'
+      - 'answerbrief-ai-automation-starter/scripts/**'
+      - 'answerbrief-ai-automation-starter/lib/**'
+      - 'answerbrief-ai-automation-starter/app/api/**'
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
@@ -71,11 +73,29 @@ jobs:
         run: npm run worker:health
 
       - name: Process next approved application
+        id: worker
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
           mkdir -p ".career-os-ci/${GITHUB_RUN_ID}"
           npm run worker:run-once 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-worker.log"
+
+      - name: Create proof manifest
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          dir=".career-os-ci/${GITHUB_RUN_ID}"
+          log="$dir/approved-queue-worker.log"
+          mkdir -p "$dir"
+          submitted=false
+          if [ -f "$log" ] && grep -Eiq 'submitted|application complete|thank you for applying|confirmation' "$log"; then
+            submitted=true
+          fi
+          screenshots=$(find .career-os-browser-worker/evidence -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' \) 2>/dev/null | wc -l | tr -d ' ')
+          printf '{\n  "runId": "%s",\n  "commit": "%s",\n  "ownerEmail": "tomas@nieves.com",\n  "submittedSignal": %s,\n  "screenshotCount": %s,\n  "generatedAt": "%s"\n}\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_SHA" "$submitted" "${screenshots:-0}" "$(date -u +%FT%TZ)" > "$dir/submission-proof.json"
+          cat "$dir/submission-proof.json"
 
       - name: Upload execution evidence
         if: always()
@@ -93,11 +113,27 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
+            const proofPath = `answerbrief-ai-automation-starter/.career-os-ci/${context.runId}/submission-proof.json`;
+            let proof = null;
+            try { proof = JSON.parse(fs.readFileSync(proofPath, 'utf8')); } catch {}
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 49,
-              body: `CAREER_OS_CLOUD_FORCE_NOW_FINISHED\n\n- Run: ${context.runId}\n- Result: ${{ job.status }}\n- Runner: ubuntu-latest\n- Auth: GitHub OIDC\n- Time: ${new Date().toISOString()}`
+              body: [
+                'CAREER_OS_CLOUD_FORCE_NOW_FINISHED',
+                '',
+                `- Run: ${context.runId}`,
+                `- Result: ${{ job.status }}`,
+                '- Runner: ubuntu-latest',
+                '- Auth: GitHub OIDC',
+                `- Submitted signal: ${proof?.submittedSignal ?? false}`,
+                `- Screenshot evidence: ${proof?.screenshotCount ?? 0}`,
+                `- Evidence artifact: career-os-cloud-${context.runId}`,
+                `- Owner email: tomas@nieves.com`,
+                `- Time: ${new Date().toISOString()}`,
+              ].join('\n')
             });
 
-# forced clean post-CSS OIDC validation: 2026-08-03T13:31:00Z
+# proof-driven forced cloud execution: 2026-08-03T15:50:00Z
