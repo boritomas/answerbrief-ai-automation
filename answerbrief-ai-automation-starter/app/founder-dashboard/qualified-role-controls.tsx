@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import styles from './founder-dashboard.module.css';
 
 type QualifiedRole = {
   id: string;
@@ -75,32 +76,35 @@ export function QualifiedRoleControls({ actionToken, ownerEmail, roles, tokenExp
     setBusy(false);
   }
 
+  const secondaryButton = `${styles.button} ${styles.secondary}`;
+  const primaryButton = `${styles.button} ${styles.primary}`;
+
   return (
     <div aria-live="polite">
-      <div className="cta-row">
-        <button className="button secondary" disabled={busy || roles.length === 0} onClick={() => setSelected(roles.map((role) => role.id))} type="button">Select All</button>
-        <button className="button secondary" disabled={busy || selected.length === 0} onClick={() => setSelected([])} type="button">Clear Selection</button>
-        <button className="button primary" disabled={busy || selectedRoles.length === 0} onClick={() => void approveSelected()} type="button">
+      <div className={styles.ctaRow}>
+        <button className={secondaryButton} disabled={busy || roles.length === 0} onClick={() => setSelected(roles.map((role) => role.id))} type="button">Select All</button>
+        <button className={secondaryButton} disabled={busy || selected.length === 0} onClick={() => setSelected([])} type="button">Clear Selection</button>
+        <button className={primaryButton} disabled={busy || selectedRoles.length === 0} onClick={() => void approveSelected()} type="button">
           {busy ? 'Approving Selected Roles…' : `Approve ${selectedRoles.length} Selected Role${selectedRoles.length === 1 ? '' : 's'}`}
         </button>
       </div>
 
-      <div className="qualified-role-grid">
+      <div className={styles.qualifiedRoleGrid}>
         {roles.map((role) => {
           const checked = selected.includes(role.id);
           const isApproved = approved.includes(role.id);
           return (
-            <article className={`career-os-action-control ${checked ? 'selected' : ''}`} key={role.id}>
-              <label className="role-selector">
+            <article className={`${styles.actionControl} ${checked ? styles.selected : ''}`} key={role.id}>
+              <label className={styles.roleSelector}>
                 <input checked={checked} disabled={busy || isApproved} onChange={() => toggle(role.id)} type="checkbox" />
                 <span>
                   <strong>{role.company} — {role.title}</strong>
                   <small>{role.location} · {role.fitScore}% match</small>
                 </span>
               </label>
-              <div className="cta-row">
-                {role.applicationUrl ? <a className="button secondary" href={role.applicationUrl} rel="noreferrer" target="_blank">Open Application</a> : null}
-                <span className="role-status">{isApproved ? 'Approved and queued' : checked ? 'Selected' : 'Not selected'}</span>
+              <div className={styles.ctaRow}>
+                {role.applicationUrl ? <a className={secondaryButton} href={role.applicationUrl} rel="noreferrer" target="_blank">Open Application</a> : null}
+                <span className={styles.roleStatus}>{isApproved ? 'Approved and queued' : checked ? 'Selected' : 'Not selected'}</span>
               </div>
             </article>
           );
