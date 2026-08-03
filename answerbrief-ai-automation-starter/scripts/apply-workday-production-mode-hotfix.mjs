@@ -6,30 +6,12 @@ import process from 'node:process';
 const target = path.join(process.cwd(), 'lib', 'career-os-browser-worker.ts');
 const source = fs.readFileSync(target, 'utf8');
 
-const rejectedBlock = `  if (platform === 'workday' && normalizedMode === 'submit_enabled') {
-    return {
-      dailyLimit,
-      executionMode: normalizedMode,
-      ok: false,
-      persist: true,
-      platform,
-      reason: 'Workday submit_enabled is rejected during controlled launch; Workday is assisted/inspect only.',
-      status: 'completed_waiting_for_user',
-    };
-  }
+const rejectedBlockPattern = /\n?\s*if\s*\(platform\s*===\s*['"]workday['"]\s*&&\s*normalizedMode\s*===\s*['"]submit_enabled['"]\)\s*\{[\s\S]*?reason:\s*['"]Workday submit_enabled is rejected during controlled launch; Workday is assisted\/inspect only\.['"],[\s\S]*?\n\s*\}\s*\n?/m;
+const allowedModesBeforePattern = /\['inspect_only',\s*'assisted_apply',\s*'workday_single_canary',\s*'workday_first_submit'\]/g;
+const allowedModesAfter = "['inspect_only', 'assisted_apply', 'workday_single_canary', 'workday_first_submit', 'submit_enabled']";
 
-`;
-
-const allowedModesBefore = `    if (!['inspect_only', 'assisted_apply', 'workday_single_canary', 'workday_first_submit'].includes(normalizedMode)) {`;
-const allowedModesAfter = `    if (!['inspect_only', 'assisted_apply', 'workday_single_canary', 'workday_first_submit', 'submit_enabled'].includes(normalizedMode)) {`;
-
-let next = source;
-if (next.includes(rejectedBlock)) {
-  next = next.replace(rejectedBlock, '');
-}
-if (next.includes(allowedModesBefore)) {
-  next = next.replace(allowedModesBefore, allowedModesAfter);
-}
+let next = source.replace(rejectedBlockPattern, '\n');
+next = next.replace(allowedModesBeforePattern, allowedModesAfter);
 
 if (next.includes('Workday submit_enabled is rejected during controlled launch')) {
   throw new Error('Workday submit_enabled rejection is still present after hotfix.');
