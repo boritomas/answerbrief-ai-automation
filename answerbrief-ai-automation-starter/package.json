@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node ./scripts/apply-blocker-classification-hotfix.mjs && node ./scripts/apply-checkpoint-resume.mjs && node ./scripts/apply-workday-account-gate-eligibility-hotfix.mjs && node ./scripts/apply-workday-production-mode-hotfix.mjs && node ./scripts/apply-controlled-workday-signin-guard-hotfix.mjs && node ./scripts/apply-cloud-worker-auth-hotfix.mjs && node ./scripts/apply-dashboard-css-module-fix.mjs",
-    "build": "next build --webpack",
+    "prebuild": "node ./scripts/apply-blocker-classification-hotfix.mjs && node ./scripts/apply-checkpoint-resume.mjs && node ./scripts/apply-workday-account-gate-eligibility-hotfix.mjs && node ./scripts/apply-workday-production-mode-hotfix.mjs && node ./scripts/apply-controlled-workday-signin-guard-hotfix.mjs && node ./scripts/apply-cloud-worker-auth-hotfix.mjs",
+    "build": "node ./scripts/apply-dashboard-css-module-fix.mjs && next build --webpack",
     "start": "next start",
     "lint": "node ./scripts/lint-career-os-source.mjs",
     "typecheck": "tsc --noEmit",
