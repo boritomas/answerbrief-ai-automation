@@ -245,6 +245,17 @@ export async function verifyControlledWorkdayTab(input = {}) {
     expectedTenant,
   });
 
+  if (fallback.status === 'CONTROLLED BROWSER READY — SIGN-IN REQUIRED') {
+    return {
+      ok: true,
+      authenticationState: 'sign_in_required',
+      pages: cdp.pages,
+      reason: fallback.reason,
+      status: fallback.status,
+      workdayTab: fallback.workdayTab,
+    };
+  }
+
   try {
     const { chromium } = await import('playwright');
     const browser = input.browser || await chromium.connectOverCDP(endpoint, { timeout: Number(input.timeoutMs || 5000) });

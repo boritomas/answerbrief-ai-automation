@@ -3,8 +3,8 @@
 import { useState } from 'react';
 
 type Props = {
-  approvedCount: number;
   ownerEmail: string;
+  refreshDiscoveryToken: string;
   runNowToken: string;
   tokenExpiresAt: string;
 };
@@ -31,21 +31,17 @@ type ActionResult = {
   waitingOnTomas?: number;
 };
 
-export function FounderRunControls({ approvedCount, ownerEmail, runNowToken, tokenExpiresAt }: Props) {
+export function FounderRunControls({ ownerEmail, refreshDiscoveryToken, runNowToken, tokenExpiresAt }: Props) {
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState(
-    approvedCount > 0
-      ? `${approvedCount} approved application${approvedCount === 1 ? '' : 's'} ready for autonomous processing.`
-      : 'Approve qualified roles above to build your application queue.',
-  );
+  const [message, setMessage] = useState('Ready to run Career OS browser worker.');
 
-  async function processApprovedQueue() {
-    if (busy || approvedCount < 1) return;
+  async function runNow() {
+    if (busy) return;
     setBusy(true);
-    setMessage(`Starting autonomous processing for ${approvedCount} approved application${approvedCount === 1 ? '' : 's'}...`);
+    setMessage('Starting Career OS browser worker run...');
 
     try {
-      const response = await fetch('/api/career-os/run-approved-queue', {
+      const response = await fetch('/api/career-os/run-one', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -58,32 +54,55 @@ export function FounderRunControls({ approvedCount, ownerEmail, runNowToken, tok
 
       if (!response.ok) {
         const detail = result.error || result.errors?.join('; ') || `HTTP ${response.status}`;
-        setMessage(`The approved queue request failed: ${detail}`);
-        return;
-      }
-
-      if (result.accepted && result.status === 'queued_without_runner') {
-        const dispatchError = result.runnerDispatch?.error || result.message || 'The Mac runner could not be started.';
-        setMessage(
-          `Applications were queued successfully, but automatic runner startup failed. ${dispatchError} `
-          + `Run ${result.runId || 'created'} remains queued and no applications have been submitted yet.`,
-        );
+        setMessage(`Run failed: ${detail}`);
         return;
       }
 
       if (!result.ok) {
-        const detail = result.error || result.message || result.errors?.join('; ') || 'Unknown queue error.';
-        setMessage(`The approved queue could not start: ${detail}`);
+        const detail = result.error || result.message || result.errors?.join('; ') || 'Unknown error.';
+        setMessage(`Run could not start: ${detail}`);
         return;
       }
 
       setMessage(
-        `Autonomous queue started. Audited ${result.applicationsAudited || 0}, queued ${result.automaticallyQueued || 0}, `
-        + `processed ${result.processed || 0}. Human checkpoints: ${result.waitingOnTomas || 0}; technical blockers: ${result.technical || 0}. `
-        + `Run ${result.runId || 'created'}. Career OS will continue through the paired Mac browser worker.`,
+        `Run started. Processed ${result.processed || 0}; submitted ${result.submitted || 0}. `
+        + `Human checkpoints: ${result.waitingOnTomas || 0}; technical blockers: ${result.technical || 0}. `
+        + `Run ${result.runId || 'created'}.`,
       );
     } catch (error) {
-      setMessage(`The approved queue request failed: ${error instanceof Error ? error.message : 'request failed'}`);
+      setMessage(`Run request failed: ${error instanceof Error ? error.message : 'request failed'}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshDiscovery() {
+    if (busy) return;
+    setBusy(true);
+    setMessage('Refreshing discovery sources...');
+
+    try {
+      const response = await fetch('/api/career-os/actions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'refresh_discovery',
+          actionToken: refreshDiscoveryToken,
+          actionTokenExpiresAt: tokenExpiresAt,
+          ownerEmail,
+        }),
+      });
+      const result = await response.json().catch(() => ({})) as ActionResult;
+
+      if (!response.ok) {
+        const detail = result.error || result.errors?.join('; ') || `HTTP ${response.status}`;
+        setMessage(`Discovery refresh failed: ${detail}`);
+        return;
+      }
+
+      setMessage(result.message || 'Discovery refresh queued.');
+    } catch (error) {
+      setMessage(`Discovery refresh failed: ${error instanceof Error ? error.message : 'request failed'}`);
     } finally {
       setBusy(false);
     }
@@ -92,13 +111,16 @@ export function FounderRunControls({ approvedCount, ownerEmail, runNowToken, tok
   return (
     <div className="career-os-action-control" aria-live="polite">
       <div className="cta-row">
-        <button className="button primary" disabled={busy || approvedCount < 1} onClick={() => void processApprovedQueue()} type="button">
-          {busy ? 'Starting Autonomous Queue...' : `Autonomously Process ${approvedCount} Approved Application${approvedCount === 1 ? '' : 's'}`}
+        <button className="button primary" disabled={busy} onClick={() => void runNow()} type="button">
+          {busy ? 'Running...' : 'Run Career OS'}
+        </button>
+        <button className="button secondary" disabled={busy} onClick={() => void refreshDiscovery()} type="button">
+          Refresh Discovery
         </button>
         <button className="button secondary" disabled={busy} onClick={() => window.location.reload()} type="button">Refresh Counts</button>
-        <a className="button secondary" href="/career-os#applications">View Applications</a>
       </div>
       <p><small><strong>Status:</strong> {message}</small></p>
     </div>
   );
 }
+

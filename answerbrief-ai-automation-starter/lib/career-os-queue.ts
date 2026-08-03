@@ -114,7 +114,6 @@ export type QueueProcessorResult = {
 };
 
 const HUMAN_BLOCKER_TERMS = [
-  'captcha',
   'identity',
   'mfa',
   'security code',
@@ -126,8 +125,6 @@ const HUMAN_BLOCKER_TERMS = [
   'approval',
   'attestation',
   'nda',
-  'account',
-  'workday',
   'employment_start_month',
   'employment date',
   'employment history facts',
@@ -143,6 +140,14 @@ const HUMAN_BLOCKER_TERMS = [
 const TECHNICAL_BLOCKER_TERMS = [
   'technical blocker',
   'technical failure',
+  'unsupported browser or ats operation',
+  'unsupported browser operation',
+  'unsupported ats operation',
+  'selector not found',
+  'navigation timeout',
+  'browser timeout',
+  'resume upload failure',
+  'file picker',
   'upload_gate',
   'unsupported',
   'file-upload limitation',
@@ -156,7 +161,6 @@ const TECHNICAL_BLOCKER_TERMS = [
 
 const BROWSER_WORKER_SUPPORTED_PLATFORM_TOKENS = [
   'greenhouse',
-  'workday',
   'phenom',
   'workday_via_phenom',
   'oracle',
@@ -578,8 +582,7 @@ function isWorkdayAuthorizedAccountGate(application: JsonRecord) {
   if (!isWorkdayApplication(application)) return false;
   const text = applicationText(application);
   if (!hasAny(text, [
-    'account',
-    'create account',
+      'create account',
     'create or open the employer account',
     'login',
     'log in',
@@ -591,8 +594,7 @@ function isWorkdayAuthorizedAccountGate(application: JsonRecord) {
     'workday requires tomas to sign in',
   ])) return false;
   if (hasAny(text, [
-    'captcha',
-    'email code',
+      'email code',
     'email verification',
     'identity',
     'mfa',

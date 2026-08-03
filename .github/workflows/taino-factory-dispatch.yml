@@ -1,0 +1,110 @@
+name: TAINO Factory Dispatch
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Execution mode
+        required: true
+        type: choice
+        options: [validate, build, test]
+        default: validate
+      target:
+        description: Target path or module
+        required: true
+        default: answerbrief-ai-automation-starter/app/taino
+      objective:
+        description: Task objective
+        required: true
+        default: Validate the TAINO realtime interface
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+jobs:
+  dispatch:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.issue.labels.*.name, 'taino-factory')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.task.outputs.mode }}
+      target: ${{ steps.task.outputs.target }}
+      objective: ${{ steps.task.outputs.objective }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: task
+        name: Resolve task contract
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_OBJECTIVE: ${{ inputs.objective }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            mode="$INPUT_MODE"
+            target="$INPUT_TARGET"
+            objective="$INPUT_OBJECTIVE"
+          else
+            mode=$(printf '%s' "$ISSUE_BODY" | awk '/### Execution mode/{getline; getline; print; exit}' | tr -d '\r')
+            target=$(printf '%s' "$ISSUE_BODY" | awk '/### Target path or module/{getline; getline; print; exit}' | tr -d '\r')
+            objective=$(printf '%s' "$ISSUE_BODY" | awk '/### Objective/{getline; getline; print; exit}' | tr -d '\r')
+          fi
+          case "$mode" in validate|build|test) ;; *) mode=validate ;; esac
+          [ -n "$target" ] || target=answerbrief-ai-automation-starter/app/taino
+          [ -n "$objective" ] || objective="Validate TAINO task"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "objective=$objective" >> "$GITHUB_OUTPUT"
+
+      - name: Validate worker manifest
+        run: node -e "const m=require('./taino-factory/worker-manifest.json'); if(!m.workers?.some(w=>w.id==='github-cloud')) process.exit(1); console.log('worker=github-cloud')"
+
+      - name: Create dispatch evidence
+        run: |
+          mkdir -p taino-factory/evidence
+          cat > taino-factory/evidence/dispatch.json <<EOF
+          {
+            "worker": "github-cloud",
+            "mode": "${{ steps.task.outputs.mode }}",
+            "target": "${{ steps.task.outputs.target }}",
+            "objective": "${{ steps.task.outputs.objective }}",
+            "source": "${{ github.event_name }}",
+            "run_id": "${{ github.run_id }}",
+            "sha": "${{ github.sha }}"
+          }
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taino-factory-dispatch-${{ github.run_id }}
+          path: taino-factory/evidence/dispatch.json
+          retention-days: 14
+
+      - name: Acknowledge issue
+        if: github.event_name == 'issues'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `TAINO Factory accepted this task.\n\n- Worker: \`github-cloud\`\n- Mode: \`${{ steps.task.outputs.mode }}\`\n- Target: \`${{ steps.task.outputs.target }}\`\n- Dispatch run: ${context.runId}`
+            })
+
+  execute:
+    needs: dispatch
+    uses: ./.github/workflows/taino-cloud-runtime.yml
+    with:
+      mode: ${{ needs.dispatch.outputs.mode }}
+      retain_artifact: true
+    secrets: inherit
