@@ -73,6 +73,22 @@ jobs:
           test "$(uname -s)" = "Darwin"
           test -d "$CAREER_OS_RUNTIME"
           test -f "$CAREER_OS_SOURCE/package.json"
+          if test ! -f "$CAREER_OS_RUNTIME/.env" && test ! -f "$CAREER_OS_RUNTIME/.env.local"; then
+            if test -z "${SUPABASE_URL:-}" || test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"; then
+              echo "Canonical Career OS runtime environment file is missing and required GitHub secrets are unavailable."
+              exit 1
+            fi
+            umask 177
+            {
+              printf 'APP_BASE_URL=%s\n' "${APP_BASE_URL:-https://www.answer-brief.com}"
+              printf 'NEXT_PUBLIC_BASE_URL=%s\n' "${NEXT_PUBLIC_BASE_URL:-https://www.answer-brief.com}"
+              printf 'SUPABASE_URL=%s\n' "$SUPABASE_URL"
+              printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SUPABASE_SERVICE_ROLE_KEY"
+              printf 'CAREER_OS_OWNER_EMAIL=%s\n' "${CAREER_OS_OWNER_EMAIL:-tomas@nieves.com}"
+              printf 'CAREER_OS_EXECUTION_MODE=%s\n' "${CAREER_OS_EXECUTION_MODE:-workday_first_submit}"
+            } > "$CAREER_OS_RUNTIME/.env.local"
+            echo "Canonical Career OS runtime environment file restored from GitHub secrets."
+          fi
           rsync -a --delete \
             --exclude='.git/' \
             --exclude='.env' \

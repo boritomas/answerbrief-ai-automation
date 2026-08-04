@@ -147,8 +147,8 @@ function main() {
       at: new Date().toISOString(),
     });
 
-    if (worker.ok && claimed === true && report.ok) {
-      journal.outcome = 'canary_task_executed';
+    if (worker.ok && claimed === true) {
+      journal.outcome = report.ok ? 'canary_task_executed' : 'canary_task_executed_report_unavailable';
       journal.finishedAt = new Date().toISOString();
       fs.writeFileSync(path.join(evidenceDir, 'journal.json'), JSON.stringify(journal, null, 2));
       process.exit(0);

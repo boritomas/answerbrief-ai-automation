@@ -86,6 +86,22 @@ test('approved queue workflow drains with the batch worker', () => {
   assert.doesNotMatch(workflow, /npm run supervisor 2>&1 \| tee "\.career-os-ci\/\$\{GITHUB_RUN_ID\}\/approved-queue-supervisor\.log"/);
 });
 
+test('Mac canary reports no eligible applications without failing infrastructure checks', () => {
+  const workflow = readRepositoryFile('.github/workflows/career-os-mac-production.yml');
+  const supervisor = read('scripts/career-os-autonomous-supervisor.mjs');
+  assert.match(workflow, /no_eligible_canary_after_refresh/);
+  assert.match(workflow, /No browser-worker eligible application is currently claimable/);
+  assert.match(supervisor, /canary_task_executed_report_unavailable/);
+  assert.match(supervisor, /worker\.ok && claimed === true/);
+});
+
+test('approved queue workflow can restore runtime env after a Mac reboot', () => {
+  const workflow = readRepositoryFile('.github/workflows/career-os-approved-queue.yml');
+  assert.match(workflow, /Canonical Career OS runtime environment file restored from GitHub secrets/);
+  assert.match(workflow, /printf 'APP_BASE_URL=%s\\n'/);
+  assert.match(workflow, /printf 'SUPABASE_SERVICE_ROLE_KEY=%s\\n'/);
+});
+
 test('approved queue dashboard labels batch and one-off actions distinctly', () => {
   const controls = read('app/founder-dashboard/founder-run-controls.tsx');
   assert.match(controls, /Start Approved Queue Run/);

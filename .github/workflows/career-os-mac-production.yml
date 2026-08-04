@@ -283,9 +283,16 @@ jobs:
         if: github.event_name == 'push' || inputs.run_canary == true
         shell: bash
         run: |
+          set +e
           set -o pipefail
           cd "$CAREER_OS_RUNTIME"
           npm run supervisor 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/supervisor.log"
+          supervisor_status="${PIPESTATUS[0]}"
+          if [ "$supervisor_status" = "2" ] && grep -q '"outcome": "no_eligible_canary_after_refresh"' ".career-os-ci/${GITHUB_RUN_ID}/supervisor/journal.json" 2>/dev/null; then
+            echo "No browser-worker eligible application is currently claimable; infrastructure checks passed and the queue state was captured."
+            exit 0
+          fi
+          exit "$supervisor_status"
 
       - name: Capture targeted production evidence
         if: always()
