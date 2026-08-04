@@ -105,6 +105,11 @@ test('browser companion forwards Greenhouse canary authorization into claims', (
   assert.match(worker, /if \(isGreenhouseSubmitCanaryConfiguredFor\(application as QueueApplication, overrides\)\) return 'queued';/);
   assert.match(worker, /hasAny\(`\$\{lifecycleStage\} \$\{browserWorkerStatus\}`, \['waiting_on_tomas', 'blocked_technical', 'completed_waiting_for_user'\]\)/);
   assert.match(worker, /productionProcessedToday\(applications\) >= dailyLimit && !authorizedGreenhouseCanary/);
+  assert.match(worker, /payloadDebug/);
+  assert.match(worker, /payloadReason: 'quality_gate_not_submit_ready'/);
+  assert.match(worker, /ensureAuthorizedInlinePackageArtifacts/);
+  assert.match(worker, /career_os_authorized_browser_worker_package_repair_v1/);
+  assert.match(worker, /if \(hasAny\(text, \['quality_hold', 'hold_for_quality'\]\)\) \{/);
 });
 
 test('Mac canary reports no eligible applications without failing infrastructure checks', () => {

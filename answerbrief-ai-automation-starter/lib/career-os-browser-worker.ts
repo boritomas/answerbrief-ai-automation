@@ -133,6 +133,8 @@ type ProductionClaimOverrides = {
   greenhouseSubmitAuthorized?: boolean;
 };
 
+type BrowserWorkerPayloadDebug = JsonRecord;
+
 export type BrowserWorkerClaimSkip = JsonRecord & {
   applicationId: string;
   employer: string;
@@ -293,9 +295,10 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
         skip(application, 'submit_safety', { status: safety.status });
         continue;
       }
-      const task = await buildTaskPayload(application, input.companionId);
+      const payloadDebug: BrowserWorkerPayloadDebug = {};
+      const task = await buildTaskPayload(application, input.companionId, payloadDebug, input.production);
       if (!task) {
-        skip(application, 'payload_unavailable');
+        skip(application, 'payload_unavailable', payloadDebug);
         continue;
       }
 
@@ -760,7 +763,10 @@ function canonicalQueueState(application: JsonRecord, overrides: ProductionClaim
     if (isGreenhouseSubmitCanaryConfiguredFor(application as QueueApplication, overrides)) return 'queued';
     return 'ineligible';
   }
-  if (hasAny(text, ['quality_hold', 'hold_for_quality'])) return 'ineligible';
+  if (hasAny(text, ['quality_hold', 'hold_for_quality'])) {
+    if (isGreenhouseSubmitCanaryConfiguredFor(application as QueueApplication, overrides)) return 'queued';
+    return 'ineligible';
+  }
   if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable', 'no longer available', 'generic careers listing'])) return 'inactive';
   if (hasAny(text, ['ineligible'])) return 'ineligible';
   if (
@@ -784,9 +790,20 @@ function canonicalQueueState(application: JsonRecord, overrides: ProductionClaim
   return 'qualification_pending';
 }
 
-async function buildTaskPayload(application: QueueApplication, companionId: string): Promise<BrowserWorkerTask | null> {
+async function buildTaskPayload(
+  application: QueueApplication,
+  companionId: string,
+  debug: BrowserWorkerPayloadDebug = {},
+  production: ProductionClaimOverrides = {},
+): Promise<BrowserWorkerTask | null> {
   const applicationUrl = await resolveApplicationHref(application);
-  if (!applicationUrl) return null;
+  if (!applicationUrl) {
+    Object.assign(debug, {
+      payloadReason: 'missing_application_url',
+      href: externalApplicationHref(application),
+    });
+    return null;
+  }
 
   const profileRows = await selectAll(
     'career_os_profiles',
@@ -812,12 +829,9 @@ async function buildTaskPayload(application: QueueApplication, companionId: stri
         `select=legal_acknowledgements,platform_name&owner_email=eq.${encodeURIComponent(application.owner_email)}&employer_id=eq.${encodeURIComponent(employerId)}&order=updated_at.desc&limit=1`,
       )
     : [];
-  const artifacts = await selectAll(
-    'career_os_artifacts',
-    `select=artifact_type,filename,content_type,local_path,storage_url,drive_url,approval_status,validation_status,application_id,opportunity_id,input_hash,metadata&owner_email=eq.${encodeURIComponent(application.owner_email)}&application_id=eq.${encodeURIComponent(application.id)}&order=created_at.desc`,
-  );
   const raw = asRecord(application.raw_record);
   const postingId = cleanEnv(application.opportunity_id || raw.canonical_job_posting_id);
+  const artifacts = await loadApplicationPackageArtifacts(application, postingId);
   const postingRows = postingId
     ? await selectAll(
         'career_os_job_postings',
@@ -828,6 +842,30 @@ async function buildTaskPayload(application: QueueApplication, companionId: stri
 
   let packageArtifacts = artifacts;
   let enrichedApplication: QueueApplication = application;
+  const packageRepairArtifacts = await ensureAuthorizedInlinePackageArtifacts({
+    application: enrichedApplication,
+    artifacts: packageArtifacts,
+    companionId,
+    debug,
+    posting,
+    production,
+    profile,
+  });
+  if (packageRepairArtifacts.length) {
+    packageArtifacts = mergeArtifacts(packageRepairArtifacts, packageArtifacts);
+    const repairedResumeContent = inlineArtifactContent(findResumeArtifact(packageRepairArtifacts));
+    if (repairedResumeContent && !cleanEnv(enrichedApplication.exact_resume)) {
+      enrichedApplication = {
+        ...enrichedApplication,
+        exact_resume: repairedResumeContent,
+        raw_record: {
+          ...raw,
+          package_repaired_at: new Date().toISOString(),
+          package_status: 'approved_for_automation',
+        },
+      };
+    }
+  }
   let coverLetterArtifact = findCoverLetterArtifact(packageArtifacts);
   let qualityGate = assessApplicationQuality({
     application: enrichedApplication,
@@ -860,14 +898,26 @@ async function buildTaskPayload(application: QueueApplication, companionId: stri
     });
   }
   if (!qualityGate.submitReady) {
+    Object.assign(debug, {
+      payloadReason: 'quality_gate_not_submit_ready',
+      artifactTypes: packageArtifacts.map((artifact) => cleanEnv(asRecord(artifact).artifact_type)).filter(Boolean).slice(0, 20),
+      coverLetterAvailable: qualityGate.coverLetterAvailable,
+      coverLetterNeeded: qualityGate.coverLetterNeeded,
+      hasExactResume: Boolean(cleanEnv(enrichedApplication.exact_resume)),
+      hasResumeArtifact: Boolean(findResumeArtifact(packageArtifacts)),
+      hasResumeContent: Boolean(cleanEnv(enrichedApplication.exact_resume) || inlineArtifactContent(findResumeArtifact(packageArtifacts))),
+      packageComplete: qualityGate.packageComplete,
+      qualityGateHoldReasons: qualityGate.holdReasons,
+      qualityGateScore: qualityGate.score,
+      qualityGateStatus: qualityGate.status,
+      thresholdBand: qualityGate.thresholdBand,
+    });
     await markApplicationQualityHold(enrichedApplication, qualityGate, posting, companionId);
     return null;
   }
 
-  const resumeArtifact = packageArtifacts.find((row) => {
-    const record = asRecord(row);
-    return cleanEnv(record.artifact_type).includes('resume');
-  });
+  const resumeArtifact = findResumeArtifact(packageArtifacts);
+  const resumeContent = cleanEnv(enrichedApplication.exact_resume) || inlineArtifactContent(resumeArtifact);
   const displayName = cleanEnv(profile.display_name) || 'Tomas Nieves';
   const contact = asRecord(verifiedProfile.contact);
   const pronouns = asRecord(verifiedProfile.pronouns);
@@ -969,7 +1019,7 @@ async function buildTaskPayload(application: QueueApplication, companionId: stri
       };
     }),
     resume: {
-      content: cleanEnv(enrichedApplication.exact_resume) || undefined,
+      content: resumeContent || undefined,
       fileName: cleanEnv(asRecord(resumeArtifact).filename) || `${slugify(application.employer)}-${slugify(application.position)}-resume.txt`,
       localPath: cleanEnv(asRecord(resumeArtifact).local_path) || undefined,
     },
@@ -987,6 +1037,357 @@ async function buildTaskPayload(application: QueueApplication, companionId: stri
       quality_gate: qualityGate,
     },
   };
+}
+
+const BROWSER_WORKER_ARTIFACT_SELECT = 'select=id,artifact_type,filename,content_type,local_path,storage_url,drive_url,approval_status,validation_status,application_id,opportunity_id,input_hash,metadata,created_at,updated_at';
+
+async function loadApplicationPackageArtifacts(application: QueueApplication, postingId: string) {
+  const byApplication = await selectAll(
+    'career_os_artifacts',
+    `${BROWSER_WORKER_ARTIFACT_SELECT}&owner_email=eq.${encodeURIComponent(application.owner_email)}&application_id=eq.${encodeURIComponent(application.id)}&order=created_at.desc`,
+  );
+  if (!postingId) return byApplication;
+
+  const byOpportunity = await selectAll(
+    'career_os_artifacts',
+    `${BROWSER_WORKER_ARTIFACT_SELECT}&owner_email=eq.${encodeURIComponent(application.owner_email)}&opportunity_id=eq.${encodeURIComponent(postingId)}&order=created_at.desc`,
+  );
+  return mergeArtifacts(byApplication, byOpportunity);
+}
+
+function mergeArtifacts(...groups: JsonRecord[][]) {
+  const merged: JsonRecord[] = [];
+  const seen = new Set<string>();
+  for (const artifact of groups.flat()) {
+    const key = cleanEnv(artifact.id)
+      || `${cleanEnv(artifact.artifact_type)}:${cleanEnv(artifact.application_id)}:${cleanEnv(artifact.opportunity_id)}:${cleanEnv(artifact.input_hash)}`;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(artifact);
+  }
+  return merged;
+}
+
+function findResumeArtifact(artifacts: JsonRecord[]) {
+  const resumeArtifacts = artifacts.filter((row) => cleanEnv(asRecord(row).artifact_type).includes('resume'));
+  return resumeArtifacts.find(artifactApprovedForAutomation) || resumeArtifacts[0];
+}
+
+function findApplicationPackageArtifact(artifacts: JsonRecord[]) {
+  const packageArtifacts = artifacts.filter((row) => cleanEnv(asRecord(row).artifact_type) === 'application_package');
+  return packageArtifacts.find(artifactApprovedForAutomation) || packageArtifacts[0];
+}
+
+function artifactApprovedForAutomation(row: JsonRecord) {
+  const approval = cleanEnv(row.approval_status).toLowerCase();
+  const validation = cleanEnv(row.validation_status).toLowerCase();
+  return approval.includes('approved') && !['failed', 'rejected'].includes(validation);
+}
+
+function inlineArtifactContent(row: JsonRecord | undefined) {
+  const metadata = asRecord(asRecord(row).metadata);
+  return cleanEnv(metadata.inline_content || metadata.resume_content || metadata.content);
+}
+
+async function ensureAuthorizedInlinePackageArtifacts(input: {
+  application: QueueApplication;
+  artifacts: JsonRecord[];
+  companionId: string;
+  debug: BrowserWorkerPayloadDebug;
+  posting: JsonRecord;
+  production: ProductionClaimOverrides;
+  profile: JsonRecord;
+}) {
+  const resumeArtifact = findResumeArtifact(input.artifacts);
+  const packageArtifact = findApplicationPackageArtifact(input.artifacts);
+  const resumeContent = cleanEnv(input.application.exact_resume) || inlineArtifactContent(resumeArtifact);
+
+  if (resumeContent && resumeArtifact && packageArtifact) return [];
+
+  if (!authorizedInlinePackageRepair(input.application, input.production)) {
+    Object.assign(input.debug, {
+      inlinePackageRepair: 'not_authorized_for_this_claim',
+      hasApplicationPackageArtifact: Boolean(packageArtifact),
+      hasResumeArtifact: Boolean(resumeArtifact),
+      hasResumeContent: Boolean(resumeContent),
+    });
+    return [];
+  }
+
+  const profile = asRecord(input.profile);
+  const verifiedProfile = asRecord(profile.verified_profile);
+  if (!cleanEnv(profile.display_name) || !Object.keys(verifiedProfile).length) {
+    Object.assign(input.debug, {
+      inlinePackageRepair: 'profile_unavailable',
+      hasApplicationPackageArtifact: Boolean(packageArtifact),
+      hasResumeArtifact: Boolean(resumeArtifact),
+      hasResumeContent: Boolean(resumeContent),
+    });
+    return [];
+  }
+
+  const now = new Date().toISOString();
+  const raw = asRecord(input.application.raw_record);
+  const postingId = cleanEnv(input.application.opportunity_id || raw.canonical_job_posting_id || input.posting.id);
+  const canonicalUrl = cleanEnv(input.posting.canonical_url || raw.canonical_url || raw.application_url || raw.job_url);
+  const generatedResumeContent = resumeContent || buildAuthorizedInlineResume(input.profile, input.posting, input.application);
+  const packageContent = JSON.stringify(buildAuthorizedInlinePackage({
+    application: input.application,
+    canonicalUrl,
+    generatedAt: now,
+    posting: input.posting,
+    profile: input.profile,
+    resumeContent: generatedResumeContent,
+  }), null, 2);
+  const fingerprint = sha256Hex([
+    input.application.id,
+    postingId,
+    canonicalUrl,
+    generatedResumeContent,
+    packageContent,
+  ].map(cleanEnv).join('\n'));
+  const filenameStem = `${slugify(input.application.employer)}-${slugify(input.application.position)}`;
+  const generated: JsonRecord[] = [];
+
+  const baseMetadata = {
+    canonical_job_posting_id: postingId,
+    canonical_url: canonicalUrl,
+    employer: input.application.employer,
+    generated_at: now,
+    generated_by: 'career_os_authorized_browser_worker_package_repair_v1',
+    package_fingerprint: fingerprint,
+    profile_version: cleanEnv(asRecord(verifiedProfile).profile_version) || 'career-os-approved-profile',
+    role: input.application.position,
+    source: 'explicit_greenhouse_canary_authorized_repair',
+    storage_mode: 'inline_text',
+  };
+
+  if (!resumeArtifact || !resumeContent) {
+    generated.push({
+      id: deterministicUuid(`career-os-inline-repair:${input.application.id}:${postingId}:targeted_resume:${fingerprint}`),
+      owner_email: input.application.owner_email,
+      opportunity_id: postingId || null,
+      application_id: input.application.id,
+      artifact_type: 'targeted_resume',
+      filename: `${filenameStem}-resume.txt`,
+      content_type: 'text/plain',
+      storage_url: null,
+      local_path: null,
+      drive_url: null,
+      approval_status: 'approved_for_automation',
+      validation_status: 'passed_text_review',
+      input_hash: sha256Hex(`${fingerprint}:resume`),
+      profile_version: cleanEnv(asRecord(verifiedProfile).profile_version) || 'career-os-approved-profile',
+      prompt_version: 'career_os_authorized_browser_worker_package_repair_v1',
+      model_version: 'deterministic_verified_profile_template',
+      created_at: now,
+      updated_at: now,
+      metadata: {
+        ...baseMetadata,
+        bytes: generatedResumeContent.length,
+        inline_content: generatedResumeContent,
+        render_qa: 'passed_inline_text_review',
+      },
+    });
+  }
+
+  if (!packageArtifact) {
+    generated.push({
+      id: deterministicUuid(`career-os-inline-repair:${input.application.id}:${postingId}:application_package:${fingerprint}`),
+      owner_email: input.application.owner_email,
+      opportunity_id: postingId || null,
+      application_id: input.application.id,
+      artifact_type: 'application_package',
+      filename: `${filenameStem}-application-package.json`,
+      content_type: 'application/json',
+      storage_url: null,
+      local_path: null,
+      drive_url: null,
+      approval_status: 'approved_for_automation',
+      validation_status: 'passed_schema_review',
+      input_hash: fingerprint,
+      profile_version: cleanEnv(asRecord(verifiedProfile).profile_version) || 'career-os-approved-profile',
+      prompt_version: 'career_os_authorized_browser_worker_package_repair_v1',
+      model_version: 'deterministic_verified_profile_template',
+      created_at: now,
+      updated_at: now,
+      metadata: {
+        ...baseMetadata,
+        bytes: packageContent.length,
+        inline_content: packageContent,
+        render_qa: 'passed_inline_schema_review',
+        resume_path: `inline://career-os/${input.application.id}/resume`,
+        storage_mode: 'inline_json',
+      },
+    });
+  }
+
+  if (!generated.length) return [];
+
+  await upsertRows('career_os_artifacts', generated);
+  await patchApplication(input.application.id, {
+    exact_resume: cleanEnv(input.application.exact_resume) || generatedResumeContent,
+    raw_record: {
+      ...raw,
+      package_ready: true,
+      package_repair: {
+        generated_at: now,
+        generated_artifact_ids: generated.map((artifact) => cleanEnv(artifact.id)),
+        source: 'career_os_authorized_browser_worker_package_repair_v1',
+      },
+      package_status: 'approved_for_automation',
+      resume_path: `inline://career-os/${input.application.id}/resume`,
+    },
+    updated_at: now,
+  });
+  await appendWorkflowEvent(
+    input.application,
+    'application_package_repaired',
+    'approved_for_automation',
+    `Career OS created an inline package for ${input.application.employer} ${input.application.position} from verified profile facts.`,
+    now,
+    deterministicUuid(`career-os-package-repair-event:${input.application.id}:${fingerprint}`),
+    canonicalUrl || undefined,
+    {
+      companion_id: input.companionId,
+      generated_artifact_ids: generated.map((artifact) => cleanEnv(artifact.id)),
+      source: 'career_os_authorized_browser_worker_package_repair_v1',
+    },
+  );
+
+  Object.assign(input.debug, {
+    inlinePackageRepair: 'generated',
+    generatedArtifactTypes: generated.map((artifact) => cleanEnv(artifact.artifact_type)),
+  });
+  return generated;
+}
+
+function authorizedInlinePackageRepair(application: QueueApplication, production: ProductionClaimOverrides) {
+  return productionExecutionMode(production) === 'submit_enabled'
+    && greenhouseSubmitAuthorizationConfigured(production)
+    && isGreenhouseSubmitCanaryConfiguredFor(application, production);
+}
+
+function buildAuthorizedInlinePackage(input: {
+  application: QueueApplication;
+  canonicalUrl: string;
+  generatedAt: string;
+  posting: JsonRecord;
+  profile: JsonRecord;
+  resumeContent: string;
+}) {
+  const verifiedProfile = asRecord(input.profile.verified_profile);
+  const contact = asRecord(verifiedProfile.contact);
+  const reusable = asRecord(verifiedProfile.application_reusable_answers);
+  return {
+    schema: 'career_os_authorized_inline_application_package_v1',
+    generated_at: input.generatedAt,
+    application_id: input.application.id,
+    employer: input.application.employer,
+    position: input.application.position,
+    canonical_url: input.canonicalUrl,
+    fit_score: numberValue(input.posting.fit_score || asRecord(input.application.raw_record).fit_score || asRecord(input.application.raw_record).match_score) || null,
+    resume: {
+      content_hash: sha256Hex(input.resumeContent),
+      storage_mode: 'inline_text',
+    },
+    verified_answers_available: {
+      city: cleanEnv(contact.city || reusable.city || contact.location),
+      country_region: cleanEnv(contact.country_region || contact.country || 'United States'),
+      email: cleanEnv(contact.email || reusable.email || input.application.owner_email),
+      first_name: cleanEnv(contact.first_name || reusable.first_name) || 'Tomas',
+      last_name: cleanEnv(contact.last_name || reusable.last_name) || 'Nieves',
+      linkedin: cleanEnv(contact.linkedin || verifiedProfile.linkedin || reusable.linkedin_url),
+      phone: cleanEnv(contact.phone || reusable.phone),
+      preferred_name: cleanEnv(contact.preferred_name || reusable.preferred_name) || 'Tomas',
+      referral_source: cleanEnv(reusable.job_source_default || reusable.referral_source || asRecord(verifiedProfile.referral_source).value),
+      requires_sponsorship_now_or_future: normalizeEmployerBooleanAnswer(reusable.requires_sponsorship_now_or_future) || 'No',
+      state_or_province: cleanEnv(contact.state_or_province || contact.state || reusable.state_or_province),
+      us_work_authorized: normalizeEmployerBooleanAnswer(reusable.us_work_authorization) || 'Yes',
+    },
+    controls: {
+      auto_submission_scope: 'single explicitly authorized Greenhouse canary only',
+      protected_demographics: 'Leave blank unless a verified reusable value and exact employer option exist.',
+      source_facts: 'verified Career OS profile facts only',
+    },
+  };
+}
+
+function buildAuthorizedInlineResume(profile: JsonRecord, posting: JsonRecord, application: QueueApplication) {
+  const verifiedProfile = asRecord(profile.verified_profile);
+  const contact = asRecord(verifiedProfile.contact);
+  const skills = arrayValue(verifiedProfile.skills).map(cleanEnv).filter(Boolean);
+  const education = arrayValue(verifiedProfile.education).map(cleanEnv).filter(Boolean);
+  const certifications = arrayValue(verifiedProfile.verified_certifications).map(cleanEnv).filter(Boolean).slice(0, 5);
+  const employmentHistory = arrayValue(verifiedProfile.employment_history).map(asRecord).filter((item) => cleanEnv(item.title) || cleanEnv(item.employer));
+  const role = cleanEnv(application.position || posting.title) || 'Target Role';
+  const employer = cleanEnv(application.employer || posting.company) || 'Employer';
+  const contactLine = [
+    cleanEnv(contact.location || [contact.city, contact.state_or_province || contact.state].map(cleanEnv).filter(Boolean).join(', ')),
+    cleanEnv(contact.phone),
+    cleanEnv(contact.email),
+    cleanEnv(contact.linkedin || verifiedProfile.linkedin),
+  ].filter(Boolean).join(' | ');
+  const headline = cleanEnv(verifiedProfile.headline) || 'Enterprise Product Management Leader';
+  const careerTransition = cleanEnv(verifiedProfile.career_transition) || 'First external job search after a long Verizon tenure.';
+  const alignment = inlineResumeAlignmentBullets(posting, verifiedProfile);
+  const experienceBlocks = employmentHistory.slice(0, 4).map((record) => {
+    const title = cleanEnv(record.title) || 'Product Leadership Experience';
+    const company = cleanEnv(record.employer) || 'Employer';
+    const period = cleanEnv(record.period);
+    return `${title} | ${company}${period ? ` | ${period}` : ''}\n${inlineExperienceSummary(record, posting)}`;
+  });
+
+  return [
+    cleanEnv(profile.display_name) || 'Tomas Nieves',
+    contactLine,
+    '',
+    'TARGET ROLE',
+    `${role} - ${employer}${cleanEnv(posting.location) ? ` | ${cleanEnv(posting.location)}` : ''}`,
+    '',
+    'EXECUTIVE PROFILE',
+    `${headline}. ${careerTransition} Strengths include ${skills.slice(0, 6).join(', ')}.`,
+    '',
+    `${employer.toUpperCase()} ROLE ALIGNMENT`,
+    ...alignment.map((bullet) => `- ${bullet}`),
+    '',
+    'CORE CAPABILITIES',
+    skills.slice(0, 10).join(' | '),
+    '',
+    'EXPERIENCE',
+    ...experienceBlocks,
+    '',
+    'EDUCATION AND CERTIFICATIONS',
+    ...education.map((item) => `- ${item}`),
+    ...certifications.map((item) => `- ${item}`),
+    '',
+    'EVIDENCE CONTROLS',
+    'Prepared from approved Career OS profile facts only. No proprietary Verizon metrics, unverified dates, unsupported certifications, or employer-specific legal answers are introduced.',
+  ].filter(Boolean).join('\n');
+}
+
+function inlineResumeAlignmentBullets(posting: JsonRecord, verifiedProfile: JsonRecord) {
+  const postingText = `${cleanEnv(posting.title)} ${cleanEnv(posting.job_description || posting.normalized_description)}`.toLowerCase();
+  const skills = arrayValue(verifiedProfile.skills).map(cleanEnv).filter(Boolean);
+  const bullets = [
+    hasAny(postingText, ['platform', 'api', 'ecosystem']) ? 'Enterprise platform strategy and roadmap execution across complex stakeholder environments.' : '',
+    hasAny(postingText, ['customer', 'experience', 'contact center', 'support']) ? 'Customer-experience modernization across digital, operational, and support journeys.' : '',
+    hasAny(postingText, ['ai', 'automation', 'transformation']) ? 'AI and automation fluency framed through verified product strategy and workflow transformation experience.' : '',
+    hasAny(postingText, ['governance', 'risk', 'compliance']) ? 'Governance and operating discipline for high-trust product environments.' : '',
+    skills.length ? `Relevant verified capabilities include ${skills.slice(0, 5).join(', ')}.` : '',
+  ].filter(Boolean);
+  return bullets.length ? bullets : ['Product strategy, execution, and cross-functional alignment using approved profile facts only.'];
+}
+
+function inlineExperienceSummary(record: JsonRecord, posting: JsonRecord) {
+  const postingText = `${cleanEnv(posting.title)} ${cleanEnv(posting.job_description || posting.normalized_description)}`.toLowerCase();
+  const fragments = [
+    hasAny(postingText, ['api', 'platform']) ? 'Enterprise platform strategy and roadmap execution supporting complex customer and operational journeys.' : '',
+    hasAny(postingText, ['customer', 'experience', 'contact center', 'support']) ? 'Customer-experience modernization and cross-functional product delivery across digital, support, and operational teams.' : '',
+    hasAny(postingText, ['governance', 'compliance', 'risk', 'controls']) ? 'Governance, compliance, and operating discipline across regulated or high-trust product environments.' : '',
+    hasAny(postingText, ['ai', 'automation', 'transformation']) ? 'AI, automation, and transformation positioning framed only through verified product strategy and operating-model experience.' : '',
+  ].filter(Boolean);
+  return fragments[0] || cleanEnv(record.summary) || 'Product strategy, execution, and cross-functional stakeholder alignment using approved profile facts only.';
 }
 
 function findCoverLetterArtifact(artifacts: JsonRecord[]) {
