@@ -41,10 +41,15 @@
   text-decoration: none;
 }
 
-.metricGrid {
+.metricGrid,
+.pipeline,
+.twoColumn {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 16px;
+}
+
+.metricGrid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   max-width: 1280px;
   margin: 0 auto 24px;
 }
@@ -100,6 +105,84 @@
   color: #6941c6;
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.pipeline {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+.stage {
+  border-radius: 14px;
+  padding: 16px;
+  background: #f9fafb;
+  text-align: center;
+}
+
+.stage strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 1.4rem;
+}
+
+.stage span {
+  color: #475467;
+  font-size: 0.9rem;
+}
+
+.twoColumn {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.twoColumn .panel {
+  width: auto;
+  margin: 0 0 24px;
+}
+
+.intelligenceList {
+  margin: 0;
+}
+
+.intelligenceList div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid #eaecf0;
+}
+
+.intelligenceList div:last-child {
+  border-bottom: 0;
+}
+
+.intelligenceList dt {
+  color: #475467;
+}
+
+.intelligenceList dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+
+.intelligenceList small {
+  color: #667085;
+}
+
+.priorityList {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.priorityList li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: #344054;
 }
 
 .qualifiedRoleGrid {
@@ -192,6 +275,10 @@
   .metricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .pipeline {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -206,7 +293,9 @@
   }
 
   .metricGrid,
-  .qualifiedRoleGrid {
+  .pipeline,
+  .qualifiedRoleGrid,
+  .twoColumn {
     grid-template-columns: 1fr;
   }
 

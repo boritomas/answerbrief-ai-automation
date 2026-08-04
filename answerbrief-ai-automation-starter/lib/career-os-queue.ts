@@ -114,7 +114,6 @@ export type QueueProcessorResult = {
 };
 
 const HUMAN_BLOCKER_TERMS = [
-  'captcha',
   'identity',
   'mfa',
   'security code',
@@ -126,8 +125,6 @@ const HUMAN_BLOCKER_TERMS = [
   'approval',
   'attestation',
   'nda',
-  'account',
-  'workday',
   'employment_start_month',
   'employment date',
   'employment history facts',
@@ -143,6 +140,14 @@ const HUMAN_BLOCKER_TERMS = [
 const TECHNICAL_BLOCKER_TERMS = [
   'technical blocker',
   'technical failure',
+  'unsupported browser or ats operation',
+  'unsupported browser operation',
+  'unsupported ats operation',
+  'selector not found',
+  'navigation timeout',
+  'browser timeout',
+  'resume upload failure',
+  'file picker',
   'upload_gate',
   'unsupported',
   'file-upload limitation',
