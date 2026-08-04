@@ -190,14 +190,15 @@ function checkProductionPolicies() {
     fail('policy:workday_first_submit', 'Workday-first submit mode was not allowed.');
   }
 
+  const greenhouseCanaryId = clean(process.env.CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID) || 'app-greenhouse-canary';
   const greenhouseSubmit = resolveProductionExecutionPolicy({
     adapterId: 'greenhouse',
     env: {
       CAREER_OS_EXECUTION_MODE: 'submit_enabled',
-      CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID: 'app-greenhouse-canary',
+      CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID: greenhouseCanaryId,
       CAREER_OS_SUBMIT_RUN_AUTHORIZATION: 'health-check',
     },
-    task: task(),
+    task: task({ applicationId: greenhouseCanaryId }),
   });
   if (greenhouseSubmit.allowed && greenhouseSubmit.submitAllowed) {
     pass('policy:greenhouse_submit_canary', 'Greenhouse canary submit is allowed only with explicit application id and authorization.');
