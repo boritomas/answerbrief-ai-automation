@@ -17,12 +17,14 @@ loadDotEnv(path.join(root, '.env.local'));
 const companionId = clean(process.env.CAREER_OS_COMPANION_ID) || `${os.hostname()}-career-os-companion`;
 const ownerEmail = clean(process.env.CAREER_OS_OWNER_EMAIL) || 'tomas@nieves.com';
 const baseUrl = clean(process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://127.0.0.1:3000');
-const workerToken = clean(process.env.CAREER_OS_BROWSER_WORKER_TOKEN);
+const staticWorkerToken = clean(process.env.CAREER_OS_BROWSER_WORKER_TOKEN);
+const oidcAudience = clean(process.env.CAREER_OS_GITHUB_OIDC_AUDIENCE) || 'answerbrief-career-os';
 const stateDir = path.join(root, '.career-os-browser-worker');
 const userDataDir = path.join(stateDir, 'chrome-profile');
 const screenshotDir = path.join(stateDir, 'screenshots');
 const tempDir = path.join(stateDir, 'tmp');
 const pollIntervalMs = Number(process.env.CAREER_OS_WORKER_POLL_MS || '15000');
+let githubOidcTokenCache = { value: '', expiresAtMs: 0 };
 
 for (const dir of [stateDir, userDataDir, screenshotDir, tempDir]) {
   fs.mkdirSync(dir, { recursive: true });
@@ -30,8 +32,8 @@ for (const dir of [stateDir, userDataDir, screenshotDir, tempDir]) {
 
 const mode = process.argv[2] || 'start';
 
-if (!workerToken) {
-  console.error('CAREER_OS_BROWSER_WORKER_TOKEN is required.');
+if (!staticWorkerToken && !canRequestGitHubActionsOidcToken()) {
+  console.error('CAREER_OS_BROWSER_WORKER_TOKEN or GitHub Actions OIDC request environment is required.');
   process.exit(1);
 }
 
@@ -327,6 +329,7 @@ async function assertSafeToSubmit(task) {
 }
 
 async function workerGet(route) {
+  const workerToken = await currentWorkerToken();
   const response = await fetch(new URL(route, baseUrl), {
     headers: { Authorization: `Bearer ${workerToken}` },
   });
@@ -339,6 +342,7 @@ async function workerPost(route, body, options = {}) {
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
+      const workerToken = await currentWorkerToken();
       const response = await fetch(new URL(route, baseUrl), {
         method: 'POST',
         headers: {
@@ -351,6 +355,11 @@ async function workerPost(route, body, options = {}) {
       if (!response.ok) {
         if (options.allowConflict && response.status === 409) return json;
         const message = `${route} failed with ${response.status}: ${json.error || json.message || 'unknown error'}`;
+        if (response.status === 401 && canRequestGitHubActionsOidcToken() && attempt < attempts) {
+          githubOidcTokenCache = { value: '', expiresAtMs: 0 };
+          lastError = new Error(message);
+          continue;
+        }
         if (!isTransientWorkerApiFailure(response.status) || attempt === attempts) throw new Error(message);
         lastError = new Error(message);
       } else {
@@ -363,6 +372,48 @@ async function workerPost(route, body, options = {}) {
     await delay(Math.min(15000, 1000 * attempt * attempt));
   }
   throw lastError instanceof Error ? lastError : new Error(`${route} failed`);
+}
+
+async function currentWorkerToken() {
+  if (canRequestGitHubActionsOidcToken()) return currentGitHubActionsOidcToken();
+  if (staticWorkerToken) return staticWorkerToken;
+  throw new Error('Browser worker authentication is not configured.');
+}
+
+function canRequestGitHubActionsOidcToken() {
+  return Boolean(clean(process.env.ACTIONS_ID_TOKEN_REQUEST_URL) && clean(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN));
+}
+
+async function currentGitHubActionsOidcToken() {
+  const now = Date.now();
+  if (githubOidcTokenCache.value && githubOidcTokenCache.expiresAtMs - 60_000 > now) {
+    return githubOidcTokenCache.value;
+  }
+
+  const requestUrl = new URL(clean(process.env.ACTIONS_ID_TOKEN_REQUEST_URL));
+  requestUrl.searchParams.set('audience', oidcAudience);
+  const response = await fetch(requestUrl, {
+    headers: { Authorization: `bearer ${clean(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN)}` },
+  });
+  if (!response.ok) throw new Error(`GitHub OIDC token request failed with ${response.status}`);
+  const json = await response.json().catch(() => ({}));
+  const token = clean(json.value);
+  if (!token) throw new Error('GitHub OIDC token request returned an empty token.');
+  githubOidcTokenCache = {
+    value: token,
+    expiresAtMs: jwtExpiresAtMs(token) || Date.now() + 4 * 60_000,
+  };
+  return token;
+}
+
+function jwtExpiresAtMs(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1] || '', 'base64url').toString('utf8'));
+    const exp = Number(payload.exp || 0);
+    return exp > 0 ? exp * 1000 : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function isTransientWorkerApiFailure(status) {

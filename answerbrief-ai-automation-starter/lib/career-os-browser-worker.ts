@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { buildCandidateProfile, employmentDateValidation, type CandidateEmploymentRecord } from './career-os-candidate-profile';
 import {
@@ -241,81 +242,86 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
   ) as QueueApplication[];
 
   for (const application of applications) {
-    if (queuePaused && !isExplicitlyResumedApplication(application)) {
-      debugClaimSkip(application, 'queue_paused');
-      continue;
-    }
-    if (!isBrowserWorkerEligible(application, input.companionId)) {
-      debugClaimSkip(application, 'not_browser_worker_eligible', {
-        state: canonicalQueueState(application),
-        workerStatus: cleanEnv(asRecord(asRecord(application.raw_record).browser_worker).status),
-        href: externalApplicationHref(application),
-      });
-      continue;
-    }
-    const productionGate = productionClaimGate(application, applications);
-    if (!productionGate.ok) {
-      debugClaimSkip(application, 'production_gate', {
-        reason: productionGate.reason,
-        status: productionGate.status,
-      });
-      if (productionGate.persist) {
-        await markProductionClaimGate(application, productionGate, input.companionId);
+    try {
+      if (queuePaused && !isExplicitlyResumedApplication(application)) {
+        debugClaimSkip(application, 'queue_paused');
+        continue;
       }
-      continue;
-    }
-    const safety = await checkBrowserWorkerSubmitSafety({
-      applicationId: application.id,
-      ownerEmail: input.ownerEmail,
-    });
-    if (!safety.ok) {
-      debugClaimSkip(application, 'submit_safety', { status: safety.status });
-      continue;
-    }
-    const task = await buildTaskPayload(application, input.companionId);
-    if (!task) {
-      debugClaimSkip(application, 'payload_unavailable');
-      continue;
-    }
+      if (!isBrowserWorkerEligible(application, input.companionId)) {
+        debugClaimSkip(application, 'not_browser_worker_eligible', {
+          state: canonicalQueueState(application),
+          workerStatus: cleanEnv(asRecord(asRecord(application.raw_record).browser_worker).status),
+          href: externalApplicationHref(application),
+        });
+        continue;
+      }
+      const productionGate = productionClaimGate(application, applications);
+      if (!productionGate.ok) {
+        debugClaimSkip(application, 'production_gate', {
+          reason: productionGate.reason,
+          status: productionGate.status,
+        });
+        if (productionGate.persist) {
+          await markProductionClaimGate(application, productionGate, input.companionId);
+        }
+        continue;
+      }
+      const safety = await checkBrowserWorkerSubmitSafety({
+        applicationId: application.id,
+        ownerEmail: input.ownerEmail,
+      });
+      if (!safety.ok) {
+        debugClaimSkip(application, 'submit_safety', { status: safety.status });
+        continue;
+      }
+      const task = await buildTaskPayload(application, input.companionId);
+      if (!task) {
+        debugClaimSkip(application, 'payload_unavailable');
+        continue;
+      }
 
-    const now = new Date().toISOString();
-    const runId = deterministicUuid(`career-os-browser-claim:${application.id}:${input.companionId}:${now}`);
-    const raw = asRecord(application.raw_record);
-    const originalLifecycleStage = cleanEnv(application.lifecycle_stage);
-    const originalUpdatedAt = cleanEnv(application.updated_at);
-    const patch = {
-      lifecycle_stage: 'browser_worker_running',
-      next_action: `Career OS local browser companion ${input.companionId} claimed the application for real employer-site execution.`,
-      raw_record: {
-        ...raw,
-        browser_worker: {
-          claimed_at: now,
-          companion_id: input.companionId,
-          claim_token: runId,
-          last_heartbeat_at: now,
-          status: 'running',
+      const now = new Date().toISOString();
+      const runId = deterministicUuid(`career-os-browser-claim:${application.id}:${input.companionId}:${now}`);
+      const raw = asRecord(application.raw_record);
+      const originalLifecycleStage = cleanEnv(application.lifecycle_stage);
+      const originalUpdatedAt = cleanEnv(application.updated_at);
+      const patch = {
+        lifecycle_stage: 'browser_worker_running',
+        next_action: `Career OS local browser companion ${input.companionId} claimed the application for real employer-site execution.`,
+        raw_record: {
+          ...raw,
+          browser_worker: {
+            claimed_at: now,
+            companion_id: input.companionId,
+            claim_token: runId,
+            last_heartbeat_at: now,
+            status: 'running',
+          },
+          execution_engine: 'playwright_local_companion',
+          execution_status: 'running',
+          production_claim: {
+            daily_limit: productionGate.dailyLimit,
+            execution_mode: productionGate.executionMode,
+            platform: productionGate.platform,
+          },
         },
-        execution_engine: 'playwright_local_companion',
-        execution_status: 'running',
-        production_claim: {
-          daily_limit: productionGate.dailyLimit,
-          execution_mode: productionGate.executionMode,
-          platform: productionGate.platform,
-        },
-      },
-      updated_at: now,
-    };
-    const claimQuery = [
-      `select=*`,
-      `id=eq.${encodeURIComponent(application.id)}`,
-      originalUpdatedAt
-        ? `updated_at=eq.${encodeURIComponent(originalUpdatedAt)}`
-        : `lifecycle_stage=eq.${encodeURIComponent(originalLifecycleStage)}`,
-    ].join('&');
-    const claimedRows = await patchApplications(claimQuery, patch);
-    if (!claimedRows.length) continue;
-    await appendWorkflowEvent(application, 'browser_worker_claimed', 'running', patch.next_action, now, runId, task.applicationUrl);
-    return task;
+        updated_at: now,
+      };
+      const claimQuery = [
+        `select=*`,
+        `id=eq.${encodeURIComponent(application.id)}`,
+        originalUpdatedAt
+          ? `updated_at=eq.${encodeURIComponent(originalUpdatedAt)}`
+          : `lifecycle_stage=eq.${encodeURIComponent(originalLifecycleStage)}`,
+      ].join('&');
+      const claimedRows = await patchApplications(claimQuery, patch);
+      if (!claimedRows.length) continue;
+      await appendWorkflowEvent(application, 'browser_worker_claimed', 'running', patch.next_action, now, runId, task.applicationUrl);
+      return task;
+    } catch (error) {
+      debugClaimSkip(application, 'claim_exception', { message: safeWorkerErrorMessage(error) });
+      continue;
+    }
   }
 
   return null;
@@ -330,6 +336,18 @@ function debugClaimSkip(application: QueueApplication, reason: string, details: 
     reason,
     ...details,
   }));
+}
+
+function safeWorkerErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || 'Unknown error');
+  const secrets = [
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    cleanEnv(process.env.CAREER_OS_BROWSER_WORKER_TOKEN),
+  ].filter(Boolean);
+  return secrets
+    .reduce((current, secret) => current.split(secret).join('[redacted]'), message)
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/g, 'Bearer [redacted]')
+    .slice(0, 500);
 }
 
 function buildBrowserWorkerTechnicalDiagnostic(
@@ -967,8 +985,7 @@ async function ensureCoverLetterArtifact(input: {
     profile: input.profile,
   });
   const filename = coverLetterFilename(input.application);
-  const coverLetterDir = path.join(process.cwd(), '.career-os-browser-worker', 'cover-letters');
-  fs.mkdirSync(coverLetterDir, { recursive: true });
+  const coverLetterDir = writableCareerOsDirectory('cover-letters');
   const localPath = path.join(coverLetterDir, `${input.application.id}-${filename}`);
   fs.writeFileSync(localPath, generated.content, 'utf8');
   const hash = generated.hash || sha256Hex(generated.content);
@@ -1060,6 +1077,25 @@ async function ensureCoverLetterArtifact(input: {
     },
   );
   return artifact;
+}
+
+function writableCareerOsDirectory(name: string) {
+  const candidates = [
+    path.join(process.cwd(), '.career-os-browser-worker', name),
+    path.join(os.tmpdir(), 'career-os-browser-worker', name),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      fs.mkdirSync(candidate, { recursive: true });
+      fs.accessSync(candidate, fs.constants.W_OK);
+      return candidate;
+    } catch {
+      // Keep looking for a writable runtime directory.
+    }
+  }
+
+  throw new Error(`Career OS could not create a writable ${name} directory.`);
 }
 
 async function markApplicationQualityHold(application: QueueApplication, qualityGate: ApplicationQualityGate, posting: JsonRecord, companionId: string) {

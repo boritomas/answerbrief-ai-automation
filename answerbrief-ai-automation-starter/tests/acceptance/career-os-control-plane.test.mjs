@@ -47,6 +47,15 @@ test('OpenHands is the first repair provider', () => {
   assert.match(workflow, /ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER: openhands,gemini,opencode,aider,claude-code,codex/);
 });
 
+test('browser companion refreshes GitHub OIDC tokens during retries', () => {
+  const companion = read('scripts/career-os-browser-companion.mjs');
+  assert.match(companion, /currentGitHubActionsOidcToken/);
+  assert.match(companion, /ACTIONS_ID_TOKEN_REQUEST_URL/);
+  assert.match(companion, /ACTIONS_ID_TOKEN_REQUEST_TOKEN/);
+  assert.match(companion, /response\.status === 401/);
+  assert.match(companion, /githubOidcTokenCache = \{ value: '', expiresAtMs: 0 \}/);
+});
+
 test('Mac installer activates runner, control plane, and OpenHands integration', () => {
   const installer = readRepositoryFile('INSTALL_CAREER_OS_RUNNER.command');
   assert.match(installer, /bootstrap-career-os-mac-runner\.sh/);
