@@ -1,4 +1,5 @@
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
+import { browserWorkerHealth } from '@/lib/career-os-browser-worker';
 import { getCareerOsStatus } from '@/lib/career-os-status';
 import { FounderRunControls } from './founder-run-controls';
 import { QualifiedRoleControls } from './qualified-role-controls';
@@ -16,6 +17,7 @@ function asRecord(value: unknown): JsonRecord {
 
 export default async function FounderDashboardPage() {
   const status = await getCareerOsStatus();
+  const workerHealth = await browserWorkerHealth(status.evidence.ownerEmail).catch(() => null);
   const trust = status.operationalTrust;
   const counts = trust.verifiedCounts;
   const workflow = status.dailyWorkflow;
@@ -148,6 +150,7 @@ export default async function FounderDashboardPage() {
         </div>
         <FounderRunControls
           approvedCount={approvedOrQueued}
+          eligibleCount={workerHealth?.eligible}
           ownerEmail={status.evidence.ownerEmail}
           refreshDiscoveryToken={refreshDiscoveryToken}
           runNowToken={runNowToken}

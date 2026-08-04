@@ -48,11 +48,15 @@ test('founder dashboard uses action-specific signed production controls', async 
   assert.match(source, /action: 'run_now'/);
   assert.match(source, /action: 'refresh_discovery'/);
   assert.match(source, /FounderRunControls/);
+  assert.match(source, /browserWorkerHealth/);
+  assert.match(source, /eligibleCount=\{workerHealth\?\.eligible\}/);
   assert.match(source, /ownerEmail=\{status\.evidence\.ownerEmail\}/);
   assert.match(controls, /runNowToken/);
   assert.match(controls, /refreshDiscoveryToken/);
   assert.match(controls, /\/api\/career-os\/run-one/);
   assert.match(controls, /\/api\/career-os\/actions/);
+  assert.match(controls, /0 currently claimable under Workday-first production gates/);
+  assert.match(controls, /oneOffDisabled/);
 });
 
 test('founder dashboard exposes verified browser-worker execution state', async () => {

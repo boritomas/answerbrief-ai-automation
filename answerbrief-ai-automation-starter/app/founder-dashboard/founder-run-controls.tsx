@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react';
 
 type Props = {
   approvedCount?: number;
+  eligibleCount?: number;
   ownerEmail: string;
   runNowToken: string;
   refreshDiscoveryToken: string;
@@ -55,18 +56,19 @@ type ControlAction = 'run_now' | 'refresh_discovery' | 'run_approved_queue';
 
 export function FounderRunControls({
   approvedCount = 0,
+  eligibleCount,
   ownerEmail,
   runNowToken,
   refreshDiscoveryToken,
   tokenExpiresAt,
 }: Props) {
+  const hasEligibilitySignal = typeof eligibleCount === 'number';
   const [message, setMessage] = useState(
-    approvedCount > 0
-      ? `${approvedCount} approved application${approvedCount === 1 ? '' : 's'} ready for autonomous processing.`
-      : 'Idle. Ready to refresh jobs or run one eligible production application.',
+    productionControlMessage(approvedCount, eligibleCount),
   );
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'blocked' | 'error'>('idle');
   const [isPending, startTransition] = useTransition();
+  const oneOffDisabled = isPending || (hasEligibilitySignal && eligibleCount < 1);
   const router = useRouter();
 
   function execute(action: ControlAction, actionToken: string) {
@@ -127,7 +129,7 @@ export function FounderRunControls({
         <button className="button primary" disabled={isPending || approvedCount < 1} onClick={() => execute('run_approved_queue', runNowToken)} type="button">
           {approvedCount > 0 ? `Start Approved Queue Run (${approvedCount})` : 'Start Approved Queue Run'}
         </button>
-        <button className="button secondary" disabled={isPending} onClick={() => execute('run_now', runNowToken)} type="button">Run Next Eligible Application</button>
+        <button className="button secondary" disabled={oneOffDisabled} onClick={() => execute('run_now', runNowToken)} type="button">Run Next Eligible Application</button>
         <button className="button secondary" disabled={isPending} onClick={() => execute('refresh_discovery', refreshDiscoveryToken)} type="button">Refresh Job Pool</button>
         <button className="button secondary" disabled={isPending} onClick={() => window.location.reload()} type="button">Refresh Status</button>
       </div>
@@ -142,4 +144,15 @@ function loadingMessage(action: ControlAction, approvedCount: number) {
     return `Starting approved queue run for up to ${approvedCount} approved application${approvedCount === 1 ? '' : 's'}...`;
   }
   return 'Starting one eligible production application...';
+}
+
+function productionControlMessage(approvedCount: number, eligibleCount?: number) {
+  if (approvedCount < 1) return 'Idle. Ready to refresh jobs or run one eligible production application.';
+  if (typeof eligibleCount !== 'number') {
+    return `${approvedCount} approved application${approvedCount === 1 ? '' : 's'} ready for autonomous processing.`;
+  }
+  if (eligibleCount > 0) {
+    return `${approvedCount} approved/queued application${approvedCount === 1 ? '' : 's'}; ${eligibleCount} currently claimable by the browser worker.`;
+  }
+  return `${approvedCount} approved/queued application${approvedCount === 1 ? '' : 's'}; 0 currently claimable under Workday-first production gates.`;
 }
