@@ -701,6 +701,7 @@ function isBrowserWorkerEligible(application: QueueApplication, companionId: str
     && !isExplicitlyResumedApplication(application)
     && !recoverableLegacyAdapterState(application)
     && !explicitlyQueued
+    && !isGreenhouseSubmitCanaryConfiguredFor(application)
     && !isWorkdayAuthorizedAccountGate(application)
   ) {
     return false;
@@ -1977,14 +1978,17 @@ function isProductionQualified(application: QueueApplication) {
   if (hasAny(text, ['deferred_phase_two_greenhouse']) && !isGreenhouseSubmitCanaryConfiguredFor(application)) return false;
   if (hasAny(text, ['ineligible', 'not_qualified', 'discovered', 'quality_hold', 'hold_for_quality'])) return false;
   if (lifecycleStage === 'qualification_pending' || executionStatus === 'qualification_pending') return false;
-  if (hasAny(`${raw.production_outcome || ''} ${raw.execution_status || ''} ${asRecord(raw.browser_worker_last_report).status || ''}`, [
+  const productionStateText = `${raw.production_outcome || ''} ${raw.execution_status || ''} ${asRecord(raw.browser_worker_last_report).status || ''}`;
+  if (hasAny(productionStateText, [
     'deferred_today',
     'phase_two',
+    'waiting_on_tomas',
+  ]) && !isGreenhouseSubmitCanaryConfiguredFor(application)) return false;
+  if (hasAny(productionStateText, [
     'unsupported_workday_state',
     'ineligible',
     'not_qualified',
     'terminal_failure',
-    'waiting_on_tomas',
     'deferred_hard_workday_selector',
   ])) return false;
   if (hasAny(text, ['qualified', 'package_ready', 'ready_for_automation', 'qualified_pending_application', 'queued'])) return true;
