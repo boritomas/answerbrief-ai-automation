@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { authorizeBrowserWorker, claimNextBrowserWorkerTask } from '@/lib/career-os-browser-worker';
+import { claimNextBrowserWorkerTask } from '@/lib/career-os-browser-worker';
+import { authorizeBrowserWorker } from '@/lib/career-os-worker-auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
