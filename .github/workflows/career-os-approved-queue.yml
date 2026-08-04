@@ -24,6 +24,7 @@ permissions:
   contents: read
   actions: read
   issues: write
+  id-token: write
 
 jobs:
   run-approved-queue:
@@ -77,6 +78,15 @@ jobs:
             "$CAREER_OS_SOURCE/" "$CAREER_OS_RUNTIME/"
           cd "$CAREER_OS_RUNTIME"
           npm ci
+
+      - name: Acquire GitHub OIDC worker token
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsSL -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=answerbrief-career-os")"
+          token="$(node -e 'const fs=require("fs"); const x=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(x.value||"")' <<< "$response")"
+          test -n "$token"
+          echo "CAREER_OS_BROWSER_WORKER_TOKEN=$token" >> "$GITHUB_ENV"
 
       - name: Drain approved application queue
         shell: bash

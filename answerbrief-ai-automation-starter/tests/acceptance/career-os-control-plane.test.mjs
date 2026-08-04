@@ -66,6 +66,14 @@ test('approved queue dispatch config is checked before queue mutation', () => {
   );
 });
 
+test('approved queue workflow acquires GitHub OIDC worker token', () => {
+  const workflow = readRepositoryFile('.github/workflows/career-os-approved-queue.yml');
+  assert.match(workflow, /id-token: write/);
+  assert.match(workflow, /Acquire GitHub OIDC worker token/);
+  assert.match(workflow, /answerbrief-career-os/);
+  assert.match(workflow, /CAREER_OS_BROWSER_WORKER_TOKEN=\$token/);
+});
+
 test('Mac installer activates runner, control plane, and OpenHands integration', () => {
   const installer = readRepositoryFile('INSTALL_CAREER_OS_RUNNER.command');
   assert.match(installer, /bootstrap-career-os-mac-runner\.sh/);
