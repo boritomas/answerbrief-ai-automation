@@ -740,12 +740,7 @@ function canonicalQueueState(application: JsonRecord, overrides: ProductionClaim
   if (hasAny(text, ['submitted'])) return 'submitted';
   if (hasAny(text, ['duplicate'])) return 'duplicate';
   if (hasAny(text, ['deferred_phase_two_greenhouse'])) {
-    if (
-      isGreenhouseSubmitCanaryConfiguredFor(application as QueueApplication, overrides)
-      && hasAny(text, ['approved_for_run_one', 'package_ready', 'qualified', 'queued', 'ready_for_automation'])
-    ) {
-      return 'queued';
-    }
+    if (isGreenhouseSubmitCanaryConfiguredFor(application as QueueApplication, overrides)) return 'queued';
     return 'ineligible';
   }
   if (hasAny(text, ['quality_hold', 'hold_for_quality'])) return 'ineligible';

@@ -99,6 +99,7 @@ test('browser companion forwards Greenhouse canary authorization into claims', (
   assert.match(companion, /CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION \|\| process\.env\.CAREER_OS_SUBMIT_RUN_AUTHORIZATION/);
   assert.match(worker, /productionExecutionMode\(overrides\)/);
   assert.match(worker, /isGreenhouseSubmitCanaryConfiguredFor\(application, overrides\)/);
+  assert.match(worker, /if \(isGreenhouseSubmitCanaryConfiguredFor\(application as QueueApplication, overrides\)\) return 'queued';/);
 });
 
 test('Mac canary reports no eligible applications without failing infrastructure checks', () => {
