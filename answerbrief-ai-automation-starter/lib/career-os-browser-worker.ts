@@ -268,12 +268,9 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
         skip(application, 'queue_paused');
         continue;
       }
-      if (!isBrowserWorkerEligible(application, input.companionId, input.production)) {
-        skip(application, 'not_browser_worker_eligible', {
-          state: canonicalQueueState(application, input.production),
-          workerStatus: cleanEnv(asRecord(asRecord(application.raw_record).browser_worker).status),
-          href: externalApplicationHref(application),
-        });
+      const eligibility = browserWorkerEligibilityDetails(application, input.companionId, input.production);
+      if (!eligibility.eligible) {
+        skip(application, 'not_browser_worker_eligible', eligibility);
         continue;
       }
       const productionGate = productionClaimGate(application, applications, input.production);
@@ -709,33 +706,71 @@ export async function browserWorkerHealth(ownerEmail: string) {
 }
 
 function isBrowserWorkerEligible(application: QueueApplication, companionId: string | undefined, overrides: ProductionClaimOverrides = {}) {
-  if (isTerminalSubmission(application)) return false;
-  const state = canonicalQueueState(application, overrides);
-  if (!['queued', 'package_ready', 'qualified', 'retry_scheduled', 'running', 'review_ready'].includes(state)) return false;
-  if (state === 'review_ready' && !cleanEnv(process.env.CAREER_OS_WORKDAY_SUBMIT_APPROVAL)) return false;
-  if (application.confirmation_number || application.submission_evidence) return false;
+  return browserWorkerEligibilityDetails(application, companionId, overrides).eligible;
+}
+
+function browserWorkerEligibilityDetails(application: QueueApplication, companionId: string | undefined, overrides: ProductionClaimOverrides = {}) {
   const raw = asRecord(application.raw_record);
   const browserWorker = asRecord(raw.browser_worker);
   const lastReport = asRecord(raw.browser_worker_last_report);
+  const terminalSubmission = isTerminalSubmission(application);
+  const state = canonicalQueueState(application, overrides);
+  const allowedState = ['queued', 'package_ready', 'qualified', 'retry_scheduled', 'running', 'review_ready'].includes(state);
+  const reviewApprovalMissing = state === 'review_ready' && !cleanEnv(process.env.CAREER_OS_WORKDAY_SUBMIT_APPROVAL);
   const lastReportStatus = cleanEnv(lastReport.status);
   const explicitlyQueued = state === 'queued' && (
     cleanEnv(application.lifecycle_stage).toLowerCase() === 'queue_queued'
     || cleanEnv(raw.execution_status).toLowerCase() === 'queued'
   );
-  if (
+  const recoverableLegacyState = recoverableLegacyAdapterState(application);
+  const greenhouseCanaryConfiguredForApplication = isGreenhouseSubmitCanaryConfiguredFor(application, overrides);
+  const workdayAuthorizedAccountGate = isWorkdayAuthorizedAccountGate(application);
+  const unresolvedWorkerBlock = (
     (lastReportStatus === 'waiting_on_tomas' || lastReportStatus === 'blocked_technical')
     && !isExplicitlyResumedApplication(application)
-    && !recoverableLegacyAdapterState(application)
+    && !recoverableLegacyState
     && !explicitlyQueued
-    && !isGreenhouseSubmitCanaryConfiguredFor(application, overrides)
-    && !isWorkdayAuthorizedAccountGate(application)
-  ) {
-    return false;
-  }
+    && !greenhouseCanaryConfiguredForApplication
+    && !workdayAuthorizedAccountGate
+  );
   const claimedBy = cleanEnv(browserWorker.companion_id);
   const status = cleanEnv(browserWorker.status);
-  if (status === 'running' && claimedBy && companionId && claimedBy !== companionId) return false;
-  return Boolean(externalApplicationHref(application));
+  const claimedByOtherCompanion = status === 'running' && claimedBy && companionId && claimedBy !== companionId;
+  const href = externalApplicationHref(application);
+  const hasSubmissionEvidence = Boolean(application.confirmation_number || application.submission_evidence);
+  const ineligibleReason = terminalSubmission
+    ? 'terminal_submission'
+    : !allowedState
+      ? 'state_not_claimable'
+      : reviewApprovalMissing
+        ? 'review_approval_missing'
+        : hasSubmissionEvidence
+          ? 'submission_evidence_present'
+          : unresolvedWorkerBlock
+            ? 'unresolved_worker_block'
+            : claimedByOtherCompanion
+              ? 'claimed_by_other_companion'
+              : !href
+                ? 'missing_application_href'
+                : '';
+
+  return {
+    eligible: !ineligibleReason,
+    explicitlyQueued,
+    greenhouseCanaryConfiguredForApplication,
+    hasHref: Boolean(href),
+    hasSubmissionEvidence,
+    href,
+    ineligibleReason,
+    lastReportStatus,
+    platform: productionPlatform(application),
+    recoverableLegacyState: recoverableLegacyState || '',
+    reviewApprovalMissing,
+    state,
+    terminalSubmission,
+    workerStatus: status,
+    workdayAuthorizedAccountGate,
+  };
 }
 
 function isExplicitlyResumedApplication(application: QueueApplication) {
@@ -2379,7 +2414,7 @@ function productionDecisionCategory(reason: string) {
 function productionPlatform(application: QueueApplication): 'greenhouse' | 'workday' | 'unsupported' {
   const raw = asRecord(application.raw_record);
   const text = `${raw.platform || ''} ${raw.ats_platform || ''} ${externalApplicationHref(application)}`.toLowerCase();
-  if (/greenhouse/.test(text)) return 'greenhouse';
+  if (/greenhouse|[?&]gh_jid=|#applynow/.test(text)) return 'greenhouse';
   if (/workday|myworkdayjobs|phenom|careers\.cisco\.com\/.*\/apply/.test(text)) return 'workday';
   return 'unsupported';
 }
