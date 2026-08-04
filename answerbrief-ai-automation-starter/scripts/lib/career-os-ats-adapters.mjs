@@ -359,6 +359,9 @@ async function fillGreenhouseForm(page, task, runtime) {
   await fillInputFromLabel(context, /^phone/i, task.candidate.phone);
   await fillInputFromLabel(context, /linkedin/i, task.candidate.linkedin);
   await fillInputFromLabel(context, /current company/i, task.candidate.currentCompany);
+  await fillInputFromLabel(context, /location\s*\(city\)|location city|^city\b/i, task.candidate.city);
+  await fillInputFromLabel(context, /current or most recent employer|most recent employer|current employer|current company/i, greenhouseCurrentEmployer(task));
+  await fillInputFromLabel(context, /current or most recent job title|most recent job title|current job title|current title|job title/i, greenhouseCurrentTitle(task));
   await fillInputFromLabel(context, /zip|postal code/i, task.candidate.postalCode);
 
   const resumePath = await runtime.ensureResumeFile();
@@ -404,6 +407,14 @@ async function fillGreenhouseForm(page, task, runtime) {
       },
     });
   }
+}
+
+function greenhouseCurrentEmployer(task) {
+  return clean(task?.candidate?.currentCompany || task?.candidate?.primaryEmployment?.employer);
+}
+
+function greenhouseCurrentTitle(task) {
+  return clean(task?.candidate?.primaryEmployment?.title || task?.candidate?.currentTitle);
 }
 
 async function maybeUploadGreenhouseResume(context, resumePath, runtime) {

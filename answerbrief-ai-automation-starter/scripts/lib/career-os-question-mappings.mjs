@@ -599,13 +599,13 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
     {
       key: 'current_employer',
       kind: 'text',
-      matchers: [/current employer/i, /^company$/i, /^employer$/i],
-      valueFrom: 'candidate.currentCompany',
+      matchers: [/current or most recent employer/i, /most recent employer/i, /current employer/i, /^company$/i, /^employer$/i],
+      resolve: ({ context }) => clean(context?.candidate?.currentCompany || context?.candidate?.primaryEmployment?.employer),
     },
     {
       key: 'current_title',
       kind: 'text',
-      matchers: [/current title/i, /current job title/i, /current role/i],
+      matchers: [/current or most recent job title/i, /most recent job title/i, /current title/i, /current job title/i, /current role/i],
       value: currentTitle(task),
     },
     {
