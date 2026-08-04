@@ -13,6 +13,7 @@ type ActionBody = {
 };
 
 type DispatchResult = {
+  applicationLimit?: number;
   dispatched: boolean;
   error?: string;
   workflow?: string;
@@ -158,13 +159,14 @@ async function dispatchApprovedQueueWorkflow(
   if (!response.ok) {
     const details = await response.text().catch(() => '');
     return {
+      applicationLimit,
       dispatched: false,
       workflow: config.workflow,
       error: `GitHub workflow dispatch failed with HTTP ${response.status}${details ? `: ${details.slice(0, 300)}` : ''}`,
     };
   }
 
-  return { dispatched: true, workflow: config.workflow };
+  return { applicationLimit, dispatched: true, workflow: config.workflow };
 }
 
 function clean(value: unknown) {

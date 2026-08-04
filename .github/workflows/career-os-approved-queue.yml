@@ -100,8 +100,12 @@ jobs:
           export CAREER_OS_OWNER_EMAIL="${CAREER_OS_OWNER_EMAIL:-tomas@nieves.com}"
           export CAREER_OS_QUEUE_ENABLED="1"
           export CAREER_OS_DAILY_LIMIT="${CAREER_OS_DAILY_LIMIT:-165}"
+          limit="$CAREER_OS_DAILY_LIMIT"
           mkdir -p ".career-os-ci/${GITHUB_RUN_ID}"
-          npm run supervisor 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-supervisor.log"
+          npm run health:career-os 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-health.log"
+          npm run worker:health 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-worker-health.log"
+          npm run worker:run-batch -- --limit "$limit" 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-worker-batch.log"
+          npm run report:career-os 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-report.log"
 
       - name: Capture final queue evidence
         if: always()

@@ -74,6 +74,25 @@ test('approved queue workflow acquires GitHub OIDC worker token', () => {
   assert.match(workflow, /CAREER_OS_BROWSER_WORKER_TOKEN=\$token/);
 });
 
+test('approved queue workflow drains with the batch worker', () => {
+  const workflow = readRepositoryFile('.github/workflows/career-os-approved-queue.yml');
+  const packageJson = JSON.parse(read('package.json'));
+  assert.equal(
+    packageJson.scripts['worker:run-batch'],
+    'node ./scripts/career-os-browser-companion.mjs run-batch',
+  );
+  assert.match(workflow, /npm run worker:run-batch -- --limit "\$limit"/);
+  assert.match(workflow, /approved-queue-worker-batch\.log/);
+  assert.doesNotMatch(workflow, /npm run supervisor 2>&1 \| tee "\.career-os-ci\/\$\{GITHUB_RUN_ID\}\/approved-queue-supervisor\.log"/);
+});
+
+test('approved queue dashboard labels batch and one-off actions distinctly', () => {
+  const controls = read('app/founder-dashboard/founder-run-controls.tsx');
+  assert.match(controls, /Start Approved Queue Run/);
+  assert.match(controls, /Run Next Eligible Application/);
+  assert.doesNotMatch(controls, /Process \$\{approvedCount\} Approved Application/);
+});
+
 test('Mac installer activates runner, control plane, and OpenHands integration', () => {
   const installer = readRepositoryFile('INSTALL_CAREER_OS_RUNNER.command');
   assert.match(installer, /bootstrap-career-os-mac-runner\.sh/);

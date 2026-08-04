@@ -40,6 +40,7 @@ type ActionResult = {
   };
   runId?: string;
   runnerDispatch?: {
+    applicationLimit?: number;
     dispatched?: boolean;
     error?: string;
     workflow?: string;
@@ -103,10 +104,11 @@ export function FounderRunControls({
         setMessage(`Discovery refreshed: reviewed ${result.dailyDiscovery.postingsReviewed}, persisted ${result.dailyDiscovery.postingsPersisted || 0}, qualified ${result.dailyDiscovery.postingsAccepted}.`);
       } else if (action === 'run_approved_queue') {
         const dispatchError = result.runnerDispatch?.error;
+        const applicationLimit = result.runnerDispatch?.applicationLimit;
         setMessage(
           result.status === 'queued_without_runner'
             ? `Applications were queued, but automatic runner startup failed. ${dispatchError || result.message || 'Runner dispatch failed.'}`
-            : `Approved queue started. Audited ${result.applicationsAudited || 0}, queued ${result.automaticallyQueued || 0}, processed ${result.processed || 0}, waiting ${result.waitingOnTomas || 0}, technical ${result.technical || 0}. Run ${result.runId || 'created'}.`,
+            : `Approved queue run started${applicationLimit ? ` for up to ${applicationLimit}` : ''}. Audited ${result.applicationsAudited || 0}, queued ${result.automaticallyQueued || 0}, processed ${result.processed || 0}, waiting ${result.waitingOnTomas || 0}, technical ${result.technical || 0}. Run ${result.runId || 'created'}.`,
         );
       } else if (action === 'run_now' && result.queueResult) {
         const queue = result.queueResult;
@@ -123,9 +125,9 @@ export function FounderRunControls({
     <div className={`career-os-action-control ${state}`} aria-live="polite">
       <div className="cta-row">
         <button className="button primary" disabled={isPending || approvedCount < 1} onClick={() => execute('run_approved_queue', runNowToken)} type="button">
-          {approvedCount > 0 ? `Process ${approvedCount} Approved Application${approvedCount === 1 ? '' : 's'}` : 'Process Approved Queue'}
+          {approvedCount > 0 ? `Start Approved Queue Run (${approvedCount})` : 'Start Approved Queue Run'}
         </button>
-        <button className="button secondary" disabled={isPending} onClick={() => execute('run_now', runNowToken)} type="button">Run One Production Application</button>
+        <button className="button secondary" disabled={isPending} onClick={() => execute('run_now', runNowToken)} type="button">Run Next Eligible Application</button>
         <button className="button secondary" disabled={isPending} onClick={() => execute('refresh_discovery', refreshDiscoveryToken)} type="button">Refresh Job Pool</button>
         <button className="button secondary" disabled={isPending} onClick={() => window.location.reload()} type="button">Refresh Status</button>
       </div>
@@ -137,7 +139,7 @@ export function FounderRunControls({
 function loadingMessage(action: ControlAction, approvedCount: number) {
   if (action === 'refresh_discovery') return 'Refreshing official job sources...';
   if (action === 'run_approved_queue') {
-    return `Starting autonomous processing for ${approvedCount} approved application${approvedCount === 1 ? '' : 's'}...`;
+    return `Starting approved queue run for up to ${approvedCount} approved application${approvedCount === 1 ? '' : 's'}...`;
   }
   return 'Starting one eligible production application...';
 }

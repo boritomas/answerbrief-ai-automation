@@ -23,6 +23,7 @@
     "worker:pair": "node ./scripts/career-os-browser-companion.mjs pair",
     "worker:start": "node ./scripts/career-os-browser-companion.mjs start",
     "worker:run-once": "node ./scripts/career-os-browser-companion.mjs run-once",
+    "worker:run-batch": "node ./scripts/career-os-browser-companion.mjs run-batch",
     "worker:health": "node ./scripts/career-os-browser-companion.mjs health",
     "browser:controlled": "node ./scripts/career-os-controlled-browser.mjs",
     "report:career-os": "node ./scripts/career-os-production-report.mjs",

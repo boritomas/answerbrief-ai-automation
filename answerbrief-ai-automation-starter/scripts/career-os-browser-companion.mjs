@@ -54,7 +54,8 @@ if (mode === 'run-once') {
 }
 
 if (mode === 'run-batch') {
-  const limit = boundedPositiveInteger(argValue('--limit', process.env.CAREER_OS_WORKER_BATCH_LIMIT || '5'), 5, 25);
+  const batchMax = boundedPositiveInteger(process.env.CAREER_OS_WORKER_BATCH_MAX || '200', 200, 200);
+  const limit = boundedPositiveInteger(argValue('--limit', process.env.CAREER_OS_WORKER_BATCH_LIMIT || '5'), 5, batchMax);
   let claimed = 0;
   let attempts = 0;
   for (; attempts < limit; attempts += 1) {
