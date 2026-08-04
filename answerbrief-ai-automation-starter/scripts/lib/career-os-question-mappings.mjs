@@ -672,6 +672,18 @@ export function buildGreenhouseQuestionMappings(task, overrides = {}) {
       resolve: ({ context }) => context.candidate.employerSpecificAnswers?.previouslyWorkedAtEmployer || context.candidate.previouslyWorkedAtEmployer || 'No',
     },
     {
+      key: 'london_office_in_person',
+      kind: 'select',
+      matchers: [/working in person.*london office/i, /london office.*2-3 times a week/i],
+      value: 'No',
+    },
+    {
+      key: 'current_former_employer_restriction',
+      kind: 'select',
+      matchers: [/bound by any agreements/i, /restrict your ability to work/i, /non.?compete/i, /non.?solicit/i],
+      value: 'No',
+    },
+    {
       key: 'government_procurement_conflict',
       kind: 'select',
       matchers: [/government employee/i, /government official/i, /procurement or contract award/i, /contract award activities/i],

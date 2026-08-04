@@ -378,6 +378,8 @@ async function fillGreenhouseForm(page, task, runtime) {
   await selectFromLabel(context, /how did you first learn about/i, task.candidate.referralSourceAffirmFallback || task.candidate.referralSource);
   await selectFromLabel(context, /previously been employed at affirm/i, task.candidate.previouslyWorkedAtEmployer);
   await selectFromLabel(context, /visa \/ work permit/i, task.candidate.sponsorshipNow);
+  await selectFromLabel(context, /working in person.*london office/i, 'No');
+  await selectFromLabel(context, /bound by any agreements|restrict your ability to work|non.?compete|non.?solicit/i, 'No');
   await selectFromLabel(context, /worked at nice/i, 'No');
   await selectFromLabel(context, /first-degree relatives/i, 'No');
   const mappingResults = await applyFieldMappings(
