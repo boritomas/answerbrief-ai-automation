@@ -19,6 +19,7 @@ const ownerEmail = clean(process.env.CAREER_OS_OWNER_EMAIL) || 'tomas@nieves.com
 const baseUrl = clean(process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://127.0.0.1:3000');
 const staticWorkerToken = clean(process.env.CAREER_OS_BROWSER_WORKER_TOKEN);
 const oidcAudience = clean(process.env.CAREER_OS_GITHUB_OIDC_AUDIENCE) || 'answerbrief-career-os';
+const workdayKeychainPath = clean(process.env.CAREER_OS_WORKDAY_KEYCHAIN_PATH);
 const stateDir = path.join(root, '.career-os-browser-worker');
 const userDataDir = path.join(stateDir, 'chrome-profile');
 const screenshotDir = path.join(stateDir, 'screenshots');
@@ -472,7 +473,8 @@ async function resolveEmployerAccountCredential(task, input = {}) {
   const generated = generateStrongPassword();
   const stored = await writeKeychainSecret(service, accountEmail, generated);
   if (!stored.ok) {
-    return { ok: false, reason: 'Secure credential storage is unavailable; account creation is paused before any protected value is entered.' };
+    const diagnostic = stored.reason ? ` macOS Keychain: ${stored.reason}` : '';
+    return { ok: false, reason: `Secure credential storage is unavailable; account creation is paused before any protected value is entered.${diagnostic}` };
   }
   await recordEmployerAccountMetadata(task, {
     accountEmail,
@@ -495,7 +497,7 @@ async function resolveEmployerAccountCredential(task, input = {}) {
 
 async function readKeychainSecret(service, account) {
   try {
-    const { stdout } = await execFileAsync('security', ['find-generic-password', '-s', service, '-a', account, '-w'], {
+    const { stdout } = await execFileAsync('security', keychainArgs(['find-generic-password', '-s', service, '-a', account, '-w']), {
       maxBuffer: 1024 * 32,
       timeout: 10000,
     });
@@ -508,14 +510,39 @@ async function readKeychainSecret(service, account) {
 
 async function writeKeychainSecret(service, account, value) {
   try {
-    await execFileAsync('security', ['add-generic-password', '-U', '-s', service, '-a', account, '-w', value], {
+    await execFileAsync('security', keychainArgs(['add-generic-password', '-U', '-s', service, '-a', account, '-w', value]), {
       maxBuffer: 1024 * 32,
       timeout: 10000,
     });
     return { ok: true };
-  } catch {
-    return { ok: false };
+  } catch (error) {
+    return { ok: false, reason: keychainFailureReason(error, service, account) };
   }
+}
+
+function keychainArgs(args) {
+  return workdayKeychainPath ? [...args, workdayKeychainPath] : args;
+}
+
+function keychainFailureReason(error, service, account) {
+  const raw = clean(error?.stderr || error?.stdout || '');
+  const fallback = error?.code ? `security_exit_${error.code}` : 'security_command_failed';
+  const message = raw || fallback;
+  return redactKeychainDiagnostic(message, service, account).slice(0, 220);
+}
+
+function redactKeychainDiagnostic(value, service, account) {
+  let output = clean(value);
+  const replacements = [
+    [service, '[service]'],
+    [account, '[account]'],
+    [workdayKeychainPath, '[keychain]'],
+  ];
+  for (const [needle, replacement] of replacements) {
+    if (!needle) continue;
+    output = output.split(needle).join(replacement);
+  }
+  return output;
 }
 
 async function recordEmployerAccountMetadata(task, input = {}) {

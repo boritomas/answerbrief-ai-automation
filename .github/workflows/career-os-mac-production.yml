@@ -49,6 +49,8 @@ jobs:
       CAREER_OS_DAILY_LIMIT: '1'
       CAREER_OS_AUTO_REPAIR: '1'
       CAREER_OS_SUPERVISOR_MAX_ATTEMPTS: '3'
+      CAREER_OS_WORKDAY_KEYCHAIN_PATH: /Users/tomasnieves/Library/Keychains/career-os-workday.keychain-db
+      CAREER_OS_WORKDAY_KEYCHAIN_PASSWORD: ${{ secrets.CAREER_OS_WORKDAY_KEYCHAIN_PASSWORD }}
       ANSWERBRIEF_EXECUTOR_PROVIDER_ORDER: openhands,gemini,opencode,aider,claude-code,codex
       PATH: /Users/tomasnieves/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
@@ -209,6 +211,38 @@ jobs:
           cd "$CAREER_OS_RUNTIME"
           npm run openhands:status 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/openhands-service.log"
           exit 0
+
+      - name: Prepare Workday credential keychain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = "Darwin"
+          if [ -z "${CAREER_OS_WORKDAY_KEYCHAIN_PASSWORD:-}" ]; then
+            echo "credential_keychain=default_login"
+            exit 0
+          fi
+          keychain="${CAREER_OS_WORKDAY_KEYCHAIN_PATH:-$HOME/Library/Keychains/career-os-workday.keychain-db}"
+          mkdir -p "$(dirname "$keychain")"
+          if [ ! -f "$keychain" ]; then
+            security create-keychain -p "$CAREER_OS_WORKDAY_KEYCHAIN_PASSWORD" "$keychain"
+          fi
+          security unlock-keychain -p "$CAREER_OS_WORKDAY_KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          current_keychains=()
+          while IFS= read -r keychain_entry; do
+            current_keychains+=("$keychain_entry")
+          done < <(security list-keychains -d user | sed -E 's/^[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/')
+          if ! printf '%s\n' "${current_keychains[@]}" | grep -Fx "$keychain" >/dev/null; then
+            security list-keychains -d user -s "$keychain" "${current_keychains[@]}"
+          fi
+          service="career-os-keychain-smoke-${GITHUB_RUN_ID}"
+          account="career-os-smoke@example.invalid"
+          secret="smoke-${GITHUB_RUN_ID}-$(date +%s)"
+          security add-generic-password -U -s "$service" -a "$account" -w "$secret" "$keychain" >/dev/null
+          found="$(security find-generic-password -s "$service" -a "$account" -w "$keychain")"
+          security delete-generic-password -s "$service" -a "$account" "$keychain" >/dev/null 2>&1 || true
+          test "$found" = "$secret"
+          echo "credential_keychain=ready"
 
       - name: Acquire GitHub OIDC worker token
         shell: bash

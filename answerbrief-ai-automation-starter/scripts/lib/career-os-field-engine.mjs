@@ -734,7 +734,12 @@ async function applyKnownPromptMapping(page, mapping, resolved) {
       await page.waitForTimeout(300);
 
       const searched = await fillActivePromptSearch(page, prompt, search);
-      if (!searched && !protectedPrompt) await fillVisiblePromptSearch(page, search);
+      if (!searched) {
+        const searchedVisible = await fillVisiblePromptSearch(page, search);
+        if (!searchedVisible && protectedPrompt) {
+          await typeActivePromptAhead(page, prompt, search);
+        }
+      }
       await page.waitForTimeout(300);
 
       if (spec.kind === 'referral_linkedin') {
@@ -896,6 +901,55 @@ async function fillActivePromptSearch(page, prompt = {}, value = '') {
   await page.keyboard.press('Meta+A').catch(() => null);
   await page.keyboard.press('Backspace').catch(() => null);
   await page.keyboard.type(clean(value), { delay: 20 }).catch(() => null);
+  return true;
+}
+
+async function typeActivePromptAhead(page, prompt = {}, value = '') {
+  const searchText = clean(value);
+  if (!searchText || !page?.evaluate || !page?.keyboard) return false;
+  const focused = await page.evaluate(({ promptMeta }) => {
+    const visible = (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const activeControl = promptMeta.activePromptId
+      ? document.querySelector(`[data-career-os-active-prompt-id="${CSS.escape(promptMeta.activePromptId)}"]`)
+      : promptMeta.controlId
+        ? document.getElementById(promptMeta.controlId)
+        : document.querySelector('[data-career-os-active-prompt-id]');
+    const controlledIds = String(`${promptMeta.ariaControls || ''} ${promptMeta.ariaOwns || ''}`)
+      .split(/\s+/)
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const controlledPopup = controlledIds
+      .map((id) => document.getElementById(id))
+      .find((node) => node instanceof HTMLElement && visible(node));
+    const activeRect = activeControl instanceof HTMLElement ? activeControl.getBoundingClientRect() : null;
+    const popup = controlledPopup || Array.from(document.querySelectorAll('[role="listbox"], [role="menu"], [role="dialog"], [data-automation-id*="prompt" i], [data-automation-id*="popup" i], [data-automation-id*="menu" i]'))
+      .filter((node) => node instanceof HTMLElement && visible(node))
+      .map((node) => {
+        const rect = node.getBoundingClientRect();
+        const hasOptions = Boolean(node.querySelector('[role="option"], [role="menuitem"], [data-automation-id*="promptOption" i], [data-automation-id*="prompt-option" i]'));
+        let score = hasOptions ? 1000 : 0;
+        if (activeRect) score -= Math.abs(rect.top - activeRect.bottom) + Math.abs(rect.left - activeRect.left) / 4;
+        return { node, score };
+      })
+      .sort((left, right) => right.score - left.score)[0]?.node;
+    const target = popup instanceof HTMLElement
+      ? popup
+      : activeControl instanceof HTMLElement
+        ? activeControl
+        : null;
+    if (!target) return false;
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+    target.focus();
+    return document.activeElement === target || target.contains(document.activeElement);
+  }, { promptMeta: prompt }).catch(() => false);
+  if (!focused) return false;
+  await page.keyboard.type(searchText, { delay: 20 }).catch(() => null);
+  await page.waitForTimeout?.(250).catch(() => null);
   return true;
 }
 

@@ -2406,6 +2406,69 @@ test('Workday prompt mappings scope protected options and avoid contact-field co
   }
 });
 
+test('Workday protected prompt mappings use typeahead when search input is absent', async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  try {
+    await page.setContent(`
+      <form>
+        <div class="field">
+          <label id="phone-code-label">Country Phone Code *</label>
+          <button id="phone-code-prompt" type="button" aria-haspopup="listbox" aria-labelledby="phone-code-label phone-code-prompt">Select One</button>
+        </div>
+      </form>
+      <script>
+        let typed = '';
+        function renderList(items, owner) {
+          document.querySelector('[role="listbox"]')?.remove();
+          const list = document.createElement('div');
+          list.setAttribute('role', 'listbox');
+          list.setAttribute('tabindex', '-1');
+          for (const label of items) {
+            const item = document.createElement('div');
+            item.setAttribute('role', 'option');
+            item.dataset.owner = owner;
+            item.textContent = label;
+            list.appendChild(item);
+          }
+          document.body.appendChild(list);
+          list.focus();
+        }
+        document.addEventListener('keydown', (event) => {
+          if (!document.querySelector('[role="listbox"]')) return;
+          if (event.key.length !== 1) return;
+          typed += event.key;
+          if (/united states/i.test(typed)) {
+            renderList(['United States of America (+1)'], 'phone-code-prompt');
+          }
+        });
+        document.addEventListener('click', (event) => {
+          const option = event.target.closest('[role="option"]');
+          if (option) {
+            const owner = document.getElementById(option.dataset.owner);
+            owner.textContent = option.textContent;
+            owner.dataset.selectedValue = option.textContent;
+            document.querySelector('[role="listbox"]')?.remove();
+            return;
+          }
+          const button = event.target.closest('button[aria-haspopup]');
+          if (!button) return;
+          typed = '';
+          renderList(['Austria (+43)'], button.id);
+        });
+      </script>
+    `);
+    const workdayTask = task();
+    const mappings = buildWorkdayQuestionMappings(workdayTask);
+    const results = await applyFieldMappings(page, mappings, workdayTask);
+
+    assert.equal(results.find((result) => result.key === 'country_phone_code')?.applied, true);
+    assert.equal(await page.locator('#phone-code-prompt').textContent(), 'United States of America (+1)');
+  } finally {
+    await browser.close();
+  }
+});
+
 test('Workday protected prompt failure stops before later mappings continue', async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
