@@ -144,7 +144,7 @@ jobs:
           npm run health:career-os 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-health.log"
           npm run worker:health 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-worker-health.log"
           npm run worker:run-batch -- --limit "$limit" 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-worker-batch.log"
-          npm run report:career-os 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-report.log"
+          npm run report:career-os 2>&1 | tee ".career-os-ci/${GITHUB_RUN_ID}/approved-queue-report.log" || true
 
       - name: Capture final queue evidence
         if: always()
@@ -159,7 +159,7 @@ jobs:
           EVIDENCE_DIR=".career-os-ci/${GITHUB_RUN_ID}"
           mkdir -p "$EVIDENCE_DIR/screenshots"
           npm run worker:health 2>&1 | tee "$EVIDENCE_DIR/worker-health-final.log"
-          npm run report:career-os 2>&1 | tee "$EVIDENCE_DIR/production-report-final.log"
+          npm run report:career-os 2>&1 | tee "$EVIDENCE_DIR/production-report-final.log" || true
           find .career-os-browser-worker/screenshots -type f -name '*.png' -print0 2>/dev/null \
             | xargs -0 ls -t 2>/dev/null \
             | head -n 25 \

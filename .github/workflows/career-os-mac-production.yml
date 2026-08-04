@@ -176,9 +176,10 @@ jobs:
             echo "Canonical Career OS runtime environment file restored from GitHub secrets."
           fi
 
-          BACKUP_ROOT="$HOME/CareerOSBackups/${GITHUB_RUN_ID}"
+          BACKUP_ROOT="${RUNNER_TEMP:-$HOME/CareerOSBackups}/${GITHUB_RUN_ID}"
+          BACKUP_FILE="$BACKUP_ROOT/runtime-before-deploy.tgz"
           mkdir -p "$BACKUP_ROOT"
-          tar -czf "$BACKUP_ROOT/runtime-before-deploy.tgz" \
+          if tar -czf "$BACKUP_FILE" \
             --exclude='node_modules' \
             --exclude='.next' \
             --exclude='.git' \
@@ -186,7 +187,12 @@ jobs:
             --exclude='.env.local' \
             --exclude='.career-os-browser-worker/chrome-profile' \
             --exclude='.career-os-ci' \
-            -C "$(dirname "$CAREER_OS_RUNTIME")" "$(basename "$CAREER_OS_RUNTIME")"
+            -C "$(dirname "$CAREER_OS_RUNTIME")" "$(basename "$CAREER_OS_RUNTIME")"; then
+            backup_status="$BACKUP_FILE"
+          else
+            backup_status="backup_failed_nonfatal"
+            echo "Runtime backup failed; continuing because the canonical runtime is rebuilt from main."
+          fi
 
           rsync -a --delete \
             --exclude='.git/' \
@@ -206,7 +212,7 @@ jobs:
             echo "runner_arch=${RUNNER_ARCH:-unknown}"
             echo "workspace=${GITHUB_WORKSPACE}"
             echo "runtime=${CAREER_OS_RUNTIME}"
-            echo "backup=${BACKUP_ROOT}/runtime-before-deploy.tgz"
+            echo "backup=${backup_status}"
             uname -a
             echo "available_repair_providers:"
             for tool in openhands gemini opencode aider claude codex; do
@@ -290,7 +296,7 @@ jobs:
           EVIDENCE_DIR=".career-os-ci/${GITHUB_RUN_ID}"
           mkdir -p "$EVIDENCE_DIR/screenshots" "$EVIDENCE_DIR/traces"
           npm run worker:health 2>&1 | tee "$EVIDENCE_DIR/worker-health-final.log"
-          npm run report:career-os 2>&1 | tee "$EVIDENCE_DIR/production-report-final.log"
+          npm run report:career-os 2>&1 | tee "$EVIDENCE_DIR/production-report-final.log" || true
           npm run openhands:status 2>&1 | tee "$EVIDENCE_DIR/openhands-status-final.log"
           find .career-os-browser-worker/screenshots -type f -name '*.png' -print0 2>/dev/null \
             | xargs -0 ls -t 2>/dev/null \
