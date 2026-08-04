@@ -1381,6 +1381,10 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
   const executionMode = productionExecutionMode(overrides);
   const normalizedMode = normalizeProductionExecutionMode(executionMode);
   const dailyLimit = productionDailyLimit();
+  const authorizedGreenhouseCanary = platform === 'greenhouse'
+    && normalizedMode === 'submit_enabled'
+    && isGreenhouseSubmitCanaryConfiguredFor(application, overrides)
+    && greenhouseSubmitAuthorizationConfigured(overrides);
 
   if (!isProductionQualified(application, overrides)) {
     return {
@@ -1406,7 +1410,7 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
     };
   }
 
-  if (productionProcessedToday(applications) >= dailyLimit) {
+  if (productionProcessedToday(applications) >= dailyLimit && !authorizedGreenhouseCanary) {
     return {
       dailyLimit,
       executionMode,
