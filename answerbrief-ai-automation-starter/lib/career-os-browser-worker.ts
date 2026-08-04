@@ -744,6 +744,7 @@ function canonicalQueueState(application: JsonRecord, overrides: ProductionClaim
   const raw = asRecord(application.raw_record);
   const lifecycleStage = cleanEnv(application.lifecycle_stage).toLowerCase();
   const text = applicationText(application);
+  const browserWorkerStatus = cleanEnv(asRecord(raw.browser_worker).status).toLowerCase();
   const recoveredState = recoverableLegacyAdapterState(application);
   if (recoveredState) return recoveredState;
   if (
@@ -762,6 +763,12 @@ function canonicalQueueState(application: JsonRecord, overrides: ProductionClaim
   if (hasAny(text, ['quality_hold', 'hold_for_quality'])) return 'ineligible';
   if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable', 'no longer available', 'generic careers listing'])) return 'inactive';
   if (hasAny(text, ['ineligible'])) return 'ineligible';
+  if (
+    isGreenhouseSubmitCanaryConfiguredFor(application as QueueApplication, overrides)
+    && hasAny(`${lifecycleStage} ${browserWorkerStatus}`, ['waiting_on_tomas', 'blocked_technical', 'completed_waiting_for_user'])
+  ) {
+    return 'queued';
+  }
   if (isWorkdayAuthorizedAccountGate(application)) return 'queued';
   if (hasAny(text, ['review_ready'])) return 'review_ready';
   if (hasAny(text, ['submission_uncertain'])) return 'submission_uncertain';
