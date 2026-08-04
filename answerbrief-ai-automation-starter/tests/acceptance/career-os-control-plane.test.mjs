@@ -110,6 +110,9 @@ test('browser companion forwards Greenhouse canary authorization into claims', (
   assert.match(worker, /ensureAuthorizedInlinePackageArtifacts/);
   assert.match(worker, /career_os_authorized_browser_worker_package_repair_v1/);
   assert.match(worker, /if \(hasAny\(text, \['quality_hold', 'hold_for_quality'\]\)\) \{/);
+  assert.match(worker, /canApplyAuthorizedGreenhouseQualityRationale/);
+  assert.match(worker, /greenhouse_canary_unknown_compensation_exception/);
+  assert.match(worker, /qualityGate\.score < 75/);
 });
 
 test('Mac canary reports no eligible applications without failing infrastructure checks', () => {

@@ -873,6 +873,29 @@ async function buildTaskPayload(
     posting,
     preferredMinimumBaseSalaryUsd: COMPENSATION_FLOOR_USD,
   });
+  if (canApplyAuthorizedGreenhouseQualityRationale(enrichedApplication, production, qualityGate)) {
+    const rationaleAppliedAt = new Date().toISOString();
+    enrichedApplication = {
+      ...enrichedApplication,
+      raw_record: {
+        ...asRecord(enrichedApplication.raw_record),
+        compensation_exception_approved_at: rationaleAppliedAt,
+        compensation_exception_reason: 'Unknown compensation accepted for a single explicitly authorized Greenhouse canary after package and fit checks passed.',
+        compensation_exception_source: 'career_os_explicit_greenhouse_canary_authorization',
+        total_compensation_exception_approved: true,
+      },
+    } as QueueApplication;
+    Object.assign(debug, {
+      authorizedQualityRationale: 'greenhouse_canary_unknown_compensation_exception',
+      authorizedQualityRationaleAppliedAt: rationaleAppliedAt,
+    });
+    qualityGate = assessApplicationQuality({
+      application: enrichedApplication,
+      artifacts: packageArtifacts,
+      posting,
+      preferredMinimumBaseSalaryUsd: COMPENSATION_FLOOR_USD,
+    });
+  }
   if (qualityGate.coverLetterNeeded && !qualityGate.coverLetterAvailable && canGenerateCoverLetterForQualityGate(qualityGate)) {
     coverLetterArtifact = await ensureCoverLetterArtifact({
       application: enrichedApplication,
@@ -1266,6 +1289,22 @@ function authorizedInlinePackageRepair(application: QueueApplication, production
   return productionExecutionMode(production) === 'submit_enabled'
     && greenhouseSubmitAuthorizationConfigured(production)
     && isGreenhouseSubmitCanaryConfiguredFor(application, production);
+}
+
+function canApplyAuthorizedGreenhouseQualityRationale(
+  application: QueueApplication,
+  production: ProductionClaimOverrides,
+  qualityGate: ApplicationQualityGate,
+) {
+  if (!authorizedInlinePackageRepair(application, production)) return false;
+  if (!qualityGate.active || qualityGate.duplicate || !qualityGate.locationOk || !qualityGate.packageComplete) return false;
+  if (qualityGate.score < 75) return false;
+  const allowedReasons = new Set([
+    'borderline_score_requires_cover_letter',
+    'comp_unknown_hold',
+  ]);
+  return qualityGate.holdReasons.length > 0
+    && qualityGate.holdReasons.every((reason: string) => allowedReasons.has(reason));
 }
 
 function buildAuthorizedInlinePackage(input: {
