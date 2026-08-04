@@ -53,6 +53,22 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Wait for matching Vercel deployment
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            deployed_sha="$(curl -fsSL --max-time 15 "${APP_BASE_URL}/api/career-os/version?cacheBust=$(date +%s)" | node -e 'const fs=require("fs"); const x=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(x.commitSha||"")' || true)"
+            echo "Deployment check ${attempt}: expected=${GITHUB_SHA} deployed=${deployed_sha:-none}"
+            if [ "$deployed_sha" = "$GITHUB_SHA" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Timed out waiting for Vercel to deploy ${GITHUB_SHA}." >&2
+          exit 1
+
       - name: Acquire GitHub OIDC worker token
         shell: bash
         run: |
