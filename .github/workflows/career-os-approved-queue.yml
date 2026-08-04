@@ -164,6 +164,8 @@ jobs:
         run: |
           set -euo pipefail
           cd "$CAREER_OS_RUNTIME"
+          requested_supabase_url="${SUPABASE_URL:-}"
+          requested_supabase_service_role_key="${SUPABASE_SERVICE_ROLE_KEY:-}"
           requested_execution_mode="${CAREER_OS_EXECUTION_MODE:-workday_first_submit}"
           requested_greenhouse_canary_id="${CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID:-}"
           requested_greenhouse_authorization="${CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION:-}"
@@ -171,6 +173,8 @@ jobs:
           if [ -f .env ]; then . ./.env; fi
           if [ -f .env.local ]; then . ./.env.local; fi
           set +a
+          export SUPABASE_URL="$requested_supabase_url"
+          export SUPABASE_SERVICE_ROLE_KEY="$requested_supabase_service_role_key"
           export CAREER_OS_EXECUTION_MODE="$requested_execution_mode"
           export CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID="$requested_greenhouse_canary_id"
           export CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION="$requested_greenhouse_authorization"
@@ -191,6 +195,8 @@ jobs:
         run: |
           set +e
           cd "$CAREER_OS_RUNTIME"
+          requested_supabase_url="${SUPABASE_URL:-}"
+          requested_supabase_service_role_key="${SUPABASE_SERVICE_ROLE_KEY:-}"
           requested_execution_mode="${CAREER_OS_EXECUTION_MODE:-workday_first_submit}"
           requested_greenhouse_canary_id="${CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID:-}"
           requested_greenhouse_authorization="${CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION:-}"
@@ -198,6 +204,8 @@ jobs:
           if [ -f .env ]; then . ./.env; fi
           if [ -f .env.local ]; then . ./.env.local; fi
           set +a
+          export SUPABASE_URL="$requested_supabase_url"
+          export SUPABASE_SERVICE_ROLE_KEY="$requested_supabase_service_role_key"
           export CAREER_OS_EXECUTION_MODE="$requested_execution_mode"
           export CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID="$requested_greenhouse_canary_id"
           export CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION="$requested_greenhouse_authorization"
