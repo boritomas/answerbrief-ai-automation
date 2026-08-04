@@ -56,6 +56,16 @@ test('browser companion refreshes GitHub OIDC tokens during retries', () => {
   assert.match(companion, /githubOidcTokenCache = \{ value: '', expiresAtMs: 0 \}/);
 });
 
+test('approved queue dispatch config is checked before queue mutation', () => {
+  const route = read('app/api/career-os/run-approved-queue/route.ts');
+  assert.match(route, /resolveApprovedQueueDispatchConfig/);
+  assert.match(route, /Mac runner dispatch is not configured/);
+  assert.ok(
+    route.indexOf('const dispatchConfig = resolveApprovedQueueDispatchConfig();')
+      < route.indexOf('const queueResult = await processCareerOsQueue'),
+  );
+});
+
 test('Mac installer activates runner, control plane, and OpenHands integration', () => {
   const installer = readRepositoryFile('INSTALL_CAREER_OS_RUNNER.command');
   assert.match(installer, /bootstrap-career-os-mac-runner\.sh/);

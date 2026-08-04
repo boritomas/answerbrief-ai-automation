@@ -18,6 +18,19 @@ type DispatchResult = {
   workflow?: string;
 };
 
+type DispatchConfig =
+  | {
+    ok: true;
+    owner: string;
+    repo: string;
+    token: string;
+    workflow: string;
+  }
+  | {
+    ok: false;
+    error: string;
+  };
+
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({})) as ActionBody;
   const ownerEmail = body.ownerEmail || process.env.CAREER_OS_OWNER_EMAIL || 'tomas@nieves.com';
@@ -30,6 +43,16 @@ export async function POST(request: NextRequest) {
 
   if (!authorized) {
     return NextResponse.json({ ok: false, error: 'Unauthorized Career OS action.' }, { status: 401 });
+  }
+
+  const dispatchConfig = resolveApprovedQueueDispatchConfig();
+  if (!dispatchConfig.ok) {
+    return NextResponse.json({
+      ok: false,
+      accepted: false,
+      status: 'blocked',
+      error: `Mac runner dispatch is not configured: ${dispatchConfig.error}`,
+    }, { status: 503 });
   }
 
   try {
@@ -47,7 +70,7 @@ export async function POST(request: NextRequest) {
           || queueResult.applicationsAudited,
       ),
     );
-    const dispatch = await dispatchApprovedQueueWorkflow(ownerEmail, eligibleCount);
+    const dispatch = await dispatchApprovedQueueWorkflow(dispatchConfig, ownerEmail, eligibleCount);
 
     return NextResponse.json({
       ok: queueResult.errors.length === 0 && dispatch.dispatched,
@@ -77,7 +100,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function dispatchApprovedQueueWorkflow(ownerEmail: string, applicationLimit: number): Promise<DispatchResult> {
+function resolveApprovedQueueDispatchConfig(): DispatchConfig {
   const token = clean(
     process.env.CAREER_OS_GITHUB_TOKEN
       || process.env.GITHUB_PAT
@@ -85,7 +108,7 @@ async function dispatchApprovedQueueWorkflow(ownerEmail: string, applicationLimi
   );
   if (!token) {
     return {
-      dispatched: false,
+      ok: false,
       error: 'Missing CAREER_OS_GITHUB_TOKEN, GITHUB_PAT, or GH_TOKEN in the production environment.',
     };
   }
@@ -93,17 +116,31 @@ async function dispatchApprovedQueueWorkflow(ownerEmail: string, applicationLimi
   const repository = clean(process.env.CAREER_OS_GITHUB_REPOSITORY || 'boritomas/answerbrief-ai-automation');
   const [owner, repo] = repository.split('/');
   if (!owner || !repo) {
-    return { dispatched: false, error: 'Invalid CAREER_OS_GITHUB_REPOSITORY value.' };
+    return { ok: false, error: 'Invalid CAREER_OS_GITHUB_REPOSITORY value.' };
   }
 
   const workflow = 'career-os-approved-queue.yml';
+  return {
+    ok: true,
+    owner,
+    repo,
+    token,
+    workflow,
+  };
+}
+
+async function dispatchApprovedQueueWorkflow(
+  config: Extract<DispatchConfig, { ok: true }>,
+  ownerEmail: string,
+  applicationLimit: number,
+): Promise<DispatchResult> {
   const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`,
+    `https://api.github.com/repos/${config.owner}/${config.repo}/actions/workflows/${config.workflow}/dispatches`,
     {
       method: 'POST',
       headers: {
         accept: 'application/vnd.github+json',
-        authorization: `Bearer ${token}`,
+        authorization: `Bearer ${config.token}`,
         'content-type': 'application/json',
         'x-github-api-version': '2022-11-28',
       },
@@ -122,12 +159,12 @@ async function dispatchApprovedQueueWorkflow(ownerEmail: string, applicationLimi
     const details = await response.text().catch(() => '');
     return {
       dispatched: false,
-      workflow,
+      workflow: config.workflow,
       error: `GitHub workflow dispatch failed with HTTP ${response.status}${details ? `: ${details.slice(0, 300)}` : ''}`,
     };
   }
 
-  return { dispatched: true, workflow };
+  return { dispatched: true, workflow: config.workflow };
 }
 
 function clean(value: unknown) {
