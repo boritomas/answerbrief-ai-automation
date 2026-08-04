@@ -95,6 +95,9 @@ test('browser companion forwards Greenhouse canary authorization into claims', (
     assert.match(source, /greenhouseSubmitAuthorized/);
     assert.match(source, /productionExecutionMode/);
   }
+  assert.match(route, /debugClaim/);
+  assert.match(companion, /claimDebug/);
+  assert.match(worker, /claimSkipRecord/);
   assert.match(companion, /CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID/);
   assert.match(companion, /CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION \|\| process\.env\.CAREER_OS_SUBMIT_RUN_AUTHORIZATION/);
   assert.match(worker, /productionExecutionMode\(overrides\)/);

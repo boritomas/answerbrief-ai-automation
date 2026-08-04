@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { claimNextBrowserWorkerTask } from '@/lib/career-os-browser-worker';
+import { claimNextBrowserWorkerTask, type BrowserWorkerClaimSkip } from '@/lib/career-os-browser-worker';
 import { authorizeBrowserWorker } from '@/lib/career-os-worker-auth';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +9,7 @@ export const runtime = 'nodejs';
 
 type ClaimBody = {
   companionId?: string;
+  debugClaim?: boolean;
   greenhouseCanaryApplicationId?: string;
   greenhouseSubmitAuthorized?: boolean;
   ownerEmail?: string;
@@ -24,9 +25,11 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({})) as ClaimBody;
   const companionId = clean(body.companionId) || 'career-os-local-companion';
   const ownerEmail = clean(body.ownerEmail) || clean(process.env.CAREER_OS_OWNER_EMAIL) || 'tomas@nieves.com';
+  const debugSkips: BrowserWorkerClaimSkip[] = [];
   try {
     const task = await claimNextBrowserWorkerTask({
       companionId,
+      debugSkips: body.debugClaim === true ? debugSkips : undefined,
       ownerEmail,
       production: {
         executionMode: clean(body.productionExecutionMode),
@@ -34,7 +37,16 @@ export async function POST(request: NextRequest) {
         greenhouseSubmitAuthorized: body.greenhouseSubmitAuthorized === true,
       },
     });
-    return NextResponse.json({ ok: true, task });
+    return NextResponse.json({
+      ok: true,
+      task,
+      debug: body.debugClaim === true
+        ? {
+            skipped: debugSkips.length,
+            skips: debugSkips.slice(0, 200),
+          }
+        : undefined,
+    });
   } catch (error) {
     const message = safeErrorMessage(error);
     console.error('Career OS browser worker claim failed', { message });

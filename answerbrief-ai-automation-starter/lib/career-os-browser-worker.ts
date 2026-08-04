@@ -133,6 +133,13 @@ type ProductionClaimOverrides = {
   greenhouseSubmitAuthorized?: boolean;
 };
 
+export type BrowserWorkerClaimSkip = JsonRecord & {
+  applicationId: string;
+  employer: string;
+  position: string;
+  reason: string;
+};
+
 const BROWSER_WORKER_SUPPORTED_PLATFORM_TOKENS = [
   'greenhouse',
   'workday',
@@ -142,6 +149,7 @@ const BROWSER_WORKER_SUPPORTED_PLATFORM_TOKENS = [
 
 export type BrowserWorkerClaimRequest = {
   companionId: string;
+  debugSkips?: BrowserWorkerClaimSkip[];
   ownerEmail: string;
   production?: ProductionClaimOverrides;
 };
@@ -247,15 +255,19 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
     'career_os_applications',
     `select=*&owner_email=eq.${encodeURIComponent(input.ownerEmail)}&order=updated_at.asc.nullslast,created_at.asc.nullslast`,
   ) as QueueApplication[];
+  const skip = (application: QueueApplication, reason: string, details: JsonRecord = {}) => {
+    debugClaimSkip(application, reason, details);
+    input.debugSkips?.push(claimSkipRecord(application, reason, details));
+  };
 
   for (const application of applications) {
     try {
       if (queuePaused && !isExplicitlyResumedApplication(application)) {
-        debugClaimSkip(application, 'queue_paused');
+        skip(application, 'queue_paused');
         continue;
       }
       if (!isBrowserWorkerEligible(application, input.companionId, input.production)) {
-        debugClaimSkip(application, 'not_browser_worker_eligible', {
+        skip(application, 'not_browser_worker_eligible', {
           state: canonicalQueueState(application, input.production),
           workerStatus: cleanEnv(asRecord(asRecord(application.raw_record).browser_worker).status),
           href: externalApplicationHref(application),
@@ -264,7 +276,7 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
       }
       const productionGate = productionClaimGate(application, applications, input.production);
       if (!productionGate.ok) {
-        debugClaimSkip(application, 'production_gate', {
+        skip(application, 'production_gate', {
           reason: productionGate.reason,
           status: productionGate.status,
         });
@@ -278,12 +290,12 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
         ownerEmail: input.ownerEmail,
       });
       if (!safety.ok) {
-        debugClaimSkip(application, 'submit_safety', { status: safety.status });
+        skip(application, 'submit_safety', { status: safety.status });
         continue;
       }
       const task = await buildTaskPayload(application, input.companionId);
       if (!task) {
-        debugClaimSkip(application, 'payload_unavailable');
+        skip(application, 'payload_unavailable');
         continue;
       }
 
@@ -326,7 +338,7 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
       await appendWorkflowEvent(application, 'browser_worker_claimed', 'running', patch.next_action, now, runId, task.applicationUrl);
       return task;
     } catch (error) {
-      debugClaimSkip(application, 'claim_exception', { message: safeWorkerErrorMessage(error) });
+      skip(application, 'claim_exception', { message: safeWorkerErrorMessage(error) });
       continue;
     }
   }
@@ -334,15 +346,19 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
   return null;
 }
 
-function debugClaimSkip(application: QueueApplication, reason: string, details: JsonRecord = {}) {
-  if (cleanEnv(process.env.CAREER_OS_DEBUG_CLAIM) !== '1') return;
-  console.warn('[career-os-claim-skip]', JSON.stringify({
+function claimSkipRecord(application: QueueApplication, reason: string, details: JsonRecord = {}): BrowserWorkerClaimSkip {
+  return {
     applicationId: application.id,
     employer: application.employer,
     position: application.position,
     reason,
     ...details,
-  }));
+  };
+}
+
+function debugClaimSkip(application: QueueApplication, reason: string, details: JsonRecord = {}) {
+  if (cleanEnv(process.env.CAREER_OS_DEBUG_CLAIM) !== '1') return;
+  console.warn('[career-os-claim-skip]', JSON.stringify(claimSkipRecord(application, reason, details)));
 }
 
 function safeWorkerErrorMessage(error: unknown) {

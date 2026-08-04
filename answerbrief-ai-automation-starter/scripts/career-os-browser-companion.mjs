@@ -106,6 +106,7 @@ async function printHealth() {
 async function claimAndRunTask() {
   const claim = await workerPost('/api/career-os/worker/claim', {
     companionId,
+    debugClaim: clean(process.env.CAREER_OS_DEBUG_CLAIM) === '1',
     greenhouseCanaryApplicationId: clean(process.env.CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID),
     greenhouseSubmitAuthorized: Boolean(clean(process.env.CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION || process.env.CAREER_OS_SUBMIT_RUN_AUTHORIZATION)),
     ownerEmail,
@@ -114,6 +115,7 @@ async function claimAndRunTask() {
   const task = claim.task;
   if (!task) {
     console.log('[worker] no task available');
+    if (claim.debug) console.log(JSON.stringify({ claimDebug: claim.debug }, null, 2));
     return false;
   }
 
