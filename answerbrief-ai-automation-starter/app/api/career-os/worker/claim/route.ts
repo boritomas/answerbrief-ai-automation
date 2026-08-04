@@ -9,7 +9,10 @@ export const runtime = 'nodejs';
 
 type ClaimBody = {
   companionId?: string;
+  greenhouseCanaryApplicationId?: string;
+  greenhouseSubmitAuthorized?: boolean;
   ownerEmail?: string;
+  productionExecutionMode?: string;
 };
 
 export async function POST(request: NextRequest) {
@@ -22,7 +25,15 @@ export async function POST(request: NextRequest) {
   const companionId = clean(body.companionId) || 'career-os-local-companion';
   const ownerEmail = clean(body.ownerEmail) || clean(process.env.CAREER_OS_OWNER_EMAIL) || 'tomas@nieves.com';
   try {
-    const task = await claimNextBrowserWorkerTask({ companionId, ownerEmail });
+    const task = await claimNextBrowserWorkerTask({
+      companionId,
+      ownerEmail,
+      production: {
+        executionMode: clean(body.productionExecutionMode),
+        greenhouseCanaryApplicationId: clean(body.greenhouseCanaryApplicationId),
+        greenhouseSubmitAuthorized: body.greenhouseSubmitAuthorized === true,
+      },
+    });
     return NextResponse.json({ ok: true, task });
   } catch (error) {
     const message = safeErrorMessage(error);

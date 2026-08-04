@@ -86,6 +86,21 @@ test('approved queue workflow drains with the batch worker', () => {
   assert.doesNotMatch(workflow, /npm run supervisor 2>&1 \| tee "\.career-os-ci\/\$\{GITHUB_RUN_ID\}\/approved-queue-supervisor\.log"/);
 });
 
+test('browser companion forwards Greenhouse canary authorization into claims', () => {
+  const route = read('app/api/career-os/worker/claim/route.ts');
+  const companion = read('scripts/career-os-browser-companion.mjs');
+  const worker = read('lib/career-os-browser-worker.ts');
+  for (const source of [route, companion, worker]) {
+    assert.match(source, /greenhouseCanaryApplicationId/);
+    assert.match(source, /greenhouseSubmitAuthorized/);
+    assert.match(source, /productionExecutionMode/);
+  }
+  assert.match(companion, /CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID/);
+  assert.match(companion, /CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION \|\| process\.env\.CAREER_OS_SUBMIT_RUN_AUTHORIZATION/);
+  assert.match(worker, /productionExecutionMode\(overrides\)/);
+  assert.match(worker, /isGreenhouseSubmitCanaryConfiguredFor\(application, overrides\)/);
+});
+
 test('Mac canary reports no eligible applications without failing infrastructure checks', () => {
   const workflow = readRepositoryFile('.github/workflows/career-os-mac-production.yml');
   const supervisor = read('scripts/career-os-autonomous-supervisor.mjs');

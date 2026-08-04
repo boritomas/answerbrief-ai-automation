@@ -127,6 +127,12 @@ type ProductionClaimGate = {
   status?: WorkerStatus;
 };
 
+type ProductionClaimOverrides = {
+  executionMode?: string;
+  greenhouseCanaryApplicationId?: string;
+  greenhouseSubmitAuthorized?: boolean;
+};
+
 const BROWSER_WORKER_SUPPORTED_PLATFORM_TOKENS = [
   'greenhouse',
   'workday',
@@ -137,6 +143,7 @@ const BROWSER_WORKER_SUPPORTED_PLATFORM_TOKENS = [
 export type BrowserWorkerClaimRequest = {
   companionId: string;
   ownerEmail: string;
+  production?: ProductionClaimOverrides;
 };
 
 export type BrowserWorkerTask = {
@@ -247,15 +254,15 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
         debugClaimSkip(application, 'queue_paused');
         continue;
       }
-      if (!isBrowserWorkerEligible(application, input.companionId)) {
+      if (!isBrowserWorkerEligible(application, input.companionId, input.production)) {
         debugClaimSkip(application, 'not_browser_worker_eligible', {
-          state: canonicalQueueState(application),
+          state: canonicalQueueState(application, input.production),
           workerStatus: cleanEnv(asRecord(asRecord(application.raw_record).browser_worker).status),
           href: externalApplicationHref(application),
         });
         continue;
       }
-      const productionGate = productionClaimGate(application, applications);
+      const productionGate = productionClaimGate(application, applications, input.production);
       if (!productionGate.ok) {
         debugClaimSkip(application, 'production_gate', {
           reason: productionGate.reason,
@@ -682,9 +689,9 @@ export async function browserWorkerHealth(ownerEmail: string) {
   };
 }
 
-function isBrowserWorkerEligible(application: QueueApplication, companionId: string | undefined) {
+function isBrowserWorkerEligible(application: QueueApplication, companionId: string | undefined, overrides: ProductionClaimOverrides = {}) {
   if (isTerminalSubmission(application)) return false;
-  const state = canonicalQueueState(application);
+  const state = canonicalQueueState(application, overrides);
   if (!['queued', 'package_ready', 'qualified', 'retry_scheduled', 'running', 'review_ready'].includes(state)) return false;
   if (state === 'review_ready' && !cleanEnv(process.env.CAREER_OS_WORKDAY_SUBMIT_APPROVAL)) return false;
   if (application.confirmation_number || application.submission_evidence) return false;
@@ -701,7 +708,7 @@ function isBrowserWorkerEligible(application: QueueApplication, companionId: str
     && !isExplicitlyResumedApplication(application)
     && !recoverableLegacyAdapterState(application)
     && !explicitlyQueued
-    && !isGreenhouseSubmitCanaryConfiguredFor(application)
+    && !isGreenhouseSubmitCanaryConfiguredFor(application, overrides)
     && !isWorkdayAuthorizedAccountGate(application)
   ) {
     return false;
@@ -717,7 +724,7 @@ function isExplicitlyResumedApplication(application: QueueApplication) {
   return Boolean(raw.explicit_resume_requested_at || raw.human_step_completed_at || raw.blocker_resolved_at);
 }
 
-function canonicalQueueState(application: JsonRecord): QueueState {
+function canonicalQueueState(application: JsonRecord, overrides: ProductionClaimOverrides = {}): QueueState {
   const raw = asRecord(application.raw_record);
   const lifecycleStage = cleanEnv(application.lifecycle_stage).toLowerCase();
   const text = applicationText(application);
@@ -734,7 +741,7 @@ function canonicalQueueState(application: JsonRecord): QueueState {
   if (hasAny(text, ['duplicate'])) return 'duplicate';
   if (hasAny(text, ['deferred_phase_two_greenhouse'])) {
     if (
-      isGreenhouseSubmitCanaryConfiguredFor(application as QueueApplication)
+      isGreenhouseSubmitCanaryConfiguredFor(application as QueueApplication, overrides)
       && hasAny(text, ['approved_for_run_one', 'package_ready', 'qualified', 'queued', 'ready_for_automation'])
     ) {
       return 'queued';
@@ -1351,13 +1358,13 @@ function deterministicUuid(input: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function productionClaimGate(application: QueueApplication, applications: QueueApplication[]): ProductionClaimGate {
+function productionClaimGate(application: QueueApplication, applications: QueueApplication[], overrides: ProductionClaimOverrides = {}): ProductionClaimGate {
   const platform = productionPlatform(application);
-  const executionMode = productionExecutionMode();
+  const executionMode = productionExecutionMode(overrides);
   const normalizedMode = normalizeProductionExecutionMode(executionMode);
   const dailyLimit = productionDailyLimit();
 
-  if (!isProductionQualified(application)) {
+  if (!isProductionQualified(application, overrides)) {
     return {
       dailyLimit,
       executionMode,
@@ -1408,13 +1415,13 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
   }
 
   if (platform === 'greenhouse') {
-    const canaryId = greenhouseCanaryId();
-    const authorized = greenhouseSubmitAuthorizationConfigured();
-    const configuredForApplication = isGreenhouseSubmitCanaryConfiguredFor(application);
+    const canaryId = greenhouseCanaryId(overrides);
+    const authorized = greenhouseSubmitAuthorizationConfigured(overrides);
+    const configuredForApplication = isGreenhouseSubmitCanaryConfiguredFor(application, overrides);
     const canaryCandidates = applications.filter((candidate) => {
-      if (!isGreenhouseSubmitCanaryConfiguredFor(candidate)) return false;
+      if (!isGreenhouseSubmitCanaryConfiguredFor(candidate, overrides)) return false;
       if (isTerminalSubmission(candidate)) return false;
-      return ['queued', 'package_ready', 'qualified', 'retry_scheduled', 'running', 'review_ready'].includes(canonicalQueueState(candidate));
+      return ['queued', 'package_ready', 'qualified', 'retry_scheduled', 'running', 'review_ready'].includes(canonicalQueueState(candidate, overrides));
     });
 
     if (normalizedMode !== 'submit_enabled') {
@@ -1970,12 +1977,12 @@ function isWorkdayApplication(application: JsonRecord) {
   return hasAny(text, ['workday', 'myworkdayjobs.com', '.wd1.', '.wd3.', '.wd5.', '.wd12.']);
 }
 
-function isProductionQualified(application: QueueApplication) {
+function isProductionQualified(application: QueueApplication, overrides: ProductionClaimOverrides = {}) {
   const raw = asRecord(application.raw_record);
   const text = applicationText(application);
   const lifecycleStage = cleanEnv(application.lifecycle_stage).toLowerCase();
   const executionStatus = cleanEnv(raw.execution_status).toLowerCase();
-  if (hasAny(text, ['deferred_phase_two_greenhouse']) && !isGreenhouseSubmitCanaryConfiguredFor(application)) return false;
+  if (hasAny(text, ['deferred_phase_two_greenhouse']) && !isGreenhouseSubmitCanaryConfiguredFor(application, overrides)) return false;
   if (hasAny(text, ['ineligible', 'not_qualified', 'discovered', 'quality_hold', 'hold_for_quality'])) return false;
   if (lifecycleStage === 'qualification_pending' || executionStatus === 'qualification_pending') return false;
   const productionStateText = `${raw.production_outcome || ''} ${raw.execution_status || ''} ${asRecord(raw.browser_worker_last_report).status || ''}`;
@@ -1983,7 +1990,7 @@ function isProductionQualified(application: QueueApplication) {
     'deferred_today',
     'phase_two',
     'waiting_on_tomas',
-  ]) && !isGreenhouseSubmitCanaryConfiguredFor(application)) return false;
+  ]) && !isGreenhouseSubmitCanaryConfiguredFor(application, overrides)) return false;
   if (hasAny(productionStateText, [
     'unsupported_workday_state',
     'ineligible',
@@ -1997,17 +2004,18 @@ function isProductionQualified(application: QueueApplication) {
   return typeof fitScore === 'number' && fitScore >= 70;
 }
 
-function greenhouseCanaryId() {
-  return cleanEnv(process.env.CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID);
+function greenhouseCanaryId(overrides: ProductionClaimOverrides = {}) {
+  return cleanEnv(overrides.greenhouseCanaryApplicationId) || cleanEnv(process.env.CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID);
 }
 
-function greenhouseSubmitAuthorizationConfigured() {
-  return Boolean(cleanEnv(process.env.CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION || process.env.CAREER_OS_SUBMIT_RUN_AUTHORIZATION));
+function greenhouseSubmitAuthorizationConfigured(overrides: ProductionClaimOverrides = {}) {
+  return overrides.greenhouseSubmitAuthorized === true
+    || Boolean(cleanEnv(process.env.CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION || process.env.CAREER_OS_SUBMIT_RUN_AUTHORIZATION));
 }
 
-function isGreenhouseSubmitCanaryConfiguredFor(application: QueueApplication) {
+function isGreenhouseSubmitCanaryConfiguredFor(application: QueueApplication, overrides: ProductionClaimOverrides = {}) {
   if (productionPlatform(application) !== 'greenhouse') return false;
-  const canaryId = greenhouseCanaryId();
+  const canaryId = greenhouseCanaryId(overrides);
   if (!canaryId) return false;
   const raw = asRecord(application.raw_record);
   const rawCanaryId = cleanEnv(raw.greenhouse_canary_id || raw.greenhouse_canary_application_id);
@@ -2068,8 +2076,8 @@ function workdayCanaryId() {
   return cleanEnv(process.env.CAREER_OS_WORKDAY_CANARY_ID || process.env.CAREER_OS_WORKDAY_CANARY_APPLICATION_ID);
 }
 
-function productionExecutionMode() {
-  return cleanEnv(process.env.CAREER_OS_EXECUTION_MODE);
+function productionExecutionMode(overrides: ProductionClaimOverrides = {}) {
+  return cleanEnv(overrides.executionMode) || cleanEnv(process.env.CAREER_OS_EXECUTION_MODE);
 }
 
 function normalizeProductionExecutionMode(value: string) {
