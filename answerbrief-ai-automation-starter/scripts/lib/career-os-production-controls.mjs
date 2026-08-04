@@ -63,6 +63,7 @@ export function resolveProductionExecutionPolicy(input = {}) {
     requestedExecutionMode: explicitMode.value || '',
     routing: input.routingMetadata || null,
   };
+  let greenhouseSubmitValidation = null;
 
   if (!explicitMode.value) {
     return blockedPolicy({
@@ -89,15 +90,23 @@ export function resolveProductionExecutionPolicy(input = {}) {
   }
 
   if (adapterId === 'greenhouse') {
-    return blockedPolicy({
-      adapterId,
-      capability,
-      details: { ...baseDetails, executionMode: mode },
-      mode,
-      outcomeStatus: 'deferred_phase_two_greenhouse',
-      reason: 'Greenhouse is deferred for this Workday-first production phase; records stay visible but will not be submitted.',
-      reportStatus: 'deferred_phase_two_greenhouse',
-    });
+    greenhouseSubmitValidation = validateGreenhouseSubmitPolicy(task, env, mode);
+    if (!greenhouseSubmitValidation.ok) {
+      return blockedPolicy({
+        adapterId,
+        capability,
+        details: {
+          ...baseDetails,
+          executionMode: mode,
+          greenhouseCanary: greenhouseSubmitValidation.details,
+        },
+        mode,
+        outcomeStatus: greenhouseSubmitValidation.outcomeStatus,
+        reason: greenhouseSubmitValidation.reason,
+        reportStatus: greenhouseSubmitValidation.reportStatus,
+      });
+    }
+    baseDetails.greenhouseCanary = greenhouseSubmitValidation.details;
   }
 
   if (!capability?.supported) {
@@ -165,7 +174,8 @@ export function resolveProductionExecutionPolicy(input = {}) {
     reason: `${adapterId} is allowed to run in ${mode}.`,
     reportStatus: undefined,
     submitAllowed: (adapterId === 'workday' && mode === 'workday_first_submit')
-      || (adapterId === 'workday' && mode === 'workday_single_canary' && Boolean(clean(env.CAREER_OS_WORKDAY_SUBMIT_APPROVAL))),
+      || (adapterId === 'workday' && mode === 'workday_single_canary' && Boolean(clean(env.CAREER_OS_WORKDAY_SUBMIT_APPROVAL)))
+      || (adapterId === 'greenhouse' && mode === 'submit_enabled' && greenhouseSubmitValidation?.ok === true),
   };
 }
 
@@ -352,6 +362,66 @@ function validateWorkdaySingleCanaryPolicy(task, env) {
     return { ok: false, details, reason: 'CAREER_OS_WORKDAY_CANARY_URL does not match the task Workday tenant and job id.' };
   }
   return { ok: true, details, reason: '' };
+}
+
+function validateGreenhouseSubmitPolicy(task, env, mode) {
+  const applicationId = clean(task.applicationId);
+  const raw = task.rawRecord && typeof task.rawRecord === 'object' ? task.rawRecord : {};
+  const taskCanaryId = clean(raw.greenhouse_canary_id || raw.greenhouse_canary_application_id);
+  const canaryId = clean(env.CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID);
+  const authorization = clean(env.CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION || env.CAREER_OS_SUBMIT_RUN_AUTHORIZATION);
+  const details = {
+    authorizationConfigured: Boolean(authorization),
+    canaryApplicationIdConfigured: Boolean(canaryId),
+    canaryApplicationIdMatchesTask: Boolean(canaryId && (canaryId === applicationId || canaryId === taskCanaryId)),
+  };
+
+  if (mode !== 'submit_enabled') {
+    return {
+      details,
+      ok: false,
+      outcomeStatus: 'deferred_phase_two_greenhouse',
+      reason: 'Greenhouse is deferred unless submit_enabled mode names exactly one authorized canary application.',
+      reportStatus: 'deferred_phase_two_greenhouse',
+    };
+  }
+  if (!applicationId) {
+    return {
+      details,
+      ok: false,
+      outcomeStatus: 'canary_stopped',
+      reason: 'Greenhouse submit canary mode requires a task application id.',
+      reportStatus: 'canary_stopped',
+    };
+  }
+  if (!canaryId) {
+    return {
+      details,
+      ok: false,
+      outcomeStatus: 'canary_stopped',
+      reason: 'Greenhouse submit canary mode requires CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID.',
+      reportStatus: 'canary_stopped',
+    };
+  }
+  if (!(canaryId === applicationId || canaryId === taskCanaryId)) {
+    return {
+      details,
+      ok: false,
+      outcomeStatus: 'canary_stopped',
+      reason: 'Greenhouse submit canary mode is limited to the configured canary application id.',
+      reportStatus: 'canary_stopped',
+    };
+  }
+  if (!authorization) {
+    return {
+      details,
+      ok: false,
+      outcomeStatus: 'canary_stopped',
+      reason: 'Greenhouse submit canary mode requires CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION or CAREER_OS_SUBMIT_RUN_AUTHORIZATION.',
+      reportStatus: 'canary_stopped',
+    };
+  }
+  return { details, ok: true, outcomeStatus: '', reason: '', reportStatus: undefined };
 }
 
 function parseWorkdayPolicyUrl(value) {

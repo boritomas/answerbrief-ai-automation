@@ -61,14 +61,15 @@
     "greenhouse": {
       "supported": true,
       "capabilityTier": "production_submit_guarded",
-      "implementationStatus": "deferred_phase_two_greenhouse",
+      "implementationStatus": "guarded_submit_canary",
       "allowedModes": [
-        "inspect_only"
+        "inspect_only",
+        "submit_enabled"
       ],
       "defaultOutcomeWhenBlocked": "deferred_phase_two_greenhouse",
       "submitPolicy": {
-        "submitEnabled": false,
-        "deferredForPhase": "phase_two_greenhouse",
+        "submitEnabled": true,
+        "defaultDeferredForPhase": "phase_two_greenhouse",
         "requiresExplicitMode": true,
         "requiresRunAuthorization": true,
         "requiresCanaryApplicationId": true,
@@ -175,10 +176,12 @@
     "requiresDuplicateFree": true,
     "requiresActiveHttpUrl": true,
     "supportedAutomationPlatforms": [
-      "workday"
+      "workday",
+      "greenhouse"
     ],
     "submitEnabledPlatforms": [
-      "workday"
+      "workday",
+      "greenhouse"
     ],
     "assistedOnlyPlatforms": [
       "greenhouse"
@@ -187,8 +190,7 @@
     "workdayFirstMode": "workday_first_submit",
     "workdayBroadSubmissionDisabled": false,
     "forbiddenAdapters": [
-      "oracle",
-      "greenhouse"
+      "oracle"
     ]
   }
 }

@@ -13,6 +13,19 @@ on:
         required: true
         default: 'tomas@nieves.com'
         type: string
+      execution_mode:
+        description: Production execution mode
+        required: false
+        default: 'workday_first_submit'
+        type: choice
+        options:
+          - workday_first_submit
+          - submit_enabled
+      greenhouse_canary_application_id:
+        description: Exact Greenhouse application id to submit when execution_mode=submit_enabled
+        required: false
+        default: ''
+        type: string
 
 # Allow the authoritative queue drain to finish. New requests wait rather than
 # canceling an active browser-submission run.
@@ -38,7 +51,10 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CAREER_OS_OWNER_EMAIL: ${{ inputs.owner_email || 'tomas@nieves.com' }}
-      CAREER_OS_EXECUTION_MODE: workday_first_submit
+      CAREER_OS_EXECUTION_MODE: ${{ inputs.execution_mode || 'workday_first_submit' }}
+      CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID: ${{ inputs.greenhouse_canary_application_id || '' }}
+      CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION: ${{ secrets.CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION }}
+      CAREER_OS_SUBMIT_RUN_AUTHORIZATION: ${{ secrets.CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION }}
       CAREER_OS_QUEUE_ENABLED: '1'
       CAREER_OS_DAILY_LIMIT: ${{ inputs.application_limit || '165' }}
       CAREER_OS_DEBUG_CLAIM: '1'
@@ -148,10 +164,17 @@ jobs:
         run: |
           set -euo pipefail
           cd "$CAREER_OS_RUNTIME"
+          requested_execution_mode="${CAREER_OS_EXECUTION_MODE:-workday_first_submit}"
+          requested_greenhouse_canary_id="${CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID:-}"
+          requested_greenhouse_authorization="${CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION:-}"
           set -a
           if [ -f .env ]; then . ./.env; fi
           if [ -f .env.local ]; then . ./.env.local; fi
           set +a
+          export CAREER_OS_EXECUTION_MODE="$requested_execution_mode"
+          export CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID="$requested_greenhouse_canary_id"
+          export CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION="$requested_greenhouse_authorization"
+          export CAREER_OS_SUBMIT_RUN_AUTHORIZATION="$requested_greenhouse_authorization"
           export CAREER_OS_OWNER_EMAIL="${CAREER_OS_OWNER_EMAIL:-tomas@nieves.com}"
           export CAREER_OS_QUEUE_ENABLED="1"
           export CAREER_OS_DAILY_LIMIT="${CAREER_OS_DAILY_LIMIT:-165}"
@@ -168,10 +191,17 @@ jobs:
         run: |
           set +e
           cd "$CAREER_OS_RUNTIME"
+          requested_execution_mode="${CAREER_OS_EXECUTION_MODE:-workday_first_submit}"
+          requested_greenhouse_canary_id="${CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID:-}"
+          requested_greenhouse_authorization="${CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION:-}"
           set -a
           if [ -f .env ]; then . ./.env; fi
           if [ -f .env.local ]; then . ./.env.local; fi
           set +a
+          export CAREER_OS_EXECUTION_MODE="$requested_execution_mode"
+          export CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID="$requested_greenhouse_canary_id"
+          export CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION="$requested_greenhouse_authorization"
+          export CAREER_OS_SUBMIT_RUN_AUTHORIZATION="$requested_greenhouse_authorization"
           EVIDENCE_DIR=".career-os-ci/${GITHUB_RUN_ID}"
           mkdir -p "$EVIDENCE_DIR/screenshots"
           npm run worker:health 2>&1 | tee "$EVIDENCE_DIR/worker-health-final.log"

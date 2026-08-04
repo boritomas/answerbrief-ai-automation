@@ -731,7 +731,15 @@ function canonicalQueueState(application: JsonRecord): QueueState {
   if (hasAny(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
   if (hasAny(text, ['submitted'])) return 'submitted';
   if (hasAny(text, ['duplicate'])) return 'duplicate';
-  if (hasAny(text, ['deferred_phase_two_greenhouse'])) return 'ineligible';
+  if (hasAny(text, ['deferred_phase_two_greenhouse'])) {
+    if (
+      isGreenhouseSubmitCanaryConfiguredFor(application as QueueApplication)
+      && hasAny(text, ['approved_for_run_one', 'package_ready', 'qualified', 'queued', 'ready_for_automation'])
+    ) {
+      return 'queued';
+    }
+    return 'ineligible';
+  }
   if (hasAny(text, ['quality_hold', 'hold_for_quality'])) return 'ineligible';
   if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable', 'no longer available', 'generic careers listing'])) return 'inactive';
   if (hasAny(text, ['ineligible'])) return 'ineligible';
@@ -1372,18 +1380,6 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
     };
   }
 
-  if (platform === 'greenhouse') {
-    return {
-      dailyLimit,
-      executionMode,
-      ok: false,
-      persist: true,
-      platform,
-      reason: 'Greenhouse is deferred for this Workday-first production phase; records stay visible but will not be submitted.',
-      status: 'deferred_phase_two_greenhouse',
-    };
-  }
-
   if (productionProcessedToday(applications) >= dailyLimit) {
     return {
       dailyLimit,
@@ -1408,6 +1404,77 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
         : 'CAREER_OS_EXECUTION_MODE is missing; automation is blocked.',
       status: 'terminal_failure',
     };
+  }
+
+  if (platform === 'greenhouse') {
+    const canaryId = greenhouseCanaryId();
+    const authorized = greenhouseSubmitAuthorizationConfigured();
+    const configuredForApplication = isGreenhouseSubmitCanaryConfiguredFor(application);
+    const canaryCandidates = applications.filter((candidate) => {
+      if (!isGreenhouseSubmitCanaryConfiguredFor(candidate)) return false;
+      if (isTerminalSubmission(candidate)) return false;
+      return ['queued', 'package_ready', 'qualified', 'retry_scheduled', 'running', 'review_ready'].includes(canonicalQueueState(candidate));
+    });
+
+    if (normalizedMode !== 'submit_enabled') {
+      return {
+        dailyLimit,
+        executionMode: normalizedMode,
+        ok: false,
+        persist: true,
+        platform,
+        reason: 'Greenhouse is deferred unless submit_enabled mode names exactly one authorized canary application.',
+        status: 'deferred_phase_two_greenhouse',
+      };
+    }
+    if (!canaryId) {
+      return {
+        dailyLimit,
+        details: { greenhouse_canary_id_configured: false },
+        executionMode: normalizedMode,
+        ok: false,
+        persist: true,
+        platform,
+        reason: 'Greenhouse submit canary mode requires CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID.',
+        status: 'canary_stopped',
+      };
+    }
+    if (!configuredForApplication) {
+      return {
+        dailyLimit,
+        details: { greenhouse_canary_id_configured: true, greenhouse_canary_id_matches_task: false },
+        executionMode: normalizedMode,
+        ok: false,
+        persist: false,
+        platform,
+        reason: 'Greenhouse submit canary mode is limited to the configured canary application id.',
+        status: 'canary_stopped',
+      };
+    }
+    if (!authorized) {
+      return {
+        dailyLimit,
+        details: { greenhouse_submit_authorization_configured: false },
+        executionMode: normalizedMode,
+        ok: false,
+        persist: true,
+        platform,
+        reason: 'Greenhouse submit canary mode requires CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION or CAREER_OS_SUBMIT_RUN_AUTHORIZATION.',
+        status: 'canary_stopped',
+      };
+    }
+    if (canaryCandidates.length !== 1) {
+      return {
+        dailyLimit,
+        details: { greenhouse_canary_candidate_count: canaryCandidates.length },
+        executionMode: normalizedMode,
+        ok: false,
+        persist: false,
+        platform,
+        reason: 'Greenhouse submit canary mode requires exactly one qualified canary task.',
+        status: 'canary_stopped',
+      };
+    }
   }
 
   if (platform === 'workday') {
@@ -1907,7 +1974,8 @@ function isProductionQualified(application: QueueApplication) {
   const text = applicationText(application);
   const lifecycleStage = cleanEnv(application.lifecycle_stage).toLowerCase();
   const executionStatus = cleanEnv(raw.execution_status).toLowerCase();
-  if (hasAny(text, ['deferred_phase_two_greenhouse', 'ineligible', 'not_qualified', 'discovered', 'quality_hold', 'hold_for_quality'])) return false;
+  if (hasAny(text, ['deferred_phase_two_greenhouse']) && !isGreenhouseSubmitCanaryConfiguredFor(application)) return false;
+  if (hasAny(text, ['ineligible', 'not_qualified', 'discovered', 'quality_hold', 'hold_for_quality'])) return false;
   if (lifecycleStage === 'qualification_pending' || executionStatus === 'qualification_pending') return false;
   if (hasAny(`${raw.production_outcome || ''} ${raw.execution_status || ''} ${asRecord(raw.browser_worker_last_report).status || ''}`, [
     'deferred_today',
@@ -1923,6 +1991,23 @@ function isProductionQualified(application: QueueApplication) {
   if (raw.queue_eligible === true && hasAny(`${raw.package_status || ''}`, ['approved_for_automation', 'package_ready'])) return true;
   const fitScore = numberValue(raw.fit_score || raw.match_score || raw.score);
   return typeof fitScore === 'number' && fitScore >= 70;
+}
+
+function greenhouseCanaryId() {
+  return cleanEnv(process.env.CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID);
+}
+
+function greenhouseSubmitAuthorizationConfigured() {
+  return Boolean(cleanEnv(process.env.CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION || process.env.CAREER_OS_SUBMIT_RUN_AUTHORIZATION));
+}
+
+function isGreenhouseSubmitCanaryConfiguredFor(application: QueueApplication) {
+  if (productionPlatform(application) !== 'greenhouse') return false;
+  const canaryId = greenhouseCanaryId();
+  if (!canaryId) return false;
+  const raw = asRecord(application.raw_record);
+  const rawCanaryId = cleanEnv(raw.greenhouse_canary_id || raw.greenhouse_canary_application_id);
+  return canaryId === application.id || canaryId === rawCanaryId;
 }
 
 function productionProcessedToday(applications: QueueApplication[]) {

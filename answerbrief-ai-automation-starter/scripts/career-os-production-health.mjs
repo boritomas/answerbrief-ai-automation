@@ -103,7 +103,13 @@ function checkEnvironment() {
   if (mode === 'workday_first_submit') {
     pass('workday_first_mode', 'Workday-first production submission mode is active.');
   } else if (mode === 'submit_enabled') {
-    fail('submit_enabled_authorization', 'submit_enabled is reserved for deferred non-Workday phases; use CAREER_OS_EXECUTION_MODE=workday_first_submit.');
+    const greenhouseCanaryId = clean(process.env.CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID);
+    const greenhouseAuthorization = clean(process.env.CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION || process.env.CAREER_OS_SUBMIT_RUN_AUTHORIZATION);
+    if (greenhouseCanaryId && greenhouseAuthorization) {
+      pass('submit_enabled_authorization', 'Greenhouse submit canary authorization is configured for one explicit application.');
+    } else {
+      fail('submit_enabled_authorization', 'submit_enabled requires CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID and CAREER_OS_GREENHOUSE_SUBMIT_AUTHORIZATION.');
+    }
   } else {
     pass('submit_enabled_authorization', 'legacy submit_enabled is disabled during Workday-first production.');
   }
@@ -188,15 +194,15 @@ function checkProductionPolicies() {
     adapterId: 'greenhouse',
     env: {
       CAREER_OS_EXECUTION_MODE: 'submit_enabled',
-      CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID: 'health-greenhouse',
+      CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID: 'app-greenhouse-canary',
       CAREER_OS_SUBMIT_RUN_AUTHORIZATION: 'health-check',
     },
     task: task(),
   });
-  if (!greenhouseSubmit.allowed && greenhouseSubmit.outcomeStatus === 'deferred_phase_two_greenhouse') {
-    pass('policy:greenhouse_deferred', 'Greenhouse is recognized and deferred for phase two.');
+  if (greenhouseSubmit.allowed && greenhouseSubmit.submitAllowed) {
+    pass('policy:greenhouse_submit_canary', 'Greenhouse canary submit is allowed only with explicit application id and authorization.');
   } else {
-    fail('policy:greenhouse_deferred', 'Greenhouse was not deferred for Workday-first production.');
+    fail('policy:greenhouse_submit_canary', 'Greenhouse canary submit policy did not open under explicit authorization.');
   }
 
   const workdayMissingCanary = resolveProductionExecutionPolicy({

@@ -373,7 +373,28 @@ test('tracked Workday routed adapter reaches existing legacy execute body withou
   }
 });
 
-test('tracked Greenhouse production path defers before live navigation', async () => {
+test('tracked Greenhouse production path defers before live navigation without canary authorization', async () => {
+  const greenhouseTask = task();
+  const adapter = getATSAdapter(greenhouseTask, { env: { CAREER_OS_EXECUTION_MODE: 'workday_first_submit' } });
+  const page = greenhouseSubmitPage(greenhouseTask.applicationUrl);
+  const reportCalls = [];
+  const runtime = {
+    async report(payload) {
+      reportCalls.push(payload);
+    },
+  };
+
+  const result = await adapter.execute(page, greenhouseTask, runtime);
+
+  assert.equal(result, true);
+  assert.equal(page.state.navigatedUrl, '');
+  assert.deepEqual(page.state.uploadedFiles, []);
+  assert.equal(page.state.clickedSubmit, false);
+  assert.ok(reportCalls.some((payload) => payload.status === 'deferred_phase_two_greenhouse'));
+  assert.equal(adapter.routingMetadata.adapterId, 'greenhouse');
+});
+
+test('tracked Greenhouse production canary submits with explicit authorization', async () => {
   const greenhouseTask = task();
   const adapter = getATSAdapter(greenhouseTask, { env: productionEnvFor(greenhouseTask) });
   const page = greenhouseSubmitPage(greenhouseTask.applicationUrl);
@@ -403,11 +424,11 @@ test('tracked Greenhouse production path defers before live navigation', async (
   const result = await adapter.execute(page, greenhouseTask, runtime);
 
   assert.equal(result, true);
-  assert.equal(page.state.navigatedUrl, '');
-  assert.deepEqual(page.state.uploadedFiles, []);
-  assert.equal(safetyChecks, 0);
-  assert.equal(page.state.clickedSubmit, false);
-  assert.ok(reportCalls.some((payload) => payload.status === 'deferred_phase_two_greenhouse'));
+  assert.equal(page.state.navigatedUrl, greenhouseTask.applicationUrl);
+  assert.deepEqual(page.state.uploadedFiles, ['/tmp/approved-resume.pdf']);
+  assert.equal(safetyChecks, 1);
+  assert.equal(page.state.clickedSubmit, true);
+  assert.ok(reportCalls.some((payload) => payload.status === 'confirmed' || payload.status === 'submitted_confirmed'));
   assert.equal(adapter.routingMetadata.adapterId, 'greenhouse');
 });
 

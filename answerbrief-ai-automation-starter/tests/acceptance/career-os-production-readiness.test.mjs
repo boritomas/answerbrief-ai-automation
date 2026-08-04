@@ -40,8 +40,8 @@ function forbiddenPage() {
 test('production capability matrix declares controlled launch boundaries', () => {
   const matrix = loadAtsProductionCapabilities({ reload: true });
   assert.equal(matrix.adapters.greenhouse.capabilityTier, 'production_submit_guarded');
-  assert.equal(matrix.adapters.greenhouse.implementationStatus, 'deferred_phase_two_greenhouse');
-  assert.deepEqual(matrix.adapters.greenhouse.allowedModes, ['inspect_only']);
+  assert.equal(matrix.adapters.greenhouse.implementationStatus, 'guarded_submit_canary');
+  assert.deepEqual(matrix.adapters.greenhouse.allowedModes, ['inspect_only', 'submit_enabled']);
   assert.deepEqual(matrix.adapters.workday.allowedModes, ['inspect_only', 'assisted_apply', 'workday_single_canary', 'workday_first_submit']);
   assert.equal(matrix.adapters.workday.submitPolicy.submitEnabled, true);
   assert.equal(matrix.adapters.workday.submitPolicy.standingAuthorizationMode, 'workday_first_submit');
@@ -90,7 +90,7 @@ test('execution mode policy fails closed, defers Greenhouse, and allows Workday-
   });
   assert.equal(invalid.allowed, false);
 
-  const greenhouseDeferred = resolveProductionExecutionPolicy({
+  const greenhouseMissingCanary = resolveProductionExecutionPolicy({
     adapterId: 'greenhouse',
     env: {
       CAREER_OS_EXECUTION_MODE: 'submit_enabled',
@@ -98,8 +98,20 @@ test('execution mode policy fails closed, defers Greenhouse, and allows Workday-
     },
     task: greenhouseTask,
   });
-  assert.equal(greenhouseDeferred.allowed, false);
-  assert.equal(greenhouseDeferred.outcomeStatus, 'deferred_phase_two_greenhouse');
+  assert.equal(greenhouseMissingCanary.allowed, false);
+  assert.equal(greenhouseMissingCanary.outcomeStatus, 'canary_stopped');
+
+  const greenhouseCanary = resolveProductionExecutionPolicy({
+    adapterId: 'greenhouse',
+    env: {
+      CAREER_OS_EXECUTION_MODE: 'submit_enabled',
+      CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID: 'app-greenhouse-canary',
+      CAREER_OS_SUBMIT_RUN_AUTHORIZATION: 'test',
+    },
+    task: greenhouseTask,
+  });
+  assert.equal(greenhouseCanary.allowed, true);
+  assert.equal(greenhouseCanary.submitAllowed, true);
 
   const workdayFirst = resolveProductionExecutionPolicy({
     adapterId: 'workday',
