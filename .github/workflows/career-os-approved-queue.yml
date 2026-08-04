@@ -33,7 +33,12 @@ jobs:
     env:
       CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
       CAREER_OS_SOURCE: ${{ github.workspace }}/answerbrief-ai-automation-starter
+      APP_BASE_URL: https://www.answer-brief.com
+      NEXT_PUBLIC_BASE_URL: https://www.answer-brief.com
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CAREER_OS_OWNER_EMAIL: ${{ inputs.owner_email || 'tomas@nieves.com' }}
+      CAREER_OS_EXECUTION_MODE: workday_first_submit
       CAREER_OS_QUEUE_ENABLED: '1'
       CAREER_OS_DAILY_LIMIT: ${{ inputs.application_limit || '165' }}
       CAREER_OS_DEBUG_CLAIM: '1'

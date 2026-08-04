@@ -45,6 +45,12 @@ jobs:
     env:
       CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
       CAREER_OS_SOURCE: ${{ github.workspace }}/answerbrief-ai-automation-starter
+      APP_BASE_URL: https://www.answer-brief.com
+      NEXT_PUBLIC_BASE_URL: https://www.answer-brief.com
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CAREER_OS_OWNER_EMAIL: tomas@nieves.com
+      CAREER_OS_EXECUTION_MODE: workday_first_submit
       CAREER_OS_DEBUG_CLAIM: '1'
       CAREER_OS_DAILY_LIMIT: '1'
       CAREER_OS_AUTO_REPAIR: '1'
@@ -154,8 +160,20 @@ jobs:
           test -f "$CAREER_OS_SOURCE/package.json"
           test -d "$CAREER_OS_RUNTIME"
           if test ! -f "$CAREER_OS_RUNTIME/.env" && test ! -f "$CAREER_OS_RUNTIME/.env.local"; then
-            echo "Canonical Career OS runtime environment file is missing."
-            exit 1
+            if test -z "${SUPABASE_URL:-}" || test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"; then
+              echo "Canonical Career OS runtime environment file is missing and required GitHub secrets are unavailable."
+              exit 1
+            fi
+            umask 177
+            {
+              printf 'APP_BASE_URL=%s\n' "${APP_BASE_URL:-https://www.answer-brief.com}"
+              printf 'NEXT_PUBLIC_BASE_URL=%s\n' "${NEXT_PUBLIC_BASE_URL:-https://www.answer-brief.com}"
+              printf 'SUPABASE_URL=%s\n' "$SUPABASE_URL"
+              printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SUPABASE_SERVICE_ROLE_KEY"
+              printf 'CAREER_OS_OWNER_EMAIL=%s\n' "${CAREER_OS_OWNER_EMAIL:-tomas@nieves.com}"
+              printf 'CAREER_OS_EXECUTION_MODE=%s\n' "${CAREER_OS_EXECUTION_MODE:-workday_first_submit}"
+            } > "$CAREER_OS_RUNTIME/.env.local"
+            echo "Canonical Career OS runtime environment file restored from GitHub secrets."
           fi
 
           BACKUP_ROOT="$HOME/CareerOSBackups/${GITHUB_RUN_ID}"
@@ -164,6 +182,8 @@ jobs:
             --exclude='node_modules' \
             --exclude='.next' \
             --exclude='.git' \
+            --exclude='.env' \
+            --exclude='.env.local' \
             --exclude='.career-os-browser-worker/chrome-profile' \
             --exclude='.career-os-ci' \
             -C "$(dirname "$CAREER_OS_RUNTIME")" "$(basename "$CAREER_OS_RUNTIME")"
