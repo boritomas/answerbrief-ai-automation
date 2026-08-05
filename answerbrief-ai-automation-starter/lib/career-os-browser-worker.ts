@@ -791,6 +791,16 @@ function canonicalQueueState(application: JsonRecord, overrides: ProductionClaim
     || cleanEnv(raw.execution_status).toLowerCase() === 'queued'
   ) return 'queued';
   if (application.confirmation_number || application.submission_evidence) return 'confirmed';
+  // A required-field decision gate ("Workday requires Tomas to decide N
+  // required field(s) before continuing") is a normal, resumable state: the
+  // worker stopped to ask a question, it did not fail. The status marker
+  // that identifies this state lives only in browser_worker_last_report.status,
+  // which applicationText() never inspects, so without this check every
+  // such application falls through every keyword scan below and lands on
+  // the generic "qualification_pending" default -- permanently blocking a
+  // resumable application from ever being claimed again.
+  const lastReportStatus = cleanEnv(asRecord(raw.browser_worker_last_report).status).toLowerCase();
+  if (lastReportStatus === 'waiting_for_user_decision' && !hasAny(text, ['unsupported_workday_state', 'terminal_failure'])) return 'queued';
   if (hasAny(text, ['retry_scheduled', 'retry scheduled'])) return 'retry_scheduled';
   if (hasAny(text, ['submitted'])) return 'submitted';
   if (hasAny(text, ['duplicate'])) return 'duplicate';
