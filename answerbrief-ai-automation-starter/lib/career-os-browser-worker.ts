@@ -802,6 +802,14 @@ function canonicalQueueState(application: JsonRecord, overrides: ProductionClaim
     if (isGreenhouseSubmitCanaryConfiguredFor(application as QueueApplication, overrides)) return 'queued';
     return 'ineligible';
   }
+  // Must run before the generic inactive/closed/expired scan below: a
+  // Workday account-creation/sign-in gate's own diagnostic text (e.g. a
+  // credential-store failure reason) can incidentally contain words like
+  // "unavailable" that have nothing to do with the job posting itself being
+  // closed. Checking the account-gate condition first prevents an
+  // account-gated application from getting stuck misclassified as
+  // permanently inactive once that diagnostic text is ever written.
+  if (isWorkdayAuthorizedAccountGate(application)) return 'queued';
   if (hasAny(text, ['inactive', 'closed', 'expired', 'unavailable', 'no longer available', 'generic careers listing'])) return 'inactive';
   if (hasAny(text, ['ineligible'])) return 'ineligible';
   if (
@@ -810,7 +818,6 @@ function canonicalQueueState(application: JsonRecord, overrides: ProductionClaim
   ) {
     return 'queued';
   }
-  if (isWorkdayAuthorizedAccountGate(application)) return 'queued';
   if (hasAny(text, ['review_ready'])) return 'review_ready';
   if (hasAny(text, ['submission_uncertain'])) return 'submission_uncertain';
   if (hasAny(text, ['unsupported_workday_state'])) return 'unsupported_workday_state';
@@ -2479,6 +2486,13 @@ function isProductionQualified(application: QueueApplication, overrides: Product
   const text = applicationText(application);
   const lifecycleStage = cleanEnv(application.lifecycle_stage).toLowerCase();
   const executionStatus = cleanEnv(raw.execution_status).toLowerCase();
+  // Same carve-out as canonicalQueueState: a Workday account-creation/sign-in
+  // gate legitimately sets execution_status/production_outcome to a generic
+  // "waiting_on_tomas"-style marker while it waits on a resumable credential
+  // step, not because the application itself is disqualified. Without this,
+  // every account-gated Workday application would be permanently rejected
+  // here even after the underlying account/credential issue is resolved.
+  if (isWorkdayAuthorizedAccountGate(application)) return true;
   if (hasAny(text, ['deferred_phase_two_greenhouse']) && !isGreenhouseSubmitCanaryConfiguredFor(application, overrides)) return false;
   if (hasAny(text, ['ineligible', 'not_qualified', 'discovered', 'quality_hold', 'hold_for_quality'])) return false;
   if (lifecycleStage === 'qualification_pending' || executionStatus === 'qualification_pending') return false;
