@@ -872,7 +872,7 @@ async function fillActivePromptSearch(page, prompt = {}, value = '') {
       .map((id) => id.trim())
       .filter(Boolean);
     const controlRect = activeControl instanceof HTMLElement ? activeControl.getBoundingClientRect() : null;
-    const containers = Array.from(document.querySelectorAll('[role="listbox"], [role="menu"], [role="dialog"], [data-automation-id*="prompt" i], [data-automation-id*="popup" i], [data-automation-id*="menu" i], ul, div'))
+    const containers = Array.from(document.querySelectorAll('[role="listbox"], [role="menu"], [role="dialog"], [data-automation-id*="prompt" i], [data-automation-id*="popup" i], [data-automation-id*="menu" i]'))
       .filter((node) => node instanceof HTMLElement && visible(node))
       .map((node) => {
         const rect = node.getBoundingClientRect();
