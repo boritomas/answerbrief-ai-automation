@@ -128,7 +128,7 @@ test('T-Mobile REQ361094 recording ingestion preserves answer-bank gates and evi
   const bank = loadWorkdayAnswerBank();
   const source = 'user_completed_tmobile_workday_application_REQ361094';
   const reqEntries = bank.answers.filter((entry) => entry.canonicalField.startsWith('tmobile_req361094_'));
-  assert.equal(bank.answers.length, 62);
+  assert.equal(bank.answers.length, 63);
   assert.equal(reqEntries.length, 20);
   assert.equal(bank.answers.filter((entry) => (entry.provenance || []).includes(source)).length, 21);
   assert.equal(bank.answers.find((entry) => entry.canonicalField === 'referral_source')?.answer, 'Instagram');

@@ -71,7 +71,7 @@ function labelLooksLike(value, patterns = []) {
   return patterns.some((pattern) => pattern.test(text));
 }
 
-function fieldMatchesMappingRoute(field = {}, mapping = {}) {
+export function fieldMatchesMappingRoute(field = {}, mapping = {}) {
   const key = normalized(mapping.key);
   if (!key) return true;
   const visibleLabel = fieldVisibleLabel(field);
@@ -136,7 +136,7 @@ function fieldMatchesMappingRoute(field = {}, mapping = {}) {
   return true;
 }
 
-function matchesField(field, matcher) {
+export function matchesField(field, matcher) {
   const haystack = fieldHaystack(field);
   if (!haystack) return false;
   if (matcher instanceof RegExp) return matcher.test(haystack);
@@ -713,6 +713,49 @@ function comboboxSearchText(field = {}, mapping = {}, resolved = '') {
   return clean(resolved);
 }
 
+// Two Workday prompt controls that sit close together (Phone Device Type,
+// Country Phone Code) can be conflated by control-matching heuristics. As a
+// safety net independent of how the control was found, validate that the
+// options actually visible in the opened popup look like the semantic kind
+// we expect *before* typing/selecting anything -- e.g. a device-type search
+// must not be allowed to proceed against a popup full of country dialing
+// codes.
+const OPTION_SET_VALIDATED_KINDS = ['country_phone_code', 'phone_device_type'];
+const DIALING_CODE_OPTION_PATTERN = /\(\+\d{1,4}\)|\+\d{1,4}\b/;
+const DEVICE_TYPE_OPTION_PATTERN = /^(mobile|home|work|personal mobile|cellular|cell|landline|business|other)\b/i;
+
+function optionSetMatchesExpectedKind(options, kind) {
+  const nonEmpty = (options || []).filter((option) => clean(option));
+  if (!nonEmpty.length) return true; // nothing visible yet to judge; let the normal flow proceed
+  const dialingCodeCount = nonEmpty.filter((option) => DIALING_CODE_OPTION_PATTERN.test(option)).length;
+  const dialingCodeRatio = dialingCodeCount / nonEmpty.length;
+  if (kind === 'country_phone_code') return dialingCodeRatio >= 0.5;
+  if (kind === 'phone_device_type') {
+    if (dialingCodeRatio >= 0.3) return false;
+    const deviceTypeCount = nonEmpty.filter((option) => DEVICE_TYPE_OPTION_PATTERN.test(option)).length;
+    return deviceTypeCount > 0 || nonEmpty.length <= 6;
+  }
+  return true;
+}
+
+async function visiblePromptOptionTexts(page) {
+  if (!page?.evaluate) return [];
+  return page.evaluate(() => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const visible = (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    return Array.from(document.querySelectorAll('[role="option"], [data-automation-id*="promptOption" i], [data-automation-id*="prompt-option" i], li[role="option"], [role="menuitem"]'))
+      .filter((element) => element instanceof HTMLElement && visible(element))
+      .map((element) => normalize(element.textContent || ''))
+      .filter((text) => text && text.length <= 160)
+      .slice(0, 60);
+  }).catch(() => []);
+}
+
 async function applyKnownPromptMapping(page, mapping, resolved) {
   const empty = { applied: false, attempted: false, field: '', reason: '' };
   if (!page?.locator || !page?.evaluate) return empty;
@@ -732,6 +775,22 @@ async function applyKnownPromptMapping(page, mapping, resolved) {
       if (!prompt?.opened) continue;
       openedAny = true;
       await page.waitForTimeout(300);
+
+      if (OPTION_SET_VALIDATED_KINDS.includes(spec.kind)) {
+        const visibleOptionTexts = await visiblePromptOptionTexts(page);
+        if (!optionSetMatchesExpectedKind(visibleOptionTexts, spec.kind)) {
+          const screenshotPath = await captureProtectedPromptDiagnostics(page, mapping, resolved, spec, { visibleOptions: visibleOptionTexts });
+          await closeOpenPromptMenus(page);
+          return {
+            applied: false,
+            attempted: true,
+            diagnosticScreenshotPath: screenshotPath,
+            field: promptReportField(spec, mapping),
+            reason: 'wrong_control_option_set_mismatch',
+            terminalFailure: true,
+          };
+        }
+      }
 
       const searched = await fillActivePromptSearch(page, prompt, search);
       if (!searched) {
@@ -862,6 +921,23 @@ async function fillActivePromptSearch(page, prompt = {}, value = '') {
       const rect = element.getBoundingClientRect();
       return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
     };
+    const identityFieldPattern = /first[ _-]?name|last[ _-]?name|legal[ _-]?name|preferred[ _-]?name|e-?mail|phone[ _-]?number|phone[ _-]?extension|extension\b|street|address|\bcity\b|postal|zip[ _-]?code/i;
+    const isIdentityField = (element) => {
+      const labelText = element.labels && element.labels.length
+        ? Array.from(element.labels).map((label) => label.textContent || '').join(' ')
+        : element.id && document.querySelector(`label[for="${CSS.escape(element.id)}"]`)
+          ? document.querySelector(`label[for="${CSS.escape(element.id)}"]`).textContent || ''
+          : element.closest('label')?.textContent || '';
+      const candidateText = [
+        labelText,
+        element.getAttribute('aria-label'),
+        element.getAttribute('placeholder'),
+        element.getAttribute('name'),
+        element.getAttribute('id'),
+        element.getAttribute('autocomplete'),
+      ].filter(Boolean).join(' ');
+      return identityFieldPattern.test(candidateText);
+    };
     const activeControl = promptMeta.activePromptId
       ? document.querySelector(`[data-career-os-active-prompt-id="${CSS.escape(promptMeta.activePromptId)}"]`)
       : promptMeta.controlId
@@ -886,7 +962,7 @@ async function fillActivePromptSearch(page, prompt = {}, value = '') {
       .sort((left, right) => right.score - left.score);
     for (const { node } of containers) {
       const input = Array.from(node.querySelectorAll('input, [role="searchbox"], textarea'))
-        .find((candidate) => candidate instanceof HTMLElement && visible(candidate));
+        .find((candidate) => candidate instanceof HTMLElement && visible(candidate) && !isIdentityField(candidate));
       if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) continue;
       input.focus();
       input.value = '';
@@ -1163,7 +1239,40 @@ async function clickPromptControlNearLabel(page, labelPattern, options = {}) {
       .filter((entry) => entry.text.length <= 280);
     const controls = Array.from(document.querySelectorAll('select, button, [role="button"], [role="combobox"], [aria-haspopup], [data-automation-id*="prompt" i], [data-automation-id*="select" i]'))
       .filter(isPromptControl);
+    // Prefer an explicit DOM association (label[for], aria-labelledby, or an
+    // enclosing <label>) over geometric proximity: two prompt controls
+    // (e.g. "Phone Device Type" and "Country Phone Code") can sit close
+    // enough together that proximity scoring alone picks the wrong one.
+    const explicitMatches = controls
+      .map((control) => {
+        let associatedText = '';
+        if (control.id) {
+          const byFor = document.querySelector(`label[for="${CSS.escape(control.id)}"]`);
+          if (byFor) associatedText = normalize(byFor.textContent || '');
+        }
+        if (!associatedText) {
+          const labelledBy = normalize(control.getAttribute('aria-labelledby'));
+          if (labelledBy) {
+            associatedText = normalize(labelledBy.split(/\s+/)
+              .map((id) => document.getElementById(id)?.textContent || '')
+              .join(' '));
+          }
+        }
+        if (!associatedText) {
+          const ariaLabel = normalize(control.getAttribute('aria-label'));
+          if (ariaLabel) associatedText = ariaLabel;
+        }
+        if (!associatedText) {
+          const ownLabel = control.closest('label');
+          if (ownLabel) associatedText = normalize(ownLabel.textContent || '');
+        }
+        return { associatedText, control };
+      })
+      .filter((entry) => entry.associatedText && labelRegex.test(entry.associatedText));
     const candidates = [];
+    if (explicitMatches.length === 1) {
+      candidates.push({ control: explicitMatches[0].control, labelText: explicitMatches[0].associatedText, score: Number.MAX_SAFE_INTEGER });
+    }
     for (const control of controls) {
       const controlRect = control.getBoundingClientRect();
       for (const label of labelNodes) {
@@ -1900,7 +2009,7 @@ function optionMatchesResolved(optionText, target, context = '') {
   return false;
 }
 
-function fieldCompatibleWithMapping(field = {}, mapping = {}) {
+export function fieldCompatibleWithMapping(field = {}, mapping = {}) {
   const kind = clean(mapping.kind).toLowerCase();
   const tagName = clean(field.tagName).toLowerCase();
   const type = clean(field.type).toLowerCase();

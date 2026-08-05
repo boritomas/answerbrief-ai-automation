@@ -78,6 +78,23 @@
       "notes": "Do not overwrite a valid user-entered phone."
     },
     {
+      "canonicalField": "phone_extension",
+      "normalizedQuestion": "phone extension",
+      "answer": "",
+      "answerType": "phone_extension",
+      "provenance": ["career_os_answer_bank.explicit_no_default"],
+      "authorization": "no_default_value",
+      "sensitivity": "contact",
+      "confidence": 0.5,
+      "lastVerifiedDate": "2026-08-05",
+      "reusableScope": "workday_contact_fields",
+      "requiresApplicationSpecificConfirmation": false,
+      "status": "reusable_verified",
+      "possibleLabelVariations": ["Extension", "Ext", "Ext.", "Phone Extension"],
+      "workdaySection": "contact_information",
+      "notes": "Deliberately has no default answer. Extension is a distinct field from phone_number and must never be filled with the phone number; an empty extension must stay empty unless a real extension value is explicitly supplied."
+    },
+    {
       "canonicalField": "address_line_1",
       "normalizedQuestion": "address line 1",
       "answer": { "runtimeSource": "career_os_profiles.verified_profile.contact.street_address", "runtimeOnly": true },

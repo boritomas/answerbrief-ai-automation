@@ -10,6 +10,10 @@ import {
   resolveWorkdayAnswerForLabel,
 } from './career-os-workday-answer-bank.mjs';
 import { createProductionDecisionQueueItem } from './career-os-production-controls.mjs';
+import {
+  emptyValidationReport,
+  runValidationReadbackRepairPipeline,
+} from './career-os-workday-validation-pipeline.mjs';
 
 const CONFIRMATION_PATTERN = /thank you for applying|application submitted|application received|your application has been submitted|confirmation/i;
 const CAPTCHA_PATTERN = /captcha|verify you are human|bot verification|security challenge|human verification/i;
@@ -403,10 +407,31 @@ export async function runWorkdayProductionFlow(page, task, runtime, policy, opti
       return true;
     }
 
+    if (fillResult.validation && !fillResult.validation.ok) {
+      const { mismatchCount = 0, unreadableCount = 0 } = fillResult.validation;
+      const unresolvedFields = fillResult.validation.fieldReports.filter(
+        (report) => report.status === 'mismatch' || report.status === 'unreadable',
+      );
+      await runtime.report({
+        status: 'waiting_for_user_decision',
+        currentUrl: currentUrl(page),
+        evidenceText: `Workday field validation detected ${mismatchCount} mismatched and ${unreadableCount} unreadable field(s) (${unresolvedFields.length} total) after fill and repair attempts. Submission is blocked until Tomas reviews.`,
+        screenshotPath: await safeShot(runtime, `workday-validation-mismatch-${step}`),
+        details: {
+          classification: 'workday_validation_pipeline_failed',
+          outcomeStatus: 'waiting_for_user_decision',
+          step,
+          workdayIdentity: identity.ok ? publicIdentity(identity) : null,
+          validation: fillResult.validation,
+        },
+      });
+      return true;
+    }
+
     inspection = await inspectWorkdayPage(page);
     const submitControls = enabledActions(inspection, /^(submit|submit application)$/i);
     if (submitControls.length && await isWorkdayReviewStep(page)) {
-      return await reportReviewOrSubmit({ env, identity, inspection, page, policy, runtime, task });
+      return await reportReviewOrSubmit({ env, identity, inspection, page, policy, runtime, task, validation: fillResult.validation });
     }
 
     const reviewControls = enabledActions(inspection, /^review$/i);
@@ -1161,7 +1186,7 @@ async function selectWorkdayCoverLetterFileInput(page) {
   return page.locator('input[type="file"]').nth(index);
 }
 
-async function autofillWorkdayFields(page, task, runtime, bank, inspection, options = {}) {
+export async function autofillWorkdayFields(page, task, runtime, bank, inspection, options = {}) {
   const raw = task?.rawRecord || {};
   const rawReferralValue = clean(raw.workday_referral_source || raw.referral_source_answer);
   const referralValue = rawReferralValue || clean(task?.candidate?.referralSource) || inferWorkdayReferralValue(task);
@@ -1219,6 +1244,15 @@ async function autofillWorkdayFields(page, task, runtime, bank, inspection, opti
     }
   }
   if (!mappings.length || !page?.locator) {
+    // Even when there is no second (answer-bank) fill pass, the bounded
+    // mappings above may have applied fields -- those must still go through
+    // readback. Only skip validation entirely when there is no real page to
+    // read back from; that path can only ever have zero applied results
+    // (mappingResults is [] whenever !page?.locator, see above), so ok:true
+    // there is accurate, not a bypass.
+    const validation = page?.locator
+      ? await runValidationReadbackRepairPipeline(page, boundedMappings, mappingResults, task)
+      : emptyValidationReport();
     if (mappedApplied.length) {
       await runtime.report({
         status: 'heartbeat',
@@ -1232,13 +1266,26 @@ async function autofillWorkdayFields(page, task, runtime, bank, inspection, opti
             reason: clean(result.reason),
           })),
           classification: 'workday_bounded_mapping_fill',
+          validationSummary: {
+            mismatchCount: validation.mismatchCount,
+            ok: validation.ok,
+            repairedCount: validation.repairedCount,
+            unreadableCount: validation.unreadableCount,
+            verifiedCount: validation.verifiedCount,
+          },
         },
       });
     }
-    return { applied: mappingResults, decisions, gates };
+    return { applied: mappingResults, decisions, gates, validation };
   }
   const results = await applyFieldMappings(page, mappings, task);
   const applied = [...mappedApplied, ...results.filter((result) => result.applied)];
+  const validation = await runValidationReadbackRepairPipeline(
+    page,
+    [...boundedMappings, ...mappings],
+    [...mappingResults, ...results],
+    task,
+  );
   if (applied.length) {
     await runtime.report({
       status: 'heartbeat',
@@ -1261,10 +1308,17 @@ async function autofillWorkdayFields(page, task, runtime, bank, inspection, opti
             provenance: decision.resolution.provenance,
             sensitivity: decision.resolution.sensitivity,
           })),
+        validationSummary: {
+          mismatchCount: validation.mismatchCount,
+          ok: validation.ok,
+          repairedCount: validation.repairedCount,
+          unreadableCount: validation.unreadableCount,
+          verifiedCount: validation.verifiedCount,
+        },
       },
     });
   }
-  return { applied: [...mappingResults, ...results], decisions, gates };
+  return { applied: [...mappingResults, ...results], decisions, gates, validation };
 }
 
 function inferWorkdayReferralValue(task = {}) {
@@ -1291,7 +1345,7 @@ function criticalWorkdayMappingKey(key) {
   return /address_line_1|referral_source|state|phone_device_type|country_phone_code|prior_cisco_identity|prior_employer_employment|work_authorization_posted_location|sponsorship_employment_visa_posted_locations|relevant_work_experience_years|basic_qualifications|preferred_qualifications|age_18_or_over|essential_functions|background_check_willingness|employer_relative|employer_close_personal_relationship|senior_government_official|second_job_or_outside_business|noncompete_non_solicit_restriction|military_service|military_spouse_or_partner|outside_business_ethics_acknowledgement|independent_accounting_firm_ey|government_official_status|government_official_family_contact/i.test(clean(key));
 }
 
-async function reportReviewOrSubmit({ env, identity, inspection, page, policy, runtime, task }) {
+async function reportReviewOrSubmit({ env, identity, inspection, page, policy, runtime, task, validation }) {
   const fingerprint = buildWorkdayReviewFingerprint(task, identity.ok ? identity : {}, inspection);
   const approval = clean(env.CAREER_OS_WORKDAY_SUBMIT_APPROVAL);
   const exactTokens = [
@@ -1314,6 +1368,13 @@ async function reportReviewOrSubmit({ env, identity, inspection, page, policy, r
         reviewFingerprint: fingerprint,
         submitBlocked: true,
         submitControlsDetected: enabledActions(inspection, /submit/i).map((control) => control.label),
+        validationSummary: validation ? {
+          mismatchCount: validation.mismatchCount,
+          ok: validation.ok,
+          repairedCount: validation.repairedCount,
+          unreadableCount: validation.unreadableCount,
+          verifiedCount: validation.verifiedCount,
+        } : null,
         workdayIdentity: identity.ok ? publicIdentity(identity) : null,
         decisionQueue: [
           createProductionDecisionQueueItem({

@@ -170,6 +170,17 @@ export function answerReportValue(resolution) {
   return clean(resolution.answer);
 }
 
+// Words that narrow a field to something more specific than its base label.
+// A candidate that does not itself contain a qualifier the target contains
+// must not win a fuzzy/substring match on that target -- this is what
+// stopped "Phone" (phone_number) from matching "Phone Extension" (a
+// distinct field) purely because "phone extension".includes("phone").
+const FIELD_NARROWING_QUALIFIER_WORDS = ['extension', 'ext', 'code', 'type', 'device', 'country'];
+
+function targetHasUncoveredQualifier(target, candidate) {
+  return FIELD_NARROWING_QUALIFIER_WORDS.some((word) => target.includes(word) && !candidate.includes(word));
+}
+
 function answerMatchScore(target, entry) {
   const candidates = [
     entry.normalizedQuestion,
@@ -179,6 +190,7 @@ function answerMatchScore(target, entry) {
   let score = 0;
   for (const candidate of candidates) {
     if (target === candidate) score = Math.max(score, 100);
+    else if (targetHasUncoveredQualifier(target, candidate)) continue;
     else if (target.includes(candidate) || candidate.includes(target)) score = Math.max(score, 86);
     else {
       const tokens = candidate.split(/\s+/).filter((token) => token.length > 2);
