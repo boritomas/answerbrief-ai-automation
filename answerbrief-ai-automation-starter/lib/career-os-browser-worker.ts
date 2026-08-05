@@ -2493,6 +2493,14 @@ function isProductionQualified(application: QueueApplication, overrides: Product
   // every account-gated Workday application would be permanently rejected
   // here even after the underlying account/credential issue is resolved.
   if (isWorkdayAuthorizedAccountGate(application)) return true;
+  // A required-field decision gate ("Workday requires Tomas to decide N
+  // required field(s) before continuing") is a normal, resumable state, not
+  // a technical failure. Its production_outcome (e.g. "phase_two_user_decision")
+  // can incidentally contain substrings like "phase_two" that collide with
+  // the unrelated Greenhouse-phase-two-deferral keyword scan a few lines
+  // below, which would otherwise permanently disqualify it.
+  const lastReportStatus = cleanEnv(asRecord(raw.browser_worker_last_report).status).toLowerCase();
+  if (lastReportStatus === 'waiting_for_user_decision' && !hasAny(text, ['unsupported_workday_state', 'terminal_failure'])) return true;
   if (hasAny(text, ['deferred_phase_two_greenhouse']) && !isGreenhouseSubmitCanaryConfiguredFor(application, overrides)) return false;
   if (hasAny(text, ['ineligible', 'not_qualified', 'discovered', 'quality_hold', 'hold_for_quality'])) return false;
   if (lifecycleStage === 'qualification_pending' || executionStatus === 'qualification_pending') return false;
