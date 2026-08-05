@@ -37,7 +37,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$CAREER_OS_RUNTIME"
-          rsync -a --delete --exclude '.env' --exclude 'node_modules' "$CAREER_OS_SOURCE/" "$CAREER_OS_RUNTIME/"
+          rsync -a --delete \
+            --exclude '.env' \
+            --exclude '.env.local' \
+            --exclude 'node_modules' \
+            --exclude '.next' \
+            --exclude '.career-os-browser-worker' \
+            "$CAREER_OS_SOURCE/" "$CAREER_OS_RUNTIME/"
 
       - name: Discover and refresh opportunity queue
         id: discover
