@@ -292,3 +292,115 @@ test('Part C: selecting Phone Device Type or Country Phone Code cannot alter Fir
     await browser.close();
   }
 });
+
+// (D) Live Cisco canary run, 2026-08-05: even with the Part A fix in place,
+// Phone Extension still ended up equal to Phone Number. Root cause was
+// different from (A): the employer's own Workday instance mirrors the
+// phone number into an initially-empty Phone Extension field via its own
+// client-side JS, before Career OS ever inspects the page. The generic
+// "preserve an existing visible value" guard (which exists to protect
+// real candidate input) then kept that ATS-side artifact as if it were
+// real data. Fixed by detecting an exact-digit match against the
+// candidate's phone number specifically on extension-labeled fields and
+// routing it to an explicit clear instead of a preserve.
+test('Part D: a Phone Extension pre-populated by the employer\'s own Workday instance with the exact phone number is detected and cleared, not preserved', () => {
+  const bank = loadWorkdayAnswerBank();
+  const task = candidateTask({ phone: '9453049338' });
+
+  const mirrored = resolveWorkdayAnswerForLabel('Phone Extension', {
+    bank,
+    currentValue: '(945) 304-9338',
+    task,
+  });
+  assert.equal(mirrored.action, 'clear_mirrored_value');
+  assert.equal(mirrored.canonicalField, 'phone_extension');
+  assert.equal(mirrored.answer, '');
+  assert.equal(mirrored.safeToAutoFill, true);
+  assert.equal(mirrored.forceApplyEmpty, true);
+
+  // A genuinely different, real extension value must still be preserved --
+  // this only fires when the "existing value" exactly is the phone number.
+  const real = resolveWorkdayAnswerForLabel('Phone Extension', {
+    bank,
+    currentValue: '4521',
+    task,
+  });
+  assert.equal(real.action, 'preserve_existing');
+  assert.equal(real.safeToAutoFill, false);
+});
+
+test('Part D: applyFieldMappings clears a mirrored Phone Extension end-to-end via forceApplyEmpty', async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  try {
+    await page.setContent(`
+      <body>
+        <label for="phoneExtension">Phone Extension</label>
+        <input id="phoneExtension" value="(945) 304-9338" />
+      </body>
+    `);
+    const mapping = {
+      forceApplyEmpty: true,
+      key: 'phone_extension',
+      kind: 'text',
+      matchers: [/phone extension/i],
+      value: '',
+    };
+    const results = await applyFieldMappings(page, [mapping], {});
+    assert.equal(results[0]?.applied, true, 'the explicit clear must be treated as a real, applied value, not skipped as unresolved');
+    assert.equal(await page.inputValue('#phoneExtension'), '', 'the mirrored phone number must be cleared out of Phone Extension');
+  } finally {
+    await browser.close();
+  }
+});
+
+// (E) Live Cisco canary run, 2026-08-05: Phone Device Type kept resolving to
+// the Country Phone Code control instead of failing closed as designed.
+// Root cause: this employer's Workday instance renders Phone Device Type as
+// a plain native <select>, not a searchable combobox like Capital One's.
+// clickPromptControlNearLabel already detected the native select and
+// returned opened:false/nativeSelect:true, but the caller only checked
+// `opened`, so it discarded that correct control and let a later search
+// term's geometric-proximity fallback land on the adjacent Country Phone
+// Code combobox instead.
+test('Part E: Phone Device Type rendered as a native <select> (not a combobox) is selected directly, never confused with an adjacent Country Phone Code combobox', async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  try {
+    await page.setContent(`
+      <body>
+        ${identityFieldsHtml()}
+        <div id="phone-section" style="padding:8px">
+          <label for="phoneDeviceTypeSelect">Phone Device Type</label>
+          <select id="phoneDeviceTypeSelect">
+            <option value="">Select One</option>
+            <option value="Landline">Landline</option>
+            <option value="Mobile">Mobile</option>
+          </select>
+
+          <label for="countryPhoneCodeControl">Country Phone Code</label>
+          <button id="countryPhoneCodeControl" role="combobox" aria-haspopup="listbox" aria-controls="countryPhoneCodeListbox">Austria (+43)</button>
+          <div id="countryPhoneCodeListbox" role="listbox" style="display:none">
+            <input type="text" placeholder="search" />
+            <div role="option">United States of America (+1)</div>
+            <div role="option">Austria (+43)</div>
+          </div>
+        </div>
+        <script>
+          document.getElementById('countryPhoneCodeControl').addEventListener('click', () => {
+            document.getElementById('countryPhoneCodeListbox').style.display = 'block';
+          });
+        </script>
+      </body>
+    `);
+
+    const results = await applyFieldMappings(page, phoneDeviceTypeMapping(), {});
+
+    assert.equal(results[0]?.applied, true, 'the native select must be resolved directly, not gated');
+    assert.equal(await page.locator('#phoneDeviceTypeSelect').inputValue(), 'Mobile');
+    assert.equal(await page.locator('#countryPhoneCodeControl').textContent(), 'Austria (+43)', 'Country Phone Code must be untouched by a Phone Device Type native-select resolution');
+    await assertIdentityFieldsUntouched(page);
+  } finally {
+    await browser.close();
+  }
+});

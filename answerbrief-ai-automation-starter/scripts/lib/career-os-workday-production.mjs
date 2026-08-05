@@ -1233,6 +1233,7 @@ export async function autofillWorkdayFields(page, task, runtime, bank, inspectio
     decisions.push({ field, resolution });
     if (resolution.safeToAutoFill) {
       mappings.push({
+        forceApplyEmpty: resolution.forceApplyEmpty === true,
         key: resolution.canonicalField,
         kind: resolution.action === 'select' ? 'select' : 'text',
         matchers: [field.label || field.ariaLabel || field.name || field.id],

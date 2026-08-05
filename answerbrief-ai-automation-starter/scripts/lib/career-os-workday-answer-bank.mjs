@@ -64,7 +64,34 @@ export function findWorkdayAnswerEntry(label, bank = loadWorkdayAnswerBank()) {
 export function resolveWorkdayAnswerForLabel(label, options = {}) {
   const bank = options.bank || loadWorkdayAnswerBank();
   const field = options.field || {};
+  const task = options.task || {};
   const currentValue = clean(options.currentValue ?? field.currentValue);
+
+  // Some Workday tenants mirror the phone number into an initially-empty
+  // Phone Extension field via their own client-side JS, before Career OS
+  // ever inspects the page. That pre-existing value is an ATS-side
+  // artifact, not something the candidate typed -- the generic
+  // preserve-existing-value guard below (which exists to protect real
+  // user input) would otherwise silently keep it, directly violating the
+  // explicit no-default policy on phone_extension. Detect the mirror by
+  // exact digit match against the candidate's own phone number and route
+  // it to an explicit clear instead of a preserve.
+  if (currentValue && /\bextension\b|\bext\.?\b/i.test(label)) {
+    const candidatePhoneDigits = onlyDigits(clean(task?.candidate?.phone));
+    if (candidatePhoneDigits && onlyDigits(currentValue) === candidatePhoneDigits) {
+      return {
+        action: 'clear_mirrored_value',
+        answer: '',
+        canonicalField: 'phone_extension',
+        confidence: 0.95,
+        forceApplyEmpty: true,
+        reason: 'Phone Extension appears to have been auto-mirrored from the phone number by the employer’s Workday instance; clearing it since no real extension value is authorized.',
+        safeToAutoFill: true,
+        sensitivity: 'contact',
+      };
+    }
+  }
+
   if (currentValue && !isEmptyChoicePlaceholder(currentValue)) {
     return {
       action: 'preserve_existing',
@@ -349,4 +376,8 @@ function boundedConfidence(value) {
 
 function clean(value) {
   return String(value ?? '').trim().replace(/^"|"$/g, '');
+}
+
+function onlyDigits(value) {
+  return String(value ?? '').replace(/\D/g, '');
 }

@@ -772,6 +772,25 @@ async function applyKnownPromptMapping(page, mapping, resolved) {
       const prompt = await clickPromptControlNearLabel(page, spec.labelPattern, {
         allowPhoneContext: spec.kind === 'country_phone_code' || spec.kind === 'phone_device_type',
       });
+      // Some Workday tenants render this same canonical field (e.g. Phone
+      // Device Type) as a plain native <select> instead of a searchable
+      // combobox. clickPromptControlNearLabel already detects that case and
+      // returns opened:false with nativeSelect:true -- without handling it
+      // here, the loop below used to just `continue`, discard the correct
+      // control, and let the next search term fall through to geometric
+      // proximity, which could land on an unrelated nearby combobox instead.
+      if (prompt?.nativeSelect) {
+        const selected = await selectNativeOptionByTexts(page, prompt.controlId, spec.searches);
+        if (selected) {
+          return {
+            applied: true,
+            attempted: true,
+            field: promptReportField(spec, mapping),
+            reason: 'known_prompt_mapping_native_select',
+          };
+        }
+        continue;
+      }
       if (!prompt?.opened) continue;
       openedAny = true;
       await page.waitForTimeout(300);
@@ -1331,6 +1350,36 @@ async function clickPromptControlNearLabel(page, labelPattern, options = {}) {
       opened: true,
     };
   }, { allowPhoneContext: options.allowPhoneContext === true, source: labelPattern.source }).catch(() => false);
+}
+
+async function selectNativeOptionByTexts(page, controlId, searches = []) {
+  if (!controlId) return false;
+  const locator = page.locator(idSelector(controlId)).first();
+  if (!await locator.count()) return false;
+  const index = await locator.evaluate((element, wantedTexts) => {
+    if (!(element instanceof HTMLSelectElement)) return -1;
+    const options = Array.from(element.options);
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    for (const wanted of wantedTexts) {
+      const wantedNorm = normalize(wanted);
+      const exact = options.findIndex((option) => normalize(option.label || option.textContent) === wantedNorm);
+      if (exact >= 0) return exact;
+    }
+    for (const wanted of wantedTexts) {
+      const wantedNorm = normalize(wanted);
+      const partial = options.findIndex((option) => normalize(option.label || option.textContent).includes(wantedNorm));
+      if (partial >= 0) return partial;
+    }
+    return -1;
+  }, searches).catch(() => -1);
+  if (index < 0) return false;
+  await locator.selectOption({ index });
+  await locator.evaluate((element) => {
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    element.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+  });
+  const selectedIndex = await locator.evaluate((element) => element.selectedIndex);
+  return selectedIndex === index;
 }
 
 async function promptValueNearLabel(page, labelPattern) {
@@ -2041,7 +2090,7 @@ export async function applyFieldMappings(page, mappings, context) {
       && fieldMatchesMappingRoute(candidate, mapping));
     const field = matchingFields.find((candidate) => fieldCompatibleWithMapping(candidate, mapping)) || matchingFields[0];
     const resolved = resolveMappingValue(mapping, context, field);
-    if (resolved === undefined || resolved === null || clean(resolved) === '') {
+    if (resolved === undefined || resolved === null || (clean(resolved) === '' && !mapping.forceApplyEmpty)) {
       results.push({
         key: mapping.key,
         matched: Boolean(field),
