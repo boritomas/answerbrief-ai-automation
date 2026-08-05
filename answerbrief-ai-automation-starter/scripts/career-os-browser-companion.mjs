@@ -475,6 +475,13 @@ async function resolveEmployerAccountCredential(task, input = {}) {
     };
   }
 
+  if (await isEmployerAccountInRecoveryHold(tenant, accountEmail)) {
+    return {
+      ok: false,
+      reason: `An existing Workday employer account for ${accountEmail} is in a password-reset/recovery state; Career OS will not auto-generate a replacement password for it. Store the current, known-good password in the configured keychain (service=${service}, account=${accountEmail}) before resuming, or resolve the account recovery manually.`,
+    };
+  }
+
   const generated = generateStrongPassword();
   const stored = await writeKeychainSecret(service, accountEmail, generated);
   if (!stored.ok) {
@@ -624,6 +631,25 @@ async function selectEmployerAccount(id, supabaseUrl, key) {
   if (!response.ok) return null;
   const rows = await response.json().catch(() => []);
   return Array.isArray(rows) ? rows[0] || null : null;
+}
+
+// Fail-closed guard: an employer account already known to be mid a
+// password-reset/recovery flow must never have a fresh, auto-generated
+// password thrown at it just because the keychain lookup came up empty --
+// that would either fail against the real account or (worse) collide with
+// a recovery flow already in progress. Only a human confirming/storing the
+// real current password should move this forward.
+async function isEmployerAccountInRecoveryHold(tenant, accountEmail) {
+  const supabaseUrl = clean(process.env.SUPABASE_URL);
+  const key = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if (!supabaseUrl || !key || !tenant || !accountEmail) return false;
+  const id = deterministicUuid(`career-os-employer-account:${ownerEmail}:${tenant}:${accountEmail}`);
+  const existing = await selectEmployerAccount(id, supabaseUrl, key);
+  if (!existing) return false;
+  const status = clean(existing.status).toLowerCase();
+  const metadata = existing.metadata && typeof existing.metadata === 'object' ? existing.metadata : {};
+  const verificationStatus = clean(metadata.verification_status).toLowerCase();
+  return /password.?reset|recovery|needs_review|locked/.test(`${status} ${verificationStatus}`);
 }
 
 function generateStrongPassword() {
