@@ -1,0 +1,252 @@
+.page {
+  --ink: #1c2430;
+  --muted: #5b6472;
+  --accent: #3d4a5c;
+  --line: #dde1e7;
+  --paper: #ffffff;
+  --bg: #fafaf8;
+
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  font-family: Georgia, 'Iowan Old Style', Charter, serif;
+  line-height: 1.65;
+}
+
+@media (prefers-color-scheme: dark) {
+  .page {
+    --ink: #e9ecf1;
+    --muted: #a3aab5;
+    --accent: #c7cedb;
+    --line: #2b323d;
+    --paper: #161a21;
+    --bg: #101318;
+  }
+}
+
+.shell {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: clamp(2.5rem, 6vw, 5rem) 1.5rem 6rem;
+}
+
+.hero {
+  margin-bottom: 3rem;
+}
+
+.eyebrow {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 0.6rem;
+}
+
+.hero h1 {
+  font-size: clamp(2.1rem, 4.6vw, 2.75rem);
+  font-weight: 400;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.dek {
+  color: var(--muted);
+  font-size: 1.05rem;
+  margin: 0 0 1.5rem;
+}
+
+.heroButtons {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  display: flex;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  font-size: 0.92rem;
+}
+
+.buttonPrimary,
+.buttonSecondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  border: 1px solid var(--ink);
+  transition: opacity 0.15s ease;
+}
+
+.buttonPrimary {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.buttonSecondary {
+  background: transparent;
+  color: var(--ink);
+}
+
+.buttonPrimary:hover,
+.buttonSecondary:hover {
+  opacity: 0.8;
+}
+
+.block {
+  padding: 2rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.block h2 {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 1.1rem;
+}
+
+.block h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.4rem;
+}
+
+.block p {
+  margin: 0 0 1rem;
+  max-width: 60ch;
+}
+
+.block p:last-child {
+  margin-bottom: 0;
+}
+
+.sectionNote {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.88rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.checkList,
+.skillList,
+.certList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.checkList li,
+.certList li {
+  padding-left: 1.15rem;
+  position: relative;
+  max-width: 60ch;
+}
+
+.checkList li::before,
+.certList li::before {
+  content: '\2022';
+  position: absolute;
+  left: 0;
+  color: var(--muted);
+}
+
+.skillList {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem 1.5rem;
+  font-size: 0.94rem;
+}
+
+.skillList li {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.experienceHeader {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 1.05rem;
+}
+
+.experienceHeader span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.roleList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.roleList li {
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.roleList li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.roleRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.roleYears {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.roleNote {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0.3rem 0 0 !important;
+}
+
+.project {
+  margin-bottom: 1.5rem;
+}
+
+.project:last-child {
+  margin-bottom: 0;
+}
+
+.project a {
+  color: var(--ink);
+}
+
+.footer {
+  padding-top: 2rem;
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+.footer p {
+  color: var(--muted);
+  margin-bottom: 1.25rem;
+  max-width: none;
+}
+
+.footer .heroButtons {
+  justify-content: center;
+}
