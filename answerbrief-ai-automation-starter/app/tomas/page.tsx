@@ -2,45 +2,90 @@ import type { Metadata } from 'next';
 import styles from './tomas.module.css';
 
 export const metadata: Metadata = {
-  title: 'Tomas Nieves — Enterprise Product Management Leader',
-  description: 'Nearly 30 years leading product at Verizon. Now building AI-powered tools and looking for what’s next.',
+  title: 'Tomas Nieves — Senior Product Manager, Enterprise Product Strategy',
+  description:
+    'Senior Product Manager with nearly 30 years of enterprise product leadership at Verizon, targeting Director and Senior Director Product Management roles.',
 };
+
+const highlights = [
+  'Nearly 30 years of enterprise product ownership at a Fortune 15 company, across four distinct platforms and roles.',
+  'Product responsibility spanning consumer digital experiences, self-service and assistant technology, and enterprise operational platforms.',
+  'Cross-functional delivery experience working alongside legal, UX, engineering, and QA on regulated, high-traffic consumer products.',
+  'Deliberate, verified investment in AI fluency this year — five completed certifications, applied directly to how he now works.',
+];
+
+const roles = [
+  {
+    title: 'Senior Product Owner / Product Manager',
+    period: '1996 – 2026',
+    note: 'Most recent focus: Verizon’s View Together initiative.',
+  },
+  { title: 'Product Owner, Verizon Assistant', period: null },
+  { title: 'Product Owner, Verizon.com Email Platform', period: null },
+  { title: 'Product Manager, Consumer and Small Business Solutions', period: null },
+];
 
 const skills = [
   'Enterprise Product Strategy',
   'Digital Product Transformation',
   'Customer Experience Modernization',
   'Executive Stakeholder Alignment',
-  'Product Roadmap & Portfolio Prioritization',
+  'Product Roadmap Development',
+  'Portfolio Prioritization',
   'Cross-Functional Leadership',
+  'Governance and Compliance Alignment',
+  'Agile Product Delivery',
+  'Product Operations',
   'Data-Informed Decision Making',
   'Responsible AI Fluency',
-];
-
-const roles = [
-  { title: 'Senior Product Owner / Product Manager', years: '1996 – 2026' },
-  { title: 'Product Owner, Verizon Assistant' },
-  { title: 'Product Owner, Verizon.com Email Platform' },
-  { title: 'Product Manager, Consumer and Small Business Solutions' },
+  'Executive Communication',
 ];
 
 const certifications = [
-  'Google AI Professional Certificate — Google / Coursera, 7-course program',
+  'Google AI Professional Certificate — Google / Coursera, 7-course program (May 2026)',
   'Google AI Essentials',
   'Microsoft Azure AI Fundamentals (AI-900)',
   'IBM AI Fundamentals',
   'ISACA AI Fundamentals',
 ];
 
+const prototypes = [
+  {
+    name: 'CareerOS',
+    description:
+      'A job-search orchestration system he built and uses himself: discovers roles, normalizes and deduplicates postings, scores fit, checks compensation floors, and queues qualified roles for his own review. Every application still requires his explicit approval before anything is submitted.',
+  },
+  {
+    name: 'Job Copilot',
+    description:
+      'The orchestration layer built on top of CareerOS — turning discovery, scoring, and review into one coherent, reviewable pipeline rather than a set of disconnected scripts.',
+  },
+  {
+    name: 'AnswerBrief AI',
+    description: (
+      <>
+        A role-specific interview-prep product that turns a resume and a job posting into a practical,
+        structured interview brief. Live at{' '}
+        <a href="https://www.answer-brief.com" target="_blank" rel="noreferrer">
+          answer-brief.com
+        </a>
+        .
+      </>
+    ),
+  },
+];
+
 export default function TomasPage() {
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
+        {/* 1. Hero */}
         <header className={styles.hero}>
-          <p className={styles.eyebrow}>Enterprise Product Management Leader</p>
+          <p className={styles.eyebrow}>Senior Product Manager</p>
           <h1>Tomas Nieves</h1>
           <p className={styles.dek}>
-            Product Strategy &middot; Digital Transformation &middot; Customer Experience Modernization
+            Enterprise Product Strategy &middot; Digital Transformation &middot; Customer Experience
+            Modernization
           </p>
           <div className={styles.heroLinks}>
             <a href="mailto:tomas@nieves.com">tomas@nieves.com</a>
@@ -50,33 +95,31 @@ export default function TomasPage() {
           </div>
         </header>
 
+        {/* 2. Executive Summary */}
         <section className={styles.block}>
-          <h2>The short version</h2>
+          <h2>Executive Summary</h2>
           <p>
-            I spent nearly three decades at Verizon building and owning consumer-facing products —
-            from the Verizon Assistant to Verizon.com&rsquo;s email platform to consumer and small-business
-            solutions. This is my first outside job search in a long time.
-          </p>
-          <p>
-            Rather than wait around for it, I started building. In the past few weeks I&rsquo;ve built{' '}
-            <strong>CareerOS</strong>, an AI-powered job search system with real engineering discipline
-            behind it — fit scoring, compensation checks, and a human-approval gate before anything is
-            ever submitted. This page is part of that same effort: a fast, honest way for you to see what
-            I&rsquo;ve done and what I&rsquo;m looking for next.
+            Thirty years leading enterprise product initiatives, customer experience, digital
+            transformation, and cross-functional delivery at Verizon. Currently a Senior Product Manager
+            in his first outside job search after nearly three decades with the company, targeting
+            Director and Senior Director Product Management roles where that scope of ownership carries
+            forward.
           </p>
         </section>
 
+        {/* 3. Professional Highlights */}
         <section className={styles.block}>
-          <h2>What I bring</h2>
-          <ul className={styles.pillList}>
-            {skills.map((skill) => (
-              <li key={skill}>{skill}</li>
+          <h2>Professional Highlights</h2>
+          <ul className={styles.checkList}>
+            {highlights.map((item) => (
+              <li key={item}>{item}</li>
             ))}
           </ul>
         </section>
 
+        {/* 4. Verizon Career */}
         <section className={styles.block}>
-          <h2>Experience</h2>
+          <h2>Verizon Career</h2>
           <div className={styles.experienceHeader}>
             <strong>Verizon</strong>
             <span>1996 – 2026</span>
@@ -84,20 +127,83 @@ export default function TomasPage() {
           <ul className={styles.roleList}>
             {roles.map((role) => (
               <li key={role.title}>
-                {role.title}
-                {role.years ? <span className={styles.roleYears}>{role.years}</span> : null}
+                <div className={styles.roleRow}>
+                  <span>{role.title}</span>
+                  {role.period ? <span className={styles.roleYears}>{role.period}</span> : null}
+                </div>
+                {role.note ? <p className={styles.roleNote}>{role.note}</p> : null}
               </li>
             ))}
           </ul>
-          <p className={styles.education}>M.S., Microcomputing — University of Puerto Rico</p>
         </section>
 
+        {/* 5. Enterprise Product Leadership */}
         <section className={styles.block}>
-          <h2>Recently</h2>
+          <h2>Enterprise Product Leadership</h2>
           <p>
-            I&rsquo;ve spent this year building AI fluency deliberately, not just using the tools —
-            understanding how they work and where their limits are:
+            Product ownership across four roles and platforms at one of the country&rsquo;s largest
+            telecommunications companies, working across legal, UX, engineering, and QA to bring
+            enterprise-scale consumer products from strategy through delivery. That kind of longevity in
+            one enterprise environment means operating with the governance, compliance, and stakeholder
+            alignment that regulated, high-traffic consumer products require.
           </p>
+        </section>
+
+        {/* 6. Customer Experience & Digital Transformation */}
+        <section className={styles.block}>
+          <h2>Customer Experience &amp; Digital Transformation</h2>
+          <p>
+            His product ownership has centered on digital customer experience — from Verizon&rsquo;s
+            self-service assistant technology to its consumer email platform to consumer and small-business
+            digital solutions. That arc reflects a consistent focus: making complex enterprise systems
+            simpler for the customer on the other end of them.
+          </p>
+        </section>
+
+        {/* 8. AI-enabled Product Innovation */}
+        <section className={styles.block}>
+          <h2>AI-Enabled Product Innovation</h2>
+          <p>
+            Since starting this search, he has treated AI as an execution accelerator rather than a topic to
+            study from a distance — completing five certifications this year and using AI tools daily to
+            build, ship, and review real production software, documented below.
+          </p>
+        </section>
+
+        {/* 9. Recent AI Product Prototypes */}
+        <section className={styles.block}>
+          <h2>Recent AI Product Prototypes</h2>
+          <p className={styles.sectionNote}>
+            Recent technical projects, not a business — built to demonstrate continuous learning and
+            modern AI product thinking alongside his Verizon experience above, not to replace it.
+          </p>
+          {prototypes.map((item) => (
+            <div className={styles.project} key={item.name}>
+              <h3>{item.name}</h3>
+              <p>{item.description}</p>
+            </div>
+          ))}
+        </section>
+
+        {/* 10. Skills */}
+        <section className={styles.block}>
+          <h2>Skills</h2>
+          <ul className={styles.skillList}>
+            {skills.map((skill) => (
+              <li key={skill}>{skill}</li>
+            ))}
+          </ul>
+        </section>
+
+        {/* 11. Education */}
+        <section className={styles.block}>
+          <h2>Education</h2>
+          <p>Master of Science (M.S.), Microcomputing — University of Puerto Rico</p>
+        </section>
+
+        {/* 12. Certifications */}
+        <section className={styles.block}>
+          <h2>Certifications</h2>
           <ul className={styles.certList}>
             {certifications.map((cert) => (
               <li key={cert}>{cert}</li>
@@ -105,40 +211,16 @@ export default function TomasPage() {
           </ul>
         </section>
 
+        {/* 13. Target Roles */}
         <section className={styles.block}>
-          <h2>What I&rsquo;ve built</h2>
-          <div className={styles.project}>
-            <h3>CareerOS</h3>
-            <p>
-              An end-to-end AI job-search orchestration system. It discovers roles across dozens of
-              employer career sites, normalizes and deduplicates postings, scores fit against my
-              background, and checks compensation floors — then queues qualified roles for my review.
-              Every application still requires my explicit approval before anything is submitted. Built
-              with production engineering discipline: isolated execution environments, branch-protected
-              deploys, and full test coverage.
-            </p>
-          </div>
-          <div className={styles.project}>
-            <h3>AnswerBrief AI</h3>
-            <p>
-              A role-specific interview-prep product that turns a resume and a job posting into a
-              practical, structured interview brief. Live at{' '}
-              <a href="https://www.answer-brief.com" target="_blank" rel="noreferrer">
-                answer-brief.com
-              </a>
-              .
-            </p>
-          </div>
-        </section>
-
-        <section className={styles.block}>
-          <h2>What I&rsquo;m looking for</h2>
+          <h2>Target Roles</h2>
           <p>
-            Director or Senior Director of Product Management roles focused on digital transformation and
-            customer experience modernization — remote or hybrid in the Dallas&ndash;Fort Worth area.
+            Seeking Director and Senior Director Product Management, Digital Transformation, Customer
+            Experience, AI Strategy, Platform Strategy, and Operations Transformation opportunities.
           </p>
         </section>
 
+        {/* 14. Contact */}
         <footer className={styles.footer}>
           <p>If any of this is relevant to something you&rsquo;re hiring for, I&rsquo;d like to talk.</p>
           <div className={styles.heroLinks}>

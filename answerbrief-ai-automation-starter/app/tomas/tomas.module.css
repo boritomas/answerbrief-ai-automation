@@ -1,205 +1,224 @@
 .page {
-  --ink: #14213d;
-  --muted: #55637d;
-  --accent: #2563eb;
-  --line: #e2e8f4;
+  --ink: #1c2430;
+  --muted: #5b6472;
+  --accent: #3d4a5c;
+  --line: #dde1e7;
   --paper: #ffffff;
-  --bg: #f6f8fc;
+  --bg: #fafaf8;
 
   background: var(--bg);
   color: var(--ink);
   min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  line-height: 1.6;
+  font-family: Georgia, 'Iowan Old Style', Charter, serif;
+  line-height: 1.65;
 }
 
 @media (prefers-color-scheme: dark) {
   .page {
-    --ink: #eef2fb;
-    --muted: #a6b1c8;
-    --accent: #7fabff;
-    --line: #26314a;
-    --paper: #131b2e;
-    --bg: #0c1220;
+    --ink: #e9ecf1;
+    --muted: #a3aab5;
+    --accent: #c7cedb;
+    --line: #2b323d;
+    --paper: #161a21;
+    --bg: #101318;
   }
 }
 
 .shell {
-  max-width: 720px;
+  max-width: 680px;
   margin: 0 auto;
   padding: clamp(2.5rem, 6vw, 5rem) 1.5rem 6rem;
 }
 
 .hero {
-  margin-bottom: 3.5rem;
+  margin-bottom: 3rem;
 }
 
 .eyebrow {
-  font-size: 0.8rem;
-  letter-spacing: 0.08em;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--muted);
   font-weight: 600;
-  margin: 0 0 0.75rem;
+  margin: 0 0 0.6rem;
 }
 
 .hero h1 {
-  font-size: clamp(2.2rem, 5vw, 3rem);
+  font-size: clamp(2.1rem, 4.6vw, 2.75rem);
+  font-weight: 400;
   margin: 0 0 0.5rem;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 .dek {
   color: var(--muted);
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   margin: 0 0 1.5rem;
 }
 
 .heroLinks {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   display: flex;
-  gap: 1.25rem;
+  gap: 1.5rem;
   flex-wrap: wrap;
+  font-size: 0.92rem;
 }
 
 .heroLinks a {
-  color: var(--accent);
+  color: var(--ink);
   text-decoration: none;
-  font-weight: 600;
-  border-bottom: 1px solid transparent;
+  border-bottom: 1px solid var(--muted);
 }
 
 .heroLinks a:hover {
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--ink);
 }
 
 .block {
-  padding: 2.25rem 0;
+  padding: 2rem 0;
   border-top: 1px solid var(--line);
 }
 
 .block h2 {
-  font-size: 1.05rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--muted);
   margin: 0 0 1.1rem;
 }
 
+.block h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.4rem;
+}
+
 .block p {
   margin: 0 0 1rem;
-  max-width: 62ch;
+  max-width: 60ch;
 }
 
 .block p:last-child {
   margin-bottom: 0;
 }
 
-.pillList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
-
-.pillList li {
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.4rem 0.9rem;
+.sectionNote {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   font-size: 0.88rem;
-}
-
-.experienceHeader {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-  font-size: 1.15rem;
-}
-
-.experienceHeader span {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-style: italic;
 }
 
-.roleList {
-  list-style: none;
-  margin: 0 0 1rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.roleList li {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.roleList li:last-child {
-  border-bottom: none;
-}
-
-.roleYears {
-  color: var(--muted);
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-
-.education {
-  color: var(--muted);
-  font-size: 0.95rem;
-}
-
+.checkList,
+.skillList,
 .certList {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.65rem;
 }
 
+.checkList li,
 .certList li {
-  padding-left: 1.1rem;
+  padding-left: 1.15rem;
   position: relative;
+  max-width: 60ch;
 }
 
+.checkList li::before,
 .certList li::before {
-  content: '';
+  content: '—';
   position: absolute;
   left: 0;
-  top: 0.6em;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
+  color: var(--muted);
+}
+
+.skillList {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem 1.5rem;
+  font-size: 0.94rem;
+}
+
+.skillList li {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.experienceHeader {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 1.05rem;
+}
+
+.experienceHeader span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.roleList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.roleList li {
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.roleList li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.roleRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.roleYears {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.roleNote {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0.3rem 0 0 !important;
 }
 
 .project {
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .project:last-child {
   margin-bottom: 0;
 }
 
-.project h3 {
-  margin: 0 0 0.4rem;
-  font-size: 1.1rem;
-}
-
 .project a {
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .footer {
-  padding-top: 2.25rem;
+  padding-top: 2rem;
   border-top: 1px solid var(--line);
   text-align: center;
 }
@@ -207,6 +226,7 @@
 .footer p {
   color: var(--muted);
   margin-bottom: 1.25rem;
+  max-width: none;
 }
 
 .footer .heroLinks {
