@@ -5,6 +5,7 @@
   --line: #dde1e7;
   --paper: #ffffff;
   --bg: #fafaf8;
+  --card-bg: #ffffff;
 
   background: var(--bg);
   color: var(--ink);
@@ -21,11 +22,114 @@
     --line: #2b323d;
     --paper: #161a21;
     --bg: #101318;
+    --card-bg: #161a21;
   }
 }
 
+:root[data-theme='dark'] .page {
+  --ink: #e9ecf1;
+  --muted: #a3aab5;
+  --accent: #c7cedb;
+  --line: #2b323d;
+  --paper: #161a21;
+  --bg: #101318;
+  --card-bg: #161a21;
+}
+
+:root[data-theme='light'] .page {
+  --ink: #1c2430;
+  --muted: #5b6472;
+  --accent: #3d4a5c;
+  --line: #dde1e7;
+  --paper: #ffffff;
+  --bg: #fafaf8;
+  --card-bg: #ffffff;
+}
+
+.uiFont {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Sticky nav */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: saturate(140%) blur(6px);
+  border-bottom: 1px solid var(--line);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+.navInner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0.85rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .navInner {
+    flex-wrap: wrap;
+  }
+}
+
+.navBrand {
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.navLinks {
+  display: flex;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+  font-size: 0.86rem;
+  flex: 1;
+}
+
+@media (max-width: 640px) {
+  .navLinks {
+    order: 3;
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.9rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--line);
+  }
+}
+
+.navLinks a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.navLinks a:hover {
+  color: var(--ink);
+}
+
+.navCta {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--bg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.navCta:hover {
+  opacity: 0.85;
+}
+
 .shell {
-  max-width: 680px;
+  max-width: 780px;
   margin: 0 auto;
   padding: clamp(2.5rem, 6vw, 5rem) 1.5rem 6rem;
 }
@@ -45,16 +149,25 @@
 }
 
 .hero h1 {
-  font-size: clamp(2.1rem, 4.6vw, 2.75rem);
+  font-size: clamp(2.2rem, 4.8vw, 2.9rem);
   font-weight: 400;
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.6rem;
   letter-spacing: -0.01em;
 }
 
-.dek {
+.heroHeadline {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 1rem;
+  margin: 0 0 1rem;
+}
+
+.heroLede {
   color: var(--muted);
   font-size: 1.05rem;
-  margin: 0 0 1.5rem;
+  max-width: 62ch;
+  margin: 0 0 1.75rem;
 }
 
 .heroButtons {
@@ -63,6 +176,28 @@
   gap: 0.9rem;
   flex-wrap: wrap;
   font-size: 0.92rem;
+  margin-bottom: 1.1rem;
+}
+
+.heroLinks {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.heroLinks a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.heroLinks a:hover {
+  color: var(--ink);
 }
 
 .buttonPrimary,
@@ -70,7 +205,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.6rem 1.1rem;
+  padding: 0.62rem 1.15rem;
   border-radius: 6px;
   text-decoration: none;
   font-weight: 600;
@@ -94,7 +229,7 @@
 }
 
 .block {
-  padding: 2rem 0;
+  padding: 2.5rem 0;
   border-top: 1px solid var(--line);
 }
 
@@ -105,7 +240,7 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
-  margin: 0 0 1.1rem;
+  margin: 0 0 1.4rem;
 }
 
 .block h3 {
@@ -116,7 +251,7 @@
 
 .block p {
   margin: 0 0 1rem;
-  max-width: 60ch;
+  max-width: 62ch;
 }
 
 .block p:last-child {
@@ -131,7 +266,6 @@
 }
 
 .checkList,
-.skillList,
 .certList {
   list-style: none;
   margin: 0;
@@ -145,7 +279,7 @@
 .certList li {
   padding-left: 1.15rem;
   position: relative;
-  max-width: 60ch;
+  max-width: 62ch;
 }
 
 .checkList li::before,
@@ -156,25 +290,50 @@
   color: var(--muted);
 }
 
-.skillList {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+/* Why Tomas cards */
+.whyGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.5rem 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.whyCard {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.4rem;
+}
+
+.whyCard h3 {
+  font-size: 1.02rem;
+}
+
+.whyCard p {
   font-size: 0.94rem;
+  max-width: none;
+  margin: 0 0 0.65rem;
 }
 
-.skillList li {
-  padding: 0.3rem 0;
-  border-bottom: 1px solid var(--line);
+.whyWhy {
+  color: var(--muted);
 }
 
+.whyEvidence {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.82rem;
+  color: var(--accent);
+  border-top: 1px solid var(--line);
+  padding-top: 0.65rem;
+  margin-bottom: 0 !important;
+}
+
+/* Career timeline */
 .experienceHeader {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   display: flex;
   align-items: baseline;
   gap: 0.75rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.3rem;
   font-size: 1.05rem;
 }
 
@@ -183,60 +342,156 @@
   font-size: 0.88rem;
 }
 
-.roleList {
+.timelineList {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 1.4rem;
 }
 
-.roleList li {
-  padding-bottom: 0.9rem;
+.timelineItem {
+  padding-bottom: 1.4rem;
   border-bottom: 1px solid var(--line);
 }
 
-.roleList li:last-child {
+.timelineItem:last-child {
   border-bottom: none;
   padding-bottom: 0;
 }
 
-.roleRow {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: baseline;
+.timelineRole {
+  font-weight: 600;
+  margin: 0 0 0.6rem !important;
 }
 
-.roleYears {
+.timelineFields {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.timelineFields dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--muted);
-  font-size: 0.85rem;
-  white-space: nowrap;
+  margin: 0 0 0.2rem;
+}
+
+.timelineFields dd {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+/* Product highlight cards */
+.highlightGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+}
+
+.highlightCard {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.6rem;
+}
+
+.highlightCard p {
+  max-width: none;
+  font-size: 0.95rem;
+}
+
+.highlightDetails {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+}
+
+.highlightDetails summary {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.highlightDetails p {
+  margin-top: 0.75rem;
+}
+
+/* Chips */
+.chipList {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+.chipList li {
+  font-size: 0.82rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+}
+
+/* Recruiter toolkit */
+.toolkitGrid {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: 2rem;
+}
+
+.toolkitDownloads {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.9rem;
+}
+
+.toolkitDownloads a {
+  justify-content: center;
+  text-align: center;
+}
+
+.toolkitInfo h3 {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 700;
+  margin: 1.3rem 0 0.6rem;
+}
+
+.toolkitInfo h3:first-child {
+  margin-top: 0;
+}
+
+@media (max-width: 700px) {
+  .toolkitGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .roleNote {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   color: var(--muted);
   font-size: 0.9rem;
-  margin: 0.3rem 0 0 !important;
-}
-
-.project {
-  margin-bottom: 1.5rem;
-}
-
-.project:last-child {
-  margin-bottom: 0;
-}
-
-.project a {
-  color: var(--ink);
+  margin: 0.3rem 0 0.9rem !important;
 }
 
 .footer {
-  padding-top: 2rem;
+  padding-top: 2.5rem;
   border-top: 1px solid var(--line);
   text-align: center;
 }
