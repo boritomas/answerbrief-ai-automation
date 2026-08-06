@@ -36,7 +36,7 @@ export default async function OpengraphImage() {
         </div>
         <div style={{ fontSize: 84, marginBottom: 24, display: 'flex' }}>Tomas Nieves</div>
         <div style={{ fontSize: 32, color: '#5b6472', display: 'flex' }}>
-          Enterprise Product Strategy &middot; Digital Transformation &middot; Customer Experience
+          Enterprise Product Strategy &middot; Customer Experience &middot; Digital Transformation
         </div>
       </div>
     ),
