@@ -26,7 +26,7 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
-const AUTO_APPLY_PROMOTION_THRESHOLD = 85;
+export const AUTO_APPLY_PROMOTION_THRESHOLD = 85;
 
 export type CanonicalApplicationExecutionState =
   | 'discovered'
@@ -1485,7 +1485,7 @@ function compensationPolicyClass(record: JsonRecord, preferredBaseSalary: number
   return 'posted_base_meets_policy';
 }
 
-function qualifiesForCurrentProductionLane(posting: JsonRecord, minFitScore: number) {
+export function qualifiesForCurrentProductionLane(posting: JsonRecord, minFitScore: number) {
   if (numberValue(posting.fit_score) < minFitScore) return false;
   if (!eligibleForCurrentProductionLane(posting)) return false;
   if (!autonomousCompensationEligible(posting)) return false;
@@ -1811,7 +1811,7 @@ function estimateMinutes(action: string) {
   return 1;
 }
 
-async function fetchGreenhouseSourceBatches(discoveryPlan: CareerOsDiscoveryPlan, boards: string[]) {
+export async function fetchGreenhouseSourceBatches(discoveryPlan: CareerOsDiscoveryPlan, boards: string[]) {
   const results: Array<
     | { status: 'fulfilled'; value: { board: string; jobs: JsonRecord[]; source: CareerOsSourceCandidate } }
     | { board: string; reason: unknown; source: CareerOsSourceCandidate; status: 'rejected' }
@@ -1849,7 +1849,7 @@ function sourceStatus(source: CareerOsSourceCandidate, board: string, status: 's
   };
 }
 
-async function fetchWorkdaySourceResults(discoveryPlan: CareerOsDiscoveryPlan) {
+export async function fetchWorkdaySourceResults(discoveryPlan: CareerOsDiscoveryPlan) {
   const results: Array<{ error?: string; jobs: JsonRecord[]; source: CareerOsSourceCandidate }> = [];
   const sources = discoveryPlan.workdaySources.slice(0, workdayFirstSourceLimit());
   for (let index = 0; index < sources.length; index += GLOBAL_DISCOVERY_MAX_CONCURRENCY) {
@@ -1983,7 +1983,7 @@ async function fetchGreenhouseJobs(board: string) {
   return Array.isArray(payload.jobs) ? payload.jobs.map(asRecord) : [];
 }
 
-function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
+export function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
   const company = companyName(board, job);
   const description = htmlToText(String(job.content || ''));
   const title = String(job.title || '').trim();
@@ -2043,7 +2043,7 @@ function normalizePosting(ownerEmail: string, board: string, job: JsonRecord, la
   };
 }
 
-function normalizeWorkdayPosting(ownerEmail: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
+export function normalizeWorkdayPosting(ownerEmail: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
   const detail = asRecord(job.detail);
   const postingInfo = asRecord(detail.jobPostingInfo || detail.jobPosting || detail);
   const title = stringValue(postingInfo.title || job.title);
@@ -2144,7 +2144,7 @@ function classifyDiscoveredPostingStatus(
   return 'discovered';
 }
 
-function normalizeOraclePosting(ownerEmail: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
+export function normalizeOraclePosting(ownerEmail: string, job: JsonRecord, lastCheckedAt: string, sourceRunId: string, minFitScore: number, source: CareerOsSourceCandidate): JsonRecord {
   const title = String(job.Title || '').trim();
   const description = [String(job.ShortDescriptionStr || ''), String(job.ExternalResponsibilitiesStr || ''), String(job.ExternalQualificationsStr || '')]
     .filter(Boolean)
@@ -2207,7 +2207,7 @@ function normalizeOraclePosting(ownerEmail: string, job: JsonRecord, lastChecked
   };
 }
 
-async function fetchOracleSourceResults(discoveryPlan: CareerOsDiscoveryPlan) {
+export async function fetchOracleSourceResults(discoveryPlan: CareerOsDiscoveryPlan) {
   const results: Array<{ error?: string; jobs: JsonRecord[]; source: CareerOsSourceCandidate }> = [];
   for (const source of discoveryPlan.oracleSources) {
     try {
@@ -2286,7 +2286,7 @@ function classifyRolePolicy(title: string, description: string) {
   return { excluded: true, normalizedLevel: 'excluded_non_product_scope', reason: 'excluded_outside_target_role_band' };
 }
 
-function dedupePostings(postings: JsonRecord[]): JsonRecord[] {
+export function dedupePostings(postings: JsonRecord[]): JsonRecord[] {
   const groups = new Map<string, JsonRecord[]>();
 
   for (const posting of postings) {
