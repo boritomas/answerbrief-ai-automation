@@ -1,10 +1,12 @@
 const nextConfig = {
   async rewrites() {
     return {
-      // Once tomasnieves.com is attached to this Vercel project (see the
-      // Cloudflare DNS records in the PR description), requests to its root
-      // are served by the existing /tomas page -- no separate deployment or
-      // duplicate content, one canonical page reachable at the domain root.
+      // tomasnieves.com is attached to this same Vercel project as
+      // answer-brief.com. This rewrite only maps that host's root path to
+      // the existing /tomas page so it's reachable at the domain root --
+      // it does not isolate the two properties from each other. That
+      // isolation (blocking AnswerBrief's routes on tomasnieves.com and
+      // blocking /tomas on answer-brief.com) is enforced by middleware.ts.
       beforeFiles: [
         {
           source: '/',
