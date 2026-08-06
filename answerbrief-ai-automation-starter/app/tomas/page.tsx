@@ -1,10 +1,53 @@
 import type { Metadata } from 'next';
 import styles from './tomas.module.css';
 
+const CANONICAL_URL = 'https://tomasnieves.com';
+const PAGE_TITLE = 'Tomas Nieves — Senior Product Manager, Enterprise Product Strategy';
+const PAGE_DESCRIPTION =
+  'Senior Product Manager with nearly 30 years of enterprise product leadership at Verizon, targeting Director and Senior Director Product Management roles in digital transformation, customer experience, and AI-enabled product organizations.';
+
 export const metadata: Metadata = {
-  title: 'Tomas Nieves — Senior Product Manager, Enterprise Product Strategy',
-  description:
-    'Senior Product Manager with nearly 30 years of enterprise product leadership at Verizon, targeting Director and Senior Director Product Management roles.',
+  title: PAGE_TITLE,
+  description: PAGE_DESCRIPTION,
+  alternates: {
+    canonical: CANONICAL_URL,
+  },
+  openGraph: {
+    title: PAGE_TITLE,
+    description: PAGE_DESCRIPTION,
+    url: CANONICAL_URL,
+    siteName: 'Tomas Nieves',
+    type: 'profile',
+    firstName: 'Tomas',
+    lastName: 'Nieves',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: PAGE_TITLE,
+    description: PAGE_DESCRIPTION,
+  },
+};
+
+const personJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  name: 'Tomas Nieves',
+  jobTitle: 'Senior Product Manager',
+  url: CANONICAL_URL,
+  email: 'mailto:tomas@nieves.com',
+  sameAs: ['https://www.linkedin.com/in/tomas-nieves-843053171/'],
+  alumniOf: {
+    '@type': 'CollegeOrUniversity',
+    name: 'University of Puerto Rico',
+  },
+  knowsAbout: [
+    'Enterprise Product Strategy',
+    'Digital Product Transformation',
+    'Customer Experience Modernization',
+    'Product Roadmap Development',
+    'Cross-Functional Leadership',
+  ],
+  description: PAGE_DESCRIPTION,
 };
 
 const highlights = [
@@ -78,6 +121,11 @@ const prototypes = [
 export default function TomasPage() {
   return (
     <main className={styles.page}>
+      {/* eslint-disable-next-line react/no-danger */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(personJsonLd) }}
+      />
       <div className={styles.shell}>
         {/* 1. Hero */}
         <header className={styles.hero}>
@@ -87,10 +135,17 @@ export default function TomasPage() {
             Enterprise Product Strategy &middot; Digital Transformation &middot; Customer Experience
             Modernization
           </p>
-          <div className={styles.heroLinks}>
-            <a href="mailto:tomas@nieves.com">tomas@nieves.com</a>
-            <a href="https://www.linkedin.com/in/tomas-nieves-843053171/" target="_blank" rel="noreferrer">
-              LinkedIn
+          <div className={styles.heroButtons}>
+            <a className={styles.buttonPrimary} href="mailto:tomas@nieves.com">
+              tomas@nieves.com
+            </a>
+            <a
+              className={styles.buttonSecondary}
+              href="https://www.linkedin.com/in/tomas-nieves-843053171/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <LinkedInIcon /> LinkedIn
             </a>
           </div>
         </header>
@@ -215,22 +270,45 @@ export default function TomasPage() {
         <section className={styles.block}>
           <h2>Target Roles</h2>
           <p>
-            Seeking Director and Senior Director Product Management, Digital Transformation, Customer
-            Experience, AI Strategy, Platform Strategy, and Operations Transformation opportunities.
+            Seeking Director Product Management, Senior Director Product, and Principal Product Manager
+            opportunities in Product Strategy, Customer Experience, Digital Transformation, and
+            AI-enabled Product Organizations. These are target opportunities, not prior titles.
           </p>
         </section>
 
         {/* 14. Contact */}
         <footer className={styles.footer}>
           <p>If any of this is relevant to something you&rsquo;re hiring for, I&rsquo;d like to talk.</p>
-          <div className={styles.heroLinks}>
-            <a href="mailto:tomas@nieves.com">tomas@nieves.com</a>
-            <a href="https://www.linkedin.com/in/tomas-nieves-843053171/" target="_blank" rel="noreferrer">
-              LinkedIn
+          <div className={styles.heroButtons}>
+            <a className={styles.buttonPrimary} href="mailto:tomas@nieves.com">
+              tomas@nieves.com
+            </a>
+            <a
+              className={styles.buttonSecondary}
+              href="https://www.linkedin.com/in/tomas-nieves-843053171/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <LinkedInIcon /> LinkedIn
             </a>
           </div>
         </footer>
       </div>
     </main>
+  );
+}
+
+function LinkedInIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M20.45 20.45h-3.56v-5.58c0-1.33-.02-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.68H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.38-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45z" />
+    </svg>
   );
 }
