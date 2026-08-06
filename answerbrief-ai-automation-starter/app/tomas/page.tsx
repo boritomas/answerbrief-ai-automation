@@ -7,6 +7,14 @@ const PAGE_DESCRIPTION =
   'Senior Product Manager with nearly 30 years of enterprise product leadership at Verizon, targeting Director Product Management, Senior Director Product, and Principal Product Manager roles in customer experience and digital transformation.';
 
 export const metadata: Metadata = {
+  // Scoped to this route only -- does not touch the root layout's
+  // metadataBase (still https://www.answer-brief.com for the rest of the
+  // site). Next.js uses metadataBase to resolve the file-convention
+  // opengraph-image.tsx into an absolute URL; without this override it
+  // inherited the root's base, so og:image pointed at answer-brief.com
+  // instead of tomasnieves.com even though every other tag on this page
+  // was already absolute and correct.
+  metadataBase: new URL(CANONICAL_URL),
   title: PAGE_TITLE,
   description: PAGE_DESCRIPTION,
   alternates: {
