@@ -4,7 +4,7 @@ import styles from './tomas.module.css';
 const CANONICAL_URL = 'https://tomasnieves.com';
 const PAGE_TITLE = 'Tomas Nieves — Senior Product Manager, Enterprise Product Strategy';
 const PAGE_DESCRIPTION =
-  'Senior Product Manager with nearly 30 years of enterprise product leadership at Verizon, targeting Director and Senior Director Product Management roles in digital transformation, customer experience, and AI-enabled product organizations.';
+  'Senior Product Manager with nearly 30 years of enterprise product leadership at Verizon, targeting Director Product Management, Senior Director Product, and Principal Product Manager roles in customer experience and digital transformation.';
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -42,8 +42,10 @@ const personJsonLd = {
   },
   knowsAbout: [
     'Enterprise Product Strategy',
-    'Digital Product Transformation',
     'Customer Experience Modernization',
+    'Digital Product Transformation',
+    'Omnichannel Experiences',
+    'AI-Enabled Product Leadership',
     'Product Roadmap Development',
     'Cross-Functional Leadership',
   ],
@@ -92,23 +94,17 @@ const certifications = [
   'ISACA AI Fundamentals',
 ];
 
-const prototypes = [
+const currentDevelopment = [
   {
     name: 'CareerOS',
     description:
-      'A job-search orchestration system he built and uses himself: discovers roles, normalizes and deduplicates postings, scores fit, checks compensation floors, and queues qualified roles for his own review. Every application still requires his explicit approval before anything is submitted.',
-  },
-  {
-    name: 'Job Copilot',
-    description:
-      'The orchestration layer built on top of CareerOS — turning discovery, scoring, and review into one coherent, reviewable pipeline rather than a set of disconnected scripts.',
+      'A job-search orchestration system he built and uses himself, with every application still requiring his explicit approval before anything is submitted.',
   },
   {
     name: 'AnswerBrief AI',
     description: (
       <>
-        A role-specific interview-prep product that turns a resume and a job posting into a practical,
-        structured interview brief. Live at{' '}
+        A role-specific interview-prep tool. Live at{' '}
         <a href="https://www.answer-brief.com" target="_blank" rel="noreferrer">
           answer-brief.com
         </a>
@@ -132,8 +128,8 @@ export default function TomasPage() {
           <p className={styles.eyebrow}>Senior Product Manager</p>
           <h1>Tomas Nieves</h1>
           <p className={styles.dek}>
-            Enterprise Product Strategy &middot; Digital Transformation &middot; Customer Experience
-            Modernization
+            Enterprise Product Strategy &middot; Customer Experience &middot; Digital Transformation
+            &middot; Omnichannel Experiences &middot; AI-Enabled Product Leadership
           </p>
           <div className={styles.heroButtons}>
             <a className={styles.buttonPrimary} href="mailto:tomas@nieves.com">
@@ -225,19 +221,20 @@ export default function TomasPage() {
           </p>
         </section>
 
-        {/* 9. Recent AI Product Prototypes */}
+        {/* 9. Current Professional Development */}
         <section className={styles.block}>
-          <h2>Recent AI Product Prototypes</h2>
+          <h2>Current Professional Development</h2>
           <p className={styles.sectionNote}>
-            Recent technical projects, not a business — built to demonstrate continuous learning and
-            modern AI product thinking alongside his Verizon experience above, not to replace it.
+            Small technical projects, not a business — continuous learning alongside the Verizon
+            experience above, not a replacement for it.
           </p>
-          {prototypes.map((item) => (
-            <div className={styles.project} key={item.name}>
-              <h3>{item.name}</h3>
-              <p>{item.description}</p>
-            </div>
-          ))}
+          <ul className={styles.checkList}>
+            {currentDevelopment.map((item) => (
+              <li key={item.name}>
+                <strong>{item.name}</strong> — {item.description}
+              </li>
+            ))}
+          </ul>
         </section>
 
         {/* 10. Skills */}
@@ -271,8 +268,8 @@ export default function TomasPage() {
           <h2>Target Roles</h2>
           <p>
             Seeking Director Product Management, Senior Director Product, and Principal Product Manager
-            opportunities in Product Strategy, Customer Experience, Digital Transformation, and
-            AI-enabled Product Organizations. These are target opportunities, not prior titles.
+            opportunities in Customer Experience and Digital Transformation. These are target
+            opportunities, not prior titles.
           </p>
         </section>
 
