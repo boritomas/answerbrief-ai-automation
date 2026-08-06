@@ -8,6 +8,22 @@ import {
   createDeveloperAgentConfig,
   providerDefinitions,
 } from './lib/career-os-developer-agent.mjs';
+import {
+  cleanupIsolatedWorktree,
+  commitIsolatedChanges,
+  hasUncommittedChanges,
+  openIsolatedPullRequest,
+  prepareIsolatedWorktree,
+  pushIsolatedBranch,
+} from './lib/career-os-isolated-worktree.mjs';
+
+// Production isolation: every autonomous provider run happens inside its own
+// disposable git clone (see career-os-isolated-worktree.mjs), never in
+// process.cwd(). This script is the only place that decides whether a fix
+// gets committed, pushed, or turned into a PR -- providers are never trusted
+// to run git themselves against a shared directory or against `main`. See
+// docs/career-os-production-isolation.md for the full architecture and why
+// this replaced the previous direct-invocation design.
 
 const FULL_CAPABILITIES = {
   writeFiles: true,
@@ -64,10 +80,10 @@ function providerOrder(args, availability) {
   return [...new Set(ordered)].filter((provider) => availability[provider] === true);
 }
 
-function execute(command) {
+function execute(command, options = {}) {
   const [binary, ...args] = command;
   const result = spawnSync(binary, args, {
-    cwd: process.cwd(),
+    cwd: options.cwd || process.cwd(),
     env: process.env,
     stdio: 'inherit',
   });
@@ -121,6 +137,37 @@ function main() {
     return;
   }
 
+  // Every attempt gets a fresh, disposable clone -- never process.cwd() --
+  // so a provider can never see or touch a human's in-progress edits, and
+  // never push anywhere but its own auto-repair/* branch.
+  const baseConfig = configFor(providers[0]);
+  let worktree;
+  try {
+    worktree = prepareIsolatedWorktree({ repository: baseConfig.repository, task });
+  } catch (error) {
+    console.error(JSON.stringify({
+      ok: false,
+      status: 'isolation_setup_failed',
+      message: error instanceof Error ? error.message : String(error),
+    }, null, 2));
+    process.exit(1);
+  }
+
+  console.log(JSON.stringify({
+    ok: true,
+    status: 'isolated_worktree_ready',
+    branch: worktree.branchName,
+    worktreePath: worktree.worktreePath,
+  }, null, 2));
+
+  try {
+    runInIsolation(providers, task, worktree);
+  } finally {
+    cleanupIsolatedWorktree(worktree.worktreePath);
+  }
+}
+
+function runInIsolation(providers, task, worktree) {
   const failures = [];
   let completedProvider = '';
   let completedConfig = null;
@@ -134,9 +181,10 @@ function main() {
       provider,
       fallbackOrder: providers,
       repository: config.repository,
+      branch: worktree.branchName,
     }, null, 2));
 
-    const result = execute(command);
+    const result = execute(command, { cwd: worktree.worktreePath });
     if (result.ok) {
       completedProvider = provider;
       completedConfig = config;
@@ -162,8 +210,18 @@ function main() {
     process.exit(1);
   }
 
+  if (!hasUncommittedChanges(worktree.worktreePath)) {
+    console.log(JSON.stringify({
+      ok: true,
+      status: 'no_changes',
+      provider: completedProvider,
+      message: 'Provider completed but made no file changes; nothing to commit or open a PR for.',
+    }, null, 2));
+    return;
+  }
+
   if (process.env.ANSWERBRIEF_EXECUTOR_SKIP_VALIDATION !== '1') {
-    const validation = execute(['sh', '-lc', completedConfig.commands.validate]);
+    const validation = execute(['sh', '-lc', completedConfig.commands.validate], { cwd: worktree.worktreePath });
     if (!validation.ok) {
       console.error(JSON.stringify({
         ok: false,
@@ -175,11 +233,27 @@ function main() {
     }
   }
 
+  commitIsolatedChanges({
+    worktreePath: worktree.worktreePath,
+    message: `Autonomous repair (${completedProvider}): ${task.slice(0, 72)}`,
+  });
+  pushIsolatedBranch({ branchName: worktree.branchName, worktreePath: worktree.worktreePath });
+  const pr = openIsolatedPullRequest({
+    baseBranch: worktree.baseBranch,
+    branchName: worktree.branchName,
+    body: `Opened automatically by the isolated autonomous executor (provider: ${completedProvider}).\n\nTask:\n\n${task}\n\nThis PR is never auto-merged -- a human must review and merge it.`,
+    repository: worktree.repository,
+    title: `Autonomous repair (${completedProvider}): ${task.slice(0, 72)}`,
+    worktreePath: worktree.worktreePath,
+  });
+
   console.log(JSON.stringify({
     ok: true,
-    status: 'completed',
+    status: 'pr_opened',
     provider: completedProvider,
     attemptedProviders: [...failures.map(({ provider }) => provider), completedProvider],
+    branch: worktree.branchName,
+    prUrl: pr.url,
     validation: process.env.ANSWERBRIEF_EXECUTOR_SKIP_VALIDATION === '1' ? 'skipped' : 'passed',
   }, null, 2));
 }

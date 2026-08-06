@@ -18,7 +18,7 @@ concurrency:
 permissions:
   contents: read
   actions: read
-  pull-requests: read
+  pull-requests: write
   issues: write
   id-token: write
 
@@ -38,6 +38,14 @@ jobs:
               body: `Career OS workflow accepted by GitHub.\n\n- Run: ${context.runId}\n- Commit: ${context.sha}\n- Event: ${context.eventName}\n- Waiting for Mac runner: true\n- Time: ${new Date().toISOString()}`
             });
 
+  # Production isolation (see docs/career-os-production-isolation.md):
+  # the "Execute, observe, repair, retry" step below runs the autonomous
+  # supervisor/executor against CAREER_OS_RUNTIME for diagnostics, but the
+  # executor itself never edits or commits inside that shared directory --
+  # it clones ANSWERBRIEF_EXECUTOR_REPOSITORY fresh into
+  # ANSWERBRIEF_EXECUTOR_WORKTREE_ROOT on its own auto-repair/* branch for
+  # every attempt, and only ever opens a PR from there. It never pushes to
+  # or merges `main`.
   production-canary:
     needs: trigger-monitor
     runs-on: [self-hosted]
@@ -45,6 +53,9 @@ jobs:
     env:
       CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
       CAREER_OS_SOURCE: ${{ github.workspace }}/answerbrief-ai-automation-starter
+      ANSWERBRIEF_EXECUTOR_REPOSITORY: boritomas/answerbrief-ai-automation
+      ANSWERBRIEF_EXECUTOR_WORKTREE_ROOT: ${{ runner.temp }}/career-os-auto-repair
+      ANSWERBRIEF_EXECUTOR_AUTO_MERGE: '0'
       APP_BASE_URL: https://www.answer-brief.com
       NEXT_PUBLIC_BASE_URL: https://www.answer-brief.com
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
