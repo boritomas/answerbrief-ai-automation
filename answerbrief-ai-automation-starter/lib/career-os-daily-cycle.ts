@@ -701,7 +701,7 @@ function buildAutoApplyPromotionRows(
   return { applications: nextApplications, opportunities: nextOpportunities };
 }
 
-function buildAutoApplyPackageArtifacts(
+export function buildAutoApplyPackageArtifacts(
   ownerEmail: string,
   qualifiedPostings: JsonRecord[],
   evidence: Partial<DailyCycleEvidence> | undefined,
