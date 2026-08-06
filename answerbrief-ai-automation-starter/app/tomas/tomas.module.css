@@ -138,6 +138,51 @@
   margin-bottom: 3rem;
 }
 
+.heroInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.75rem;
+  text-align: center;
+}
+
+.heroPhoto {
+  flex-shrink: 0;
+  width: 168px;
+}
+
+.heroPhotoImg {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 5 / 4;
+  object-fit: cover;
+  object-position: center 22%;
+  border-radius: 12px;
+  display: block;
+}
+
+.heroText {
+  min-width: 0;
+}
+
+@media (min-width: 860px) {
+  .heroInner {
+    flex-direction: row-reverse;
+    align-items: flex-start;
+    text-align: left;
+    gap: 2.5rem;
+  }
+
+  .heroPhoto {
+    width: 240px;
+    margin-top: 0.3rem;
+  }
+
+  .heroText {
+    flex: 1;
+  }
+}
+
 .eyebrow {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   font-size: 0.78rem;
@@ -175,6 +220,7 @@
   display: flex;
   gap: 0.9rem;
   flex-wrap: wrap;
+  justify-content: center;
   font-size: 0.92rem;
   margin-bottom: 1.1rem;
 }
@@ -183,9 +229,17 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.6rem;
   font-size: 0.9rem;
   color: var(--muted);
+}
+
+@media (min-width: 860px) {
+  .heroButtons,
+  .heroLinks {
+    justify-content: flex-start;
+  }
 }
 
 .heroLinks a {

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import styles from './tomas.module.css';
 
 const CANONICAL_URL = 'https://tomasnieves.com';
@@ -285,27 +286,41 @@ export default function TomasPage() {
       <div className={styles.shell}>
         {/* Hero */}
         <header className={styles.hero}>
-          <p className={styles.eyebrow}>Senior Product Manager</p>
-          <h1>Tomas Nieves</h1>
-          <p className={styles.heroHeadline}>{HERO_HEADLINE}</p>
-          <p className={styles.heroLede}>{HERO_LEDE}</p>
-          <div className={styles.heroButtons}>
-            <a className={styles.buttonPrimary} href={RESUME_PDF} download="Tomas-Nieves-Resume.pdf">
-              Download Résumé
-            </a>
-            <a className={styles.buttonSecondary} href="#highlights">
-              View Product Highlights
-            </a>
-            <a className={styles.buttonSecondary} href="#contact">
-              Contact Tomas
-            </a>
-          </div>
-          <div className={styles.heroLinks}>
-            <a href={`mailto:${EMAIL}`}>{EMAIL}</a>
-            <span aria-hidden="true">&middot;</span>
-            <a href={LINKEDIN_URL} target="_blank" rel="noreferrer">
-              <LinkedInIcon /> LinkedIn
-            </a>
+          <div className={styles.heroInner}>
+            <div className={styles.heroPhoto}>
+              <Image
+                src="/tomas/tomas-nieves-headshot.png"
+                alt="Tomas Nieves"
+                width={640}
+                height={512}
+                priority
+                className={styles.heroPhotoImg}
+              />
+            </div>
+            <div className={styles.heroText}>
+              <p className={styles.eyebrow}>Senior Product Manager</p>
+              <h1>Tomas Nieves</h1>
+              <p className={styles.heroHeadline}>{HERO_HEADLINE}</p>
+              <p className={styles.heroLede}>{HERO_LEDE}</p>
+              <div className={styles.heroButtons}>
+                <a className={styles.buttonPrimary} href={RESUME_PDF} download="Tomas-Nieves-Resume.pdf">
+                  Download Résumé
+                </a>
+                <a className={styles.buttonSecondary} href="#highlights">
+                  View Product Highlights
+                </a>
+                <a className={styles.buttonSecondary} href="#contact">
+                  Contact Tomas
+                </a>
+              </div>
+              <div className={styles.heroLinks}>
+                <a href={`mailto:${EMAIL}`}>{EMAIL}</a>
+                <span aria-hidden="true">&middot;</span>
+                <a href={LINKEDIN_URL} target="_blank" rel="noreferrer">
+                  <LinkedInIcon /> LinkedIn
+                </a>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -415,7 +430,7 @@ export default function TomasPage() {
               <li key={role}>{role}</li>
             ))}
           </ul>
-          <p>Dallas&ndash;Fort Worth, Texas (hybrid) and appropriate U.S. remote opportunities.</p>
+          <p>Dallas, Texas (hybrid) and appropriate U.S. remote opportunities.</p>
         </section>
 
         {/* Recruiter Toolkit */}
@@ -446,7 +461,7 @@ export default function TomasPage() {
                 ))}
               </ul>
               <h3>Location and Work Arrangement</h3>
-              <p>Dallas&ndash;Fort Worth, Texas (hybrid) and appropriate U.S. remote opportunities.</p>
+              <p>Dallas, Texas (hybrid) and appropriate U.S. remote opportunities.</p>
               <h3>Education</h3>
               <p>Master of Science (M.S.), Microcomputing, University of Puerto Rico</p>
               <h3>Certifications</h3>
