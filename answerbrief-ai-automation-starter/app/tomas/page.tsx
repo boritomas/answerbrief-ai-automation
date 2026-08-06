@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import styles from './tomas.module.css';
 
 const CANONICAL_URL = 'https://tomasnieves.com';
-const PAGE_TITLE = 'Tomas Nieves — Senior Product Manager, Enterprise Product Strategy';
+const PAGE_TITLE = 'Tomas Nieves, Senior Product Manager, Enterprise Product Strategy';
 const PAGE_DESCRIPTION =
   'Senior Product Manager with nearly 30 years of enterprise product leadership at Verizon, targeting Director Product Management, Senior Director Product, and Principal Product Manager roles in customer experience and digital transformation.';
 
@@ -45,74 +45,31 @@ const personJsonLd = {
     'Customer Experience Modernization',
     'Digital Product Transformation',
     'Omnichannel Experiences',
-    'AI-Enabled Product Leadership',
     'Product Roadmap Development',
     'Cross-Functional Leadership',
   ],
   description: PAGE_DESCRIPTION,
 };
 
-const highlights = [
-  'Nearly 30 years of enterprise product ownership at a Fortune 15 company, across four distinct platforms and roles.',
-  'Product responsibility spanning consumer digital experiences, self-service and assistant technology, and enterprise operational platforms.',
-  'Cross-functional delivery experience working alongside legal, UX, engineering, and QA on regulated, high-traffic consumer products.',
-  'Deliberate, verified investment in AI fluency this year — five completed certifications, applied directly to how he now works.',
-];
-
-const roles = [
-  {
-    title: 'Senior Product Owner / Product Manager',
-    period: '1996 – 2026',
-    note: 'Most recent focus: Verizon’s View Together initiative.',
-  },
-  { title: 'Product Owner, Verizon Assistant', period: null },
-  { title: 'Product Owner, Verizon.com Email Platform', period: null },
-  { title: 'Product Manager, Consumer and Small Business Solutions', period: null },
-];
-
-const skills = [
-  'Enterprise Product Strategy',
-  'Digital Product Transformation',
-  'Customer Experience Modernization',
-  'Executive Stakeholder Alignment',
-  'Product Roadmap Development',
-  'Portfolio Prioritization',
-  'Cross-Functional Leadership',
-  'Governance and Compliance Alignment',
-  'Agile Product Delivery',
-  'Product Operations',
-  'Data-Informed Decision Making',
-  'Responsible AI Fluency',
-  'Executive Communication',
+const capabilities = [
+  'Moving ambiguous, cross-functional initiatives from strategy into disciplined execution.',
+  'Product judgment grounded in customer impact, not just feature output.',
+  'Cross-functional influence across engineering, UX, operations, legal, and executive stakeholders, without relying solely on formal authority.',
+  'Roadmap and backlog prioritization discipline at enterprise scale.',
+  'Connecting strategy, technology, operations, governance, and customer experience into one coherent plan.',
+  'Current AI fluency used as a practical execution tool, not a topic studied from a distance.',
 ];
 
 const certifications = [
-  'Google AI Professional Certificate — Google / Coursera, 7-course program (May 2026)',
+  'Google AI Professional Certificate, Google / Coursera, 7-course program (May 2026)',
   'Google AI Essentials',
   'Microsoft Azure AI Fundamentals (AI-900)',
   'IBM AI Fundamentals',
   'ISACA AI Fundamentals',
 ];
 
-const currentDevelopment = [
-  {
-    name: 'CareerOS',
-    description:
-      'A job-search orchestration system he built and uses himself, with every application still requiring his explicit approval before anything is submitted.',
-  },
-  {
-    name: 'AnswerBrief AI',
-    description: (
-      <>
-        A role-specific interview-prep tool. Live at{' '}
-        <a href="https://www.answer-brief.com" target="_blank" rel="noreferrer">
-          answer-brief.com
-        </a>
-        .
-      </>
-    ),
-  },
-];
+const developmentNote =
+  'Since leaving Verizon, Tomas has continued building practical skills in AI-assisted research, workflow automation, product analysis, and modern software delivery. This work supports his product leadership capabilities and demonstrates continued learning. It is not presented as a business, startup, or substitute for his Verizon career.';
 
 export default function TomasPage() {
   return (
@@ -146,116 +103,129 @@ export default function TomasPage() {
           </div>
         </header>
 
-        {/* 2. Executive Summary */}
+        {/* 2. Professional Summary */}
         <section className={styles.block}>
-          <h2>Executive Summary</h2>
+          <h2>Professional Summary</h2>
           <p>
-            Thirty years leading enterprise product initiatives, customer experience, digital
-            transformation, and cross-functional delivery at Verizon. Currently a Senior Product Manager
-            in his first outside job search after nearly three decades with the company, targeting
-            Director and Senior Director Product Management roles where that scope of ownership carries
-            forward.
+            Senior Product Manager and enterprise product leader with nearly 30 years of Verizon
+            experience across product strategy, customer experience, digital transformation, assisted
+            digital platforms, self-service, and complex cross-functional delivery. Currently pursuing
+            Director and Senior Director Product Management, Digital Transformation, and Principal
+            Product Manager opportunities where that scope of ownership carries forward.
           </p>
         </section>
 
-        {/* 3. Professional Highlights */}
+        {/* 3. What Tomas Does Best */}
         <section className={styles.block}>
-          <h2>Professional Highlights</h2>
+          <h2>What Tomas Does Best</h2>
           <ul className={styles.checkList}>
-            {highlights.map((item) => (
+            {capabilities.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
         </section>
 
-        {/* 4. Verizon Career */}
+        {/* 4. Verizon Career Progression */}
         <section className={styles.block}>
-          <h2>Verizon Career</h2>
+          <h2>Verizon Career Progression</h2>
           <div className={styles.experienceHeader}>
             <strong>Verizon</strong>
-            <span>1996 – 2026</span>
+            <span>1996 &ndash; 2026</span>
           </div>
-          <ul className={styles.roleList}>
-            {roles.map((role) => (
-              <li key={role.title}>
-                <div className={styles.roleRow}>
-                  <span>{role.title}</span>
-                  {role.period ? <span className={styles.roleYears}>{role.period}</span> : null}
-                </div>
-                {role.note ? <p className={styles.roleNote}>{role.note}</p> : null}
-              </li>
-            ))}
+          <p>
+            Nearly thirty years of enterprise product ownership at Verizon, moving through consumer
+            digital platforms, self-service technology, and enterprise-scale customer experience and
+            transformation initiatives.
+          </p>
+        </section>
+
+        {/* 5. View Together */}
+        <section className={styles.block}>
+          <h2>View Together</h2>
+          <p className={styles.roleNote}>Senior Product Owner / Product Manager</p>
+          <p>
+            Owns product strategy and roadmap for View Together, an assisted digital and co-browse
+            customer experience platform supporting approximately 15 million annual customer
+            interactions across retail and contact-center channels. Leads backlog prioritization and
+            cross-functional coordination across engineering, UX, operations, and retail teams to
+            modernize assisted purchasing and support journeys while maintaining platform stability.
+          </p>
+          <p>
+            Drives launch readiness and governance for platform releases, partnering with legal,
+            compliance, and operations to protect customer transparency and ensure controlled rollout.
+            Incorporates field feedback from retail and contact-center teams into production monitoring
+            and defect prioritization, and manages dependencies across product, engineering, and
+            operations stakeholders to deliver enhancements on committed timelines.
+          </p>
+        </section>
+
+        {/* 6. Verizon Assistant */}
+        <section className={styles.block}>
+          <h2>Verizon Assistant</h2>
+          <p className={styles.roleNote}>Product Owner</p>
+          <p>
+            Owned product strategy and roadmap for Verizon Assistant, a digital self-service platform
+            giving customers direct access to account support and service resolution. Partnered with
+            customer care and operations teams to identify customer needs and prioritize self-service
+            capabilities that reduced dependency on live support channels, using adoption and usage
+            analytics to guide roadmap decisions toward the capabilities with the greatest customer
+            impact.
+          </p>
+        </section>
+
+        {/* 7. Verizon.com Email Platform */}
+        <section className={styles.block}>
+          <h2>Verizon.com Email Platform</h2>
+          <p className={styles.roleNote}>Product Owner</p>
+          <p>
+            Owned full product lifecycle for Verizon.com&rsquo;s consumer email platform, partnering
+            with engineering and operations to maintain reliability and service continuity for customer
+            communications. Coordinated cross-functional teams to manage platform stability and resolve
+            customer-facing issues, sustaining a dependable communications experience.
+          </p>
+        </section>
+
+        {/* 8. Consumer and Small Business Solutions */}
+        <section className={styles.block}>
+          <h2>Consumer and Small Business Solutions</h2>
+          <p className={styles.roleNote}>Product Manager</p>
+          <p>
+            Managed a digital product portfolio serving consumer and small-business customers,
+            prioritizing investment across competing initiatives based on customer need and business
+            value. Aligned business, technology, and operations stakeholders to simplify product and
+            customer experience processes across the portfolio.
+          </p>
+        </section>
+
+        {/* 9. Product Leadership Capabilities */}
+        <section className={styles.block}>
+          <h2>Product Leadership Capabilities</h2>
+          <ul className={styles.skillList}>
+            <li>Enterprise Product Strategy</li>
+            <li>Digital Product Transformation</li>
+            <li>Customer Experience Modernization</li>
+            <li>Roadmap Ownership &amp; Backlog Prioritization</li>
+            <li>Cross-Functional Leadership</li>
+            <li>Product Governance &amp; Launch Readiness</li>
+            <li>Executive Stakeholder Alignment</li>
+            <li>Risk, Dependency &amp; Decision Management</li>
+            <li>Engineering, UX &amp; Architecture Partnership</li>
+            <li>Product Operations</li>
+            <li>Data-Informed Decision Making</li>
+            <li>Applied AI Fluency</li>
           </ul>
         </section>
 
-        {/* 5. Enterprise Product Leadership */}
-        <section className={styles.block}>
-          <h2>Enterprise Product Leadership</h2>
-          <p>
-            Product ownership across four roles and platforms at one of the country&rsquo;s largest
-            telecommunications companies, working across legal, UX, engineering, and QA to bring
-            enterprise-scale consumer products from strategy through delivery. That kind of longevity in
-            one enterprise environment means operating with the governance, compliance, and stakeholder
-            alignment that regulated, high-traffic consumer products require.
-          </p>
-        </section>
-
-        {/* 6. Customer Experience & Digital Transformation */}
-        <section className={styles.block}>
-          <h2>Customer Experience &amp; Digital Transformation</h2>
-          <p>
-            His product ownership has centered on digital customer experience — from Verizon&rsquo;s
-            self-service assistant technology to its consumer email platform to consumer and small-business
-            digital solutions. That arc reflects a consistent focus: making complex enterprise systems
-            simpler for the customer on the other end of them.
-          </p>
-        </section>
-
-        {/* 8. AI-enabled Product Innovation */}
-        <section className={styles.block}>
-          <h2>AI-Enabled Product Innovation</h2>
-          <p>
-            Since starting this search, he has treated AI as an execution accelerator rather than a topic to
-            study from a distance — completing five certifications this year and using AI tools daily to
-            build, ship, and review real production software, documented below.
-          </p>
-        </section>
-
-        {/* 9. Current Professional Development */}
+        {/* 10. Current Professional Development */}
         <section className={styles.block}>
           <h2>Current Professional Development</h2>
-          <p className={styles.sectionNote}>
-            Small technical projects, not a business — continuous learning alongside the Verizon
-            experience above, not a replacement for it.
-          </p>
-          <ul className={styles.checkList}>
-            {currentDevelopment.map((item) => (
-              <li key={item.name}>
-                <strong>{item.name}</strong> — {item.description}
-              </li>
-            ))}
-          </ul>
+          <p>{developmentNote}</p>
         </section>
 
-        {/* 10. Skills */}
+        {/* 11. Education and Certifications */}
         <section className={styles.block}>
-          <h2>Skills</h2>
-          <ul className={styles.skillList}>
-            {skills.map((skill) => (
-              <li key={skill}>{skill}</li>
-            ))}
-          </ul>
-        </section>
-
-        {/* 11. Education */}
-        <section className={styles.block}>
-          <h2>Education</h2>
-          <p>Master of Science (M.S.), Microcomputing — University of Puerto Rico</p>
-        </section>
-
-        {/* 12. Certifications */}
-        <section className={styles.block}>
-          <h2>Certifications</h2>
+          <h2>Education and Certifications</h2>
+          <p>Master of Science (M.S.), Microcomputing, University of Puerto Rico</p>
           <ul className={styles.certList}>
             {certifications.map((cert) => (
               <li key={cert}>{cert}</li>
@@ -263,9 +233,9 @@ export default function TomasPage() {
           </ul>
         </section>
 
-        {/* 13. Target Roles */}
+        {/* 12. Target Opportunities */}
         <section className={styles.block}>
-          <h2>Target Roles</h2>
+          <h2>Target Opportunities</h2>
           <p>
             Seeking Director Product Management, Senior Director Product, and Principal Product Manager
             opportunities in Customer Experience and Digital Transformation. These are target
@@ -273,7 +243,7 @@ export default function TomasPage() {
           </p>
         </section>
 
-        {/* 14. Contact */}
+        {/* 13. Contact */}
         <footer className={styles.footer}>
           <p>If any of this is relevant to something you&rsquo;re hiring for, I&rsquo;d like to talk.</p>
           <div className={styles.heroButtons}>

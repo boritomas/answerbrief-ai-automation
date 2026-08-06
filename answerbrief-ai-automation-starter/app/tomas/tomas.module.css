@@ -150,7 +150,7 @@
 
 .checkList li::before,
 .certList li::before {
-  content: '—';
+  content: '\2022';
   position: absolute;
   left: 0;
   color: var(--muted);
