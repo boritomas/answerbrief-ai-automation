@@ -1,16 +1,27 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { getCareerOsStatus } from '@/lib/career-os-status';
-import {
-  buildDailyOperatingCycleStatus,
-  persistDailyCycleReport,
-  runDailyGreenhouseDiscovery,
-} from '@/lib/career-os-daily-cycle';
-import { careerOsQueuePaused, processCareerOsQueue, type QueueProcessorResult } from '@/lib/career-os-queue';
 
+// Vercel Cron hits this route once daily. It used to run the full
+// discovery/scoring/persistence cycle synchronously and routinely hit
+// Vercel's 60-second serverless limit ("Vercel Runtime Timeout Error: Task
+// timed out after 60 seconds", confirmed in production logs) because
+// runDailyGreenhouseDiscovery's Workday branch makes a long, fully
+// sequential per-tenant/per-search-term/per-posting-detail fetch chain.
+//
+// This route now does only two things: authenticate, then dispatch the
+// existing self-hosted "Career OS Job Inbox" GitHub Actions workflow
+// (career-os-job-inbox.yml, self-hosted Mac runner, 60-MINUTE timeout,
+// already running LinkedIn discovery on its own schedule). The actual heavy
+// work moved to ../execute/route.ts, invoked by that workflow over
+// localhost against `next start` (no serverless duration cap applies
+// there). No discovery/scoring/qualification logic changed -- only where it
+// runs.
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 export const runtime = 'nodejs';
+
+const GITHUB_REPO = 'boritomas/answerbrief-ai-automation';
+const GITHUB_WORKFLOW_FILE = 'career-os-job-inbox.yml';
 
 export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET || process.env.CAREER_OS_CRON_SECRET;
@@ -20,114 +31,50 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Unauthorized Career OS daily cron invocation.' }, { status: 401 });
   }
 
-  let before: Awaited<ReturnType<typeof getCareerOsStatus>> | undefined;
-  let discovery: Awaited<ReturnType<typeof runDailyGreenhouseDiscovery>> | undefined;
-  let queueProcessor: Awaited<ReturnType<typeof runSubmissionQueueAfterDiscovery>> | undefined;
+  const dispatchToken = process.env.GITHUB_DISPATCH_TOKEN;
+  if (!dispatchToken) {
+    return NextResponse.json({
+      ok: false,
+      error: 'GITHUB_DISPATCH_TOKEN is not configured; cannot dispatch the discovery workflow.',
+      status: 'dispatch_not_configured',
+    }, { status: 500 });
+  }
 
   try {
-    before = await getCareerOsStatus();
-    discovery = await runDailyGreenhouseDiscovery(before.evidence.ownerEmail, before.evidence);
-    queueProcessor = await runSubmissionQueueAfterDiscovery(before.evidence.ownerEmail);
+    const response = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW_FILE}/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${dispatchToken}`,
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        body: JSON.stringify({ ref: 'main' }),
+      },
+    );
 
-    const afterDiscovery = await getCareerOsStatus();
-    const releaseMetrics = {
-      activeQualifiedOpportunities: afterDiscovery.activeQualifiedOpportunities,
-      duplicateRecordsRemoved: afterDiscovery.duplicateRecordsRemoved,
-      inactive: afterDiscovery.inactive,
-      ineligible: afterDiscovery.ineligible,
-      inProgress: afterDiscovery.inProgress,
-      readyForAutomation: afterDiscovery.readyForAutomation,
-      releaseCompletionPercentage: afterDiscovery.releaseCompletionPercentage,
-      submittedApplications: afterDiscovery.submittedApplications,
-      totalPackages: afterDiscovery.totalPackages,
-      totalUniqueOpportunities: afterDiscovery.totalUniqueOpportunities,
-      waitingOnTomas: afterDiscovery.waitingOnTomas,
-    };
-    const dailyCycle = buildDailyOperatingCycleStatus(afterDiscovery.evidence, releaseMetrics);
-    const persisted = await persistDailyCycleReport(afterDiscovery.evidence.ownerEmail, dailyCycle, releaseMetrics, discovery);
+    if (!response.ok) {
+      const detail = await response.text();
+      return NextResponse.json({
+        ok: false,
+        error: `GitHub workflow_dispatch failed: ${response.status} ${detail}`.slice(0, 2000),
+        status: 'dispatch_failed',
+      }, { status: 502 });
+    }
 
     return NextResponse.json({
       ok: true,
-      before: compactStatusForResponse(before),
-      dailyCycle: compactDailyCycleForResponse(dailyCycle),
-      discovery: compactDiscoveryForResponse(discovery),
-      persisted: {
-        automationRunId: persisted.automationRun.id,
-        dailyReportId: persisted.report.id,
-      },
-      queueProcessor,
+      dispatched: true,
+      status: 'discovery_workflow_dispatched',
+      workflow: GITHUB_WORKFLOW_FILE,
     });
   } catch (error) {
     return NextResponse.json({
       ok: false,
-      status: 'daily_cycle_completed_with_error',
-      error: errorMessage(error),
-      before: before ? compactStatusForResponse(before) : null,
-      discovery: discovery ? compactDiscoveryForResponse(discovery) : null,
-      queueProcessor: queueProcessor || null,
-    });
-  }
-}
-
-function compactStatusForResponse(status: Awaited<ReturnType<typeof getCareerOsStatus>>) {
-  return {
-    activeQualifiedOpportunities: status.activeQualifiedOpportunities,
-    submittedApplications: status.submittedApplications,
-    waitingOnTomas: status.waitingOnTomas,
-  };
-}
-
-function compactDiscoveryForResponse(discovery: Awaited<ReturnType<typeof runDailyGreenhouseDiscovery>>) {
-  return {
-    errors: discovery.errors,
-    postingsAccepted: discovery.postingsAccepted,
-    postingsPersisted: discovery.postingsPersisted,
-    postingsReviewed: discovery.postingsReviewed,
-    sourceRunId: discovery.sourceRun.id,
-  };
-}
-
-function compactDailyCycleForResponse(dailyCycle: Awaited<ReturnType<typeof buildDailyOperatingCycleStatus>>) {
-  return {
-    actionQueueStatus: dailyCycle.actionQueueStatus,
-    applicationAutomationStatus: dailyCycle.applicationAutomationStatus,
-    applicationResponseTrackingStatus: dailyCycle.applicationResponseTrackingStatus,
-    dailyReportStatus: dailyCycle.dailyReportStatus,
-    immediateQueueProcessor: dailyCycle.immediateQueueProcessor,
-    dailyFunnel: {
-      applicationExecutionToday: dailyCycle.dailyFunnel.applicationExecutionToday,
-      qualificationToday: dailyCycle.dailyFunnel.qualificationToday,
-      rawActivityToday: dailyCycle.dailyFunnel.rawActivityToday,
-    },
-    pipelineHealth: {
-      readyForAutomation: dailyCycle.pipelineHealth.readyForAutomation,
-      waitingOnTomas: dailyCycle.pipelineHealth.waitingOnTomas,
-      applicationsSubmittedToday: dailyCycle.pipelineHealth.applicationsSubmittedToday,
-      totalSubmitted: dailyCycle.pipelineHealth.totalSubmitted,
-    },
-  };
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Career OS daily cycle failed.';
-}
-
-async function runSubmissionQueueAfterDiscovery(ownerEmail: string): Promise<QueueProcessorResult | { errors: string[]; skipped: true; trigger: 'cron' }> {
-  if (careerOsQueuePaused()) {
-    return {
-      errors: ['career_os_queue_paused'],
-      skipped: true,
-      trigger: 'cron',
-    };
-  }
-
-  try {
-    return await processCareerOsQueue({ ownerEmail, trigger: 'cron' });
-  } catch (error) {
-    return {
-      errors: [error instanceof Error ? error.message : 'Career OS queue processor failed after discovery.'],
-      skipped: true,
-      trigger: 'cron',
-    };
+      error: error instanceof Error ? error.message : 'Career OS daily cron dispatch failed.',
+      status: 'dispatch_error',
+    }, { status: 500 });
   }
 }
