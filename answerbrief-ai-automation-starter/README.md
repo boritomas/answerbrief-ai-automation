@@ -221,3 +221,7 @@ Start with:
 2. Add intake form persistence.
 3. Add email provider.
 4. Add admin order dashboard.
+
+## Operational notes
+
+- Career OS Job Inbox discovery failures now fail the workflow instead of silently reporting green (see `.github/workflows/career-os-job-inbox.yml`).
