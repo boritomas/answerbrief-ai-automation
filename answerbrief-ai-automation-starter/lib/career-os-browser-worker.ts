@@ -510,7 +510,7 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
     await patchApplication(application.id, {
       lifecycle_stage: 'waiting_on_tomas_browser_worker',
       next_action: report.evidenceText || 'Browser companion reached a human-only gate.',
-      raw_record: nextRaw,
+      raw_record: clearResumeFlags(nextRaw),
       updated_at: now,
     });
     await appendWorkflowEvent(application, 'browser_worker_waiting_on_tomas', 'waiting_on_tomas', report.evidenceText || 'Human-only gate detected.', now, runId, currentUrl || undefined, {
@@ -556,7 +556,7 @@ export async function reportBrowserWorkerProgress(report: WorkerReport) {
     await patchApplication(application.id, {
       lifecycle_stage: productionOutcome.lifecycleStage,
       next_action: productionOutcome.nextAction,
-      raw_record: nextRaw,
+      raw_record: productionOutcome.lifecycleStage === 'waiting_on_tomas_browser_worker' ? clearResumeFlags(nextRaw) : nextRaw,
       updated_at: now,
     });
     await appendWorkflowEvent(application, productionOutcome.eventType, productionOutcome.eventStatus, productionOutcome.nextAction, now, runId, currentUrl || undefined, {
@@ -726,7 +726,7 @@ function browserWorkerEligibilityDetails(application: QueueApplication, companio
   const greenhouseCanaryConfiguredForApplication = isGreenhouseSubmitCanaryConfiguredFor(application, overrides);
   const workdayAuthorizedAccountGate = isWorkdayAuthorizedAccountGate(application);
   const unresolvedWorkerBlock = (
-    (lastReportStatus === 'waiting_on_tomas' || lastReportStatus === 'blocked_technical')
+    (WAITING_ON_TOMAS_WORKER_STATUSES.has(lastReportStatus) || lastReportStatus === 'blocked_technical')
     && !isExplicitlyResumedApplication(application)
     && !recoverableLegacyState
     && !explicitlyQueued
@@ -776,6 +776,43 @@ function browserWorkerEligibilityDetails(application: QueueApplication, companio
 function isExplicitlyResumedApplication(application: QueueApplication) {
   const raw = asRecord(application.raw_record);
   return Boolean(raw.explicit_resume_requested_at || raw.human_step_completed_at || raw.blocker_resolved_at);
+}
+
+// Every WorkerStatus that productionOutcomeHandling() maps to
+// lifecycle_stage 'waiting_on_tomas_browser_worker', plus the 'waiting_on_tomas'
+// status handled directly in reportBrowserWorkerProgress(). Used both to
+// recognize an unresolved worker block in browserWorkerEligibilityDetails()
+// (previously only matched the literal string 'waiting_on_tomas', which
+// browser_worker_last_report.status never actually holds -- it holds the
+// original WorkerStatus key, e.g. 'waiting_for_user_decision') and to know
+// when to clear the one-time resume flags below.
+const WAITING_ON_TOMAS_WORKER_STATUSES = new Set([
+  'waiting_on_tomas',
+  'completed_waiting_for_user',
+  'waiting_for_sign_in',
+  'waiting_for_account_creation',
+  'waiting_for_email_code',
+  'waiting_for_email_verification',
+  'waiting_for_user_decision',
+  'waiting_for_manual_upload',
+  'submission_uncertain',
+]);
+
+// explicit_resume_requested_at / human_step_completed_at / blocker_resolved_at
+// are meant as a ONE-TIME "Tomas resolved this, try again" signal, not a
+// standing bypass. Without clearing them here, an application that lands
+// back in a waiting-on-Tomas state after being explicitly resumed once
+// keeps winning claim order forever and wastes the entire batch retrying
+// the same unresolved blocker (confirmed in production: a 5-application
+// run-batch reclaimed the same stuck application all 5 times). Called only
+// when the outcome is genuinely a waiting-on-Tomas class state.
+function clearResumeFlags(raw: JsonRecord): JsonRecord {
+  return {
+    ...raw,
+    blocker_resolved_at: null,
+    explicit_resume_requested_at: null,
+    human_step_completed_at: null,
+  };
 }
 
 function canonicalQueueState(application: JsonRecord, overrides: ProductionClaimOverrides = {}): QueueState {
