@@ -2031,30 +2031,24 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
     }
 
     if (normalizedMode === 'workday_single_canary') {
-      const canaryId = workdayCanaryId();
-      const canaryUrl = cleanEnv(process.env.CAREER_OS_WORKDAY_CANARY_URL);
+      const canaryAllowlist = workdayCanaryIdAllowlist();
+      // CAREER_OS_WORKDAY_CANARY_URL is a legacy single-canary identity
+      // cross-check; it only applies when the allowlist has exactly one
+      // entry (the original single-canary shape). With multiple allowlisted
+      // ids, each application's own identity is validated below instead,
+      // and cross-job uniqueness is enforced by duplicateSameJob.
+      const canaryUrl = canaryAllowlist.length === 1 ? cleanEnv(process.env.CAREER_OS_WORKDAY_CANARY_URL) : undefined;
       const applicationIdentity = workdayJobIdentity(externalApplicationHref(application));
       const canaryIdentity = canaryUrl ? workdayJobIdentity(canaryUrl) : undefined;
       const raw = asRecord(application.raw_record);
       const rawCanaryId = cleanEnv(raw.workday_canary_id || raw.workday_canary_application_id);
-      const canaryCandidates = applications.filter((candidate) => {
-        if (productionPlatform(candidate) !== 'workday') return false;
-        if (isTerminalSubmission(candidate)) return false;
-        if (!isProductionQualified(candidate)) return false;
-        const candidateRaw = asRecord(candidate.raw_record);
-        const candidateCanaryId = cleanEnv(candidateRaw.workday_canary_id || candidateRaw.workday_canary_application_id);
-        if (canaryId && (candidate.id === canaryId || candidateCanaryId === canaryId)) return true;
-        if (!canaryIdentity?.ok) return false;
-        const candidateIdentity = workdayJobIdentity(externalApplicationHref(candidate));
-        return candidateIdentity.ok && sameWorkdayIdentity(candidateIdentity, canaryIdentity);
-      });
       const duplicateSameJob = applications.filter((candidate) => {
         if (candidate.id === application.id || productionPlatform(candidate) !== 'workday') return false;
         if (isTerminalSubmission(candidate)) return false;
         const candidateIdentity = workdayJobIdentity(externalApplicationHref(candidate));
         return applicationIdentity.ok && candidateIdentity.ok && sameWorkdayIdentity(applicationIdentity, candidateIdentity);
       });
-      if (!canaryId) {
+      if (!canaryAllowlist.length) {
         return {
           dailyLimit,
           details: { workday_canary_id_configured: false },
@@ -2066,15 +2060,27 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
           status: 'canary_stopped',
         };
       }
-      if (!(canaryId === application.id || canaryId === rawCanaryId)) {
+      if (!(canaryAllowlist.includes(application.id) || (rawCanaryId && canaryAllowlist.includes(rawCanaryId)))) {
         return {
           dailyLimit,
-          details: { workday_canary_id_configured: true, workday_canary_id_matches_task: false },
+          details: { workday_canary_allowlist_size: canaryAllowlist.length, workday_canary_id_matches_task: false },
           executionMode: normalizedMode,
           ok: false,
           persist: false,
           platform,
-          reason: 'Workday single-canary mode is limited to the configured canary application id.',
+          reason: 'Workday single-canary mode is limited to explicitly allowlisted application ids (CAREER_OS_WORKDAY_CANARY_ID).',
+          status: 'canary_stopped',
+        };
+      }
+      if (!isProductionQualified(application)) {
+        return {
+          dailyLimit,
+          details: { workday_canary_allowlisted: true },
+          executionMode: normalizedMode,
+          ok: false,
+          persist: true,
+          platform,
+          reason: 'Allowlisted Workday application is no longer production-qualified; revalidate before re-adding.',
           status: 'canary_stopped',
         };
       }
@@ -2111,18 +2117,6 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
           persist: true,
           platform,
           reason: 'CAREER_OS_WORKDAY_CANARY_URL does not match the configured Workday canary application.',
-          status: 'canary_stopped',
-        };
-      }
-      if (canaryCandidates.length !== 1) {
-        return {
-          dailyLimit,
-          details: { workday_canary_candidate_count: canaryCandidates.length },
-          executionMode: normalizedMode,
-          ok: false,
-          persist: false,
-          platform,
-          reason: 'Workday single-canary mode requires exactly one qualified canary task.',
           status: 'canary_stopped',
         };
       }
@@ -2603,6 +2597,22 @@ function greenhouseSubmitCanaryLimit() {
 
 function workdayCanaryId() {
   return cleanEnv(process.env.CAREER_OS_WORKDAY_CANARY_ID || process.env.CAREER_OS_WORKDAY_CANARY_APPLICATION_ID);
+}
+
+// CAREER_OS_WORKDAY_CANARY_ID may hold a comma-separated allowlist of
+// application ids, not just one. This intentionally does NOT relax the
+// per-application submit gate below (CAREER_OS_WORKDAY_SUBMIT_APPROVAL is
+// still required per application) -- it only widens which already-approved,
+// already-qualified applications are eligible to reach that gate at all.
+// A single-entry allowlist reproduces the original single-canary behavior
+// exactly.
+function workdayCanaryIdAllowlist() {
+  const raw = process.env.CAREER_OS_WORKDAY_CANARY_ID || process.env.CAREER_OS_WORKDAY_CANARY_APPLICATION_ID || '';
+  const entries = raw
+    .split(',')
+    .map((entry) => cleanEnv(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  return Array.from(new Set(entries));
 }
 
 function productionExecutionMode(overrides: ProductionClaimOverrides = {}) {
