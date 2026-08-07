@@ -1,12 +1,14 @@
 // One-time, narrowly-scoped follow-up repair for exactly one row:
-// app-auto-linkedin-workday-upbound-wd501-100639-0c1dcb7b. A claim attempt
-// ran against a stale (pre-allowlist-fix) compiled server build and
-// incorrectly rejected this already-allowlisted, already-repaired
-// application with the old single-canary-id message -- the same corruption
-// pattern Cisco hit earlier in this session. This restores exactly the
-// fields that stale rejection touched, verifying the exact BEFORE state
-// first and aborting if it doesn't match. No other fields, and no other
-// rows, are touched.
+// app-auto-linkedin-workday-upbound-wd501-100639-0c1dcb7b. Two separate,
+// independent single-canary-id gates in the Workday execution chain
+// (scripts/lib/career-os-production-controls.mjs and
+// scripts/lib/career-os-workday-production.mjs) each rejected this
+// already-allowlisted, already-repaired application before both were fixed
+// (PRs #72, #73), each writing the same canary_stopped corruption pattern
+// with a slightly different next_action message. This restores exactly the
+// fields either rejection touched, verifying the exact BEFORE state first
+// (accepting either known message) and aborting if it doesn't match. No
+// other fields, and no other rows, are touched.
 //
 // Dry run (default): node scripts/career-os-repair-upbound-canary-stopped.mjs
 // Apply:             node scripts/career-os-repair-upbound-canary-stopped.mjs --write
@@ -63,8 +65,13 @@ const before = {
 };
 console.log(`BEFORE: ${JSON.stringify(before)}`);
 
+const KNOWN_REJECTION_MESSAGES = [
+  'Workday single-canary mode is limited to the configured canary application id.',
+  'Workday canary id does not match this task.',
+];
+
 const expected = before.lifecycle_stage === 'canary_stopped'
-  && before.next_action === 'Workday single-canary mode is limited to the configured canary application id.'
+  && KNOWN_REJECTION_MESSAGES.includes(before.next_action)
   && before.production_outcome === 'canary_stopped'
   && before.explicit_resume_requested_at != null;
 
