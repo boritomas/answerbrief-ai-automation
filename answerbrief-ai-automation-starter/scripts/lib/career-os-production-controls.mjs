@@ -325,18 +325,30 @@ function canonicalAdapterId(value) {
   return 'unsupported';
 }
 
+// CAREER_OS_WORKDAY_CANARY_ID may hold a comma-separated allowlist of
+// application ids, not just one -- mirrors workdayCanaryIdAllowlist() in
+// lib/career-os-browser-worker.ts. A single-entry allowlist reproduces the
+// original single-canary behavior exactly, including the
+// CAREER_OS_WORKDAY_CANARY_URL identity cross-check, which only makes sense
+// for exactly one canary.
+function workdayCanaryIdAllowlist(env) {
+  const raw = env.CAREER_OS_WORKDAY_CANARY_ID || env.CAREER_OS_WORKDAY_CANARY_APPLICATION_ID || '';
+  const entries = raw.split(',').map((entry) => clean(entry)).filter(Boolean);
+  return Array.from(new Set(entries));
+}
+
 function validateWorkdaySingleCanaryPolicy(task, env) {
   const applicationId = clean(task.applicationId);
   const raw = task.rawRecord && typeof task.rawRecord === 'object' ? task.rawRecord : {};
   const taskCanaryId = clean(raw.workday_canary_id || raw.workday_canary_application_id);
-  const canaryId = clean(env.CAREER_OS_WORKDAY_CANARY_ID || env.CAREER_OS_WORKDAY_CANARY_APPLICATION_ID);
-  const canaryUrl = clean(env.CAREER_OS_WORKDAY_CANARY_URL);
+  const canaryAllowlist = workdayCanaryIdAllowlist(env);
+  const canaryUrl = canaryAllowlist.length === 1 ? clean(env.CAREER_OS_WORKDAY_CANARY_URL) : '';
   const taskUrl = clean(task.applicationUrl || raw.application_url || raw.canonical_url || raw.job_url);
   const parsedTaskUrl = parseWorkdayPolicyUrl(taskUrl);
   const parsedCanaryUrl = canaryUrl ? parseWorkdayPolicyUrl(canaryUrl) : null;
   const details = {
-    canaryApplicationIdConfigured: Boolean(canaryId),
-    canaryApplicationIdMatchesTask: Boolean(canaryId && (canaryId === applicationId || canaryId === taskCanaryId)),
+    canaryApplicationIdConfigured: canaryAllowlist.length > 0,
+    canaryApplicationIdMatchesTask: canaryAllowlist.includes(applicationId) || (Boolean(taskCanaryId) && canaryAllowlist.includes(taskCanaryId)),
     canaryUrlConfigured: Boolean(canaryUrl),
     taskUrlConfigured: Boolean(taskUrl),
     taskUrlIdentity: parsedTaskUrl.ok ? parsedTaskUrl.identity : null,
@@ -346,11 +358,11 @@ function validateWorkdaySingleCanaryPolicy(task, env) {
   if (!applicationId) {
     return { ok: false, details, reason: 'Workday single-canary mode requires a task application id.' };
   }
-  if (!canaryId) {
+  if (!canaryAllowlist.length) {
     return { ok: false, details, reason: 'Workday single-canary mode requires CAREER_OS_WORKDAY_CANARY_ID for the one approved application.' };
   }
-  if (!(canaryId === applicationId || canaryId === taskCanaryId)) {
-    return { ok: false, details, reason: 'Workday single-canary mode is limited to the configured canary application id.' };
+  if (!(canaryAllowlist.includes(applicationId) || (taskCanaryId && canaryAllowlist.includes(taskCanaryId)))) {
+    return { ok: false, details, reason: 'Workday single-canary mode is limited to explicitly allowlisted application ids (CAREER_OS_WORKDAY_CANARY_ID).' };
   }
   if (!parsedTaskUrl.ok) {
     return { ok: false, details, reason: parsedTaskUrl.reason || 'Workday single-canary mode requires one unambiguous Workday task URL.' };
