@@ -49,7 +49,7 @@ export default async function FounderDashboardPage() {
       const postingStatus = String(posting.status || '').toLowerCase();
       const reviewDecision = String(raw.review_decision || '').toLowerCase();
       return fitScore >= 85
-        && !['approved', 'reject_similar', 'skip', 'hidden'].includes(reviewDecision)
+        && !['approve', 'approved', 'reject_similar', 'skip', 'hidden'].includes(reviewDecision)
         && !['inactive', 'ineligible', 'poor_fit', 'duplicate'].some((value) => postingStatus.includes(value));
     })
     .sort((left, right) => Number(right.fit_score || 0) - Number(left.fit_score || 0))
