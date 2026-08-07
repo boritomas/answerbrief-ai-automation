@@ -45,6 +45,15 @@ jobs:
             --exclude '.career-os-browser-worker' \
             "$CAREER_OS_SOURCE/" "$CAREER_OS_RUNTIME/"
 
+      # This step used to wrap both commands in `|| true`, which meant a
+      # crashed or fully-blocked discovery run (e.g. LinkedIn session expired,
+      # Supabase unreachable) still exited 0 and the workflow reported green.
+      # It now records each command's real outcome, parses linkedin-discover's
+      # own structured JSON status (it always exits 0 itself, so exit code
+      # alone can't tell success from BLOCKED -- the JSON `ok`/`finalStatus`
+      # fields are the actual signal), and fails the job for a genuine
+      # failure while still allowing a validated, explicitly-recorded zero
+      # result to stay green.
       - name: Discover and refresh opportunity queue
         id: discover
         shell: bash
@@ -52,13 +61,50 @@ jobs:
           set -o pipefail
           cd "$CAREER_OS_RUNTIME"
           LOG="$RUNNER_TEMP/career-os-job-inbox-${GITHUB_RUN_ID}.log"
+          LINKEDIN_JSON="$RUNNER_TEMP/career-os-job-inbox-${GITHUB_RUN_ID}-linkedin.json"
+          REPORT_JSON="$RUNNER_TEMP/career-os-job-inbox-${GITHUB_RUN_ID}-report.json"
+          : > "$LOG"
+
+          echo "=== LINKEDIN DISCOVERY ===" | tee -a "$LOG"
+          if npm run --silent linkedin:discover > "$LINKEDIN_JSON" 2>>"$LOG"; then
+            linkedin_status="ran"
+          else
+            linkedin_status="crashed"
+          fi
+          cat "$LINKEDIN_JSON" >> "$LOG"
+
+          echo "=== PRODUCTION REPORT ===" | tee -a "$LOG"
+          if npm run --silent report:career-os > "$REPORT_JSON" 2>>"$LOG"; then
+            report_status="ran"
+          else
+            report_status="crashed"
+          fi
+          cat "$REPORT_JSON" >> "$LOG"
+
+          linkedin_ok=$(node -e "try{const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(d.ok===true?'true':'false')}catch(e){console.log('false')}" "$LINKEDIN_JSON")
+          linkedin_final_status=$(node -e "try{const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(d.finalStatus||'unknown')}catch(e){console.log('unparseable_output')}" "$LINKEDIN_JSON")
+          postings_found=$(node -e "try{const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(Number(d.linkedinJobRecordsCaptured||0))}catch(e){console.log(0)}" "$LINKEDIN_JSON")
+          qualified_found=$(node -e "try{const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log((d.records||[]).filter(r=>Number(r.fitScore||0)>=85).length)}catch(e){console.log(0)}" "$LINKEDIN_JSON")
+          report_ok=$(node -e "try{const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(d.ok===true?'true':'false')}catch(e){console.log('false')}" "$REPORT_JSON")
+
           {
-            echo "=== LINKEDIN DISCOVERY ==="
-            npm run linkedin:discover || true
-            echo "=== PRODUCTION REPORT ==="
-            npm run report:career-os || true
-          } 2>&1 | tee "$LOG"
-          echo "log=$LOG" >> "$GITHUB_OUTPUT"
+            echo "log=$LOG"
+            echo "linkedin_status=$linkedin_status"
+            echo "linkedin_ok=$linkedin_ok"
+            echo "linkedin_final_status=$linkedin_final_status"
+            echo "postings_found=$postings_found"
+            echo "qualified_found=$qualified_found"
+            echo "report_status=$report_status"
+            echo "report_ok=$report_ok"
+            echo "run_timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$linkedin_status" = "crashed" ] || [ "$report_status" = "crashed" ] || [ "$linkedin_ok" != "true" ]; then
+            echo "::error::Discovery run did not complete successfully (linkedin_status=$linkedin_status linkedin_ok=$linkedin_ok linkedin_final_status=$linkedin_final_status report_status=$report_status). See the archived log artifact for detail."
+            exit 1
+          fi
+
+          echo "Discovery run validated OK. postings_found=$postings_found qualified_found=$qualified_found (zero is a valid, explicitly-recorded result, not a failure)."
 
       - name: Publish today queue notification
         if: always()
@@ -66,22 +112,56 @@ jobs:
         env:
           INBOX_LOG: ${{ steps.discover.outputs.log }}
           DASHBOARD_URL: ${{ env.CAREER_OS_DASHBOARD_URL }}
+          DISCOVER_OUTCOME: ${{ steps.discover.outcome }}
+          LINKEDIN_STATUS: ${{ steps.discover.outputs.linkedin_status }}
+          LINKEDIN_OK: ${{ steps.discover.outputs.linkedin_ok }}
+          LINKEDIN_FINAL_STATUS: ${{ steps.discover.outputs.linkedin_final_status }}
+          POSTINGS_FOUND: ${{ steps.discover.outputs.postings_found }}
+          QUALIFIED_FOUND: ${{ steps.discover.outputs.qualified_found }}
+          REPORT_STATUS: ${{ steps.discover.outputs.report_status }}
+          REPORT_OK: ${{ steps.discover.outputs.report_ok }}
+          RUN_TIMESTAMP: ${{ steps.discover.outputs.run_timestamp }}
         with:
           script: |
             const fs = require('fs');
-            let text = 'Job inbox refresh completed. Open the CareerOS dashboard and review the Ready to Apply queue.';
+            const outcome = process.env.DISCOVER_OUTCOME || 'unknown';
+            const failed = outcome !== 'success';
+            const linkedinOk = process.env.LINKEDIN_OK === 'true';
+            const reportOk = process.env.REPORT_OK === 'true';
+
+            const statusLine = failed
+              ? `DISCOVERY RUN FAILED (outcome: ${outcome})`
+              : 'Discovery run status: PASSED (validated, not just green-by-default)';
+
+            const summaryLines = [
+              statusLine,
+              '',
+              `Sources attempted: linkedin${process.env.REPORT_STATUS !== 'not_attempted' ? ', production-report' : ''}`,
+              `Sources succeeded: ${[linkedinOk && 'linkedin', reportOk && 'production-report'].filter(Boolean).join(', ') || 'none'}`,
+              `Sources failed: ${[!linkedinOk && 'linkedin', !reportOk && 'production-report'].filter(Boolean).join(', ') || 'none'}`,
+              `LinkedIn discovery status: ${process.env.LINKEDIN_FINAL_STATUS || 'unknown'} (script step: ${process.env.LINKEDIN_STATUS})`,
+              `Postings found this run: ${process.env.POSTINGS_FOUND ?? 'unknown'}`,
+              `Qualified (fit >= 85) found this run: ${process.env.QUALIFIED_FOUND ?? 'unknown'}`,
+              `This run's timestamp: ${process.env.RUN_TIMESTAMP || new Date().toISOString()}`,
+              `Run: ${context.runId}`,
+              `Dashboard: ${process.env.DASHBOARD_URL}`,
+            ];
+
+            let logTail = '';
             try {
               const raw = fs.readFileSync(process.env.INBOX_LOG, 'utf8');
               const lines = raw.split(/\r?\n/).filter(Boolean);
-              text = lines.slice(-45).join('\n').slice(0, 5500) || text;
+              logTail = lines.slice(-45).join('\n').slice(0, 5500);
             } catch (e) {
               core.warning(`Could not read inbox log: ${e.message}`);
             }
+
+            const title = failed ? 'CAREER_OS_JOB_INBOX_FAILED' : 'CAREER_OS_JOB_INBOX_READY';
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 49,
-              body: `CAREER_OS_JOB_INBOX_READY\n\nThe opportunity discovery cycle finished and the Ready to Apply bucket has been refreshed.\n\nDashboard: ${process.env.DASHBOARD_URL}\nRun: ${context.runId}\nTime: ${new Date().toISOString()}\n\n\`\`\`text\n${text}\n\`\`\``
+              body: `${title}\n\n${summaryLines.join('\n')}\n\n\`\`\`text\n${logTail}\n\`\`\``
             });
 
       - name: Archive inbox evidence
