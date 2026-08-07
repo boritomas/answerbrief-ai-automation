@@ -25,6 +25,7 @@ jobs:
       CAREER_OS_RUNTIME: /Users/tomasnieves/Library/Application Support/CareerOSCompanionRuntime/answerbrief-ai-automation-starter
       CAREER_OS_SOURCE: ${{ github.workspace }}/answerbrief-ai-automation-starter
       CAREER_OS_DASHBOARD_URL: https://www.answer-brief.com/founder-dashboard
+      CAREER_OS_LOCAL_PORT: 3211
       PATH: /Users/tomasnieves/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +55,7 @@ jobs:
       # fields are the actual signal), and fails the job for a genuine
       # failure while still allowing a validated, explicitly-recorded zero
       # result to stay green.
-      - name: Discover and refresh opportunity queue
+      - name: Discover and refresh opportunity queue (LinkedIn)
         id: discover
         shell: bash
         run: |
@@ -100,11 +101,125 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           if [ "$linkedin_status" = "crashed" ] || [ "$report_status" = "crashed" ] || [ "$linkedin_ok" != "true" ]; then
-            echo "::error::Discovery run did not complete successfully (linkedin_status=$linkedin_status linkedin_ok=$linkedin_ok linkedin_final_status=$linkedin_final_status report_status=$report_status). See the archived log artifact for detail."
-            exit 1
+            echo "::error::LinkedIn discovery run did not complete successfully (linkedin_status=$linkedin_status linkedin_ok=$linkedin_ok linkedin_final_status=$linkedin_final_status report_status=$report_status). See the archived log artifact for detail."
+            echo "linkedin_run_ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "linkedin_run_ok=true" >> "$GITHUB_OUTPUT"
+            echo "Discovery run validated OK. postings_found=$postings_found qualified_found=$qualified_found (zero is a valid, explicitly-recorded result, not a failure)."
           fi
 
-          echo "Discovery run validated OK. postings_found=$postings_found qualified_found=$qualified_found (zero is a valid, explicitly-recorded result, not a failure)."
+      # Runs the same discovery/scoring/persistence logic that used to live
+      # directly in Vercel's /api/career-os/daily-run (moved to
+      # ../execute/route.ts) -- it routinely exceeded Vercel's 60-second
+      # serverless limit. Here it runs against a plain `next start` process
+      # on this self-hosted runner (60-MINUTE job timeout, no serverless cap)
+      # and is invoked over localhost only, authenticated with a separate
+      # local-only secret (CAREER_OS_CRON_SECRET) that Vercel's Cron secret
+      # does not satisfy.
+      - name: Discover and refresh opportunity queue (Greenhouse/Workday/Oracle)
+        id: discover_ats
+        shell: bash
+        run: |
+          set -o pipefail
+          cd "$CAREER_OS_RUNTIME"
+          ATS_LOG="$RUNNER_TEMP/career-os-job-inbox-${GITHUB_RUN_ID}-ats.log"
+          ATS_JSON="$RUNNER_TEMP/career-os-job-inbox-${GITHUB_RUN_ID}-ats.json"
+          : > "$ATS_LOG"
+
+          cleanup() {
+            if [ -n "${SERVER_PID:-}" ]; then
+              kill "$SERVER_PID" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          lsof -ti ":$CAREER_OS_LOCAL_PORT" 2>/dev/null | xargs -r kill 2>/dev/null || true
+
+          echo "=== BUILD ===" | tee -a "$ATS_LOG"
+          if ! npm run build >> "$ATS_LOG" 2>&1; then
+            echo "::error::App build failed before ATS discovery could run. See the archived log artifact for detail."
+            echo "ats_run_ok=false" >> "$GITHUB_OUTPUT"
+            echo "ats_status=build_failed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "=== START LOCAL SERVER ===" | tee -a "$ATS_LOG"
+          npx next start --hostname 127.0.0.1 --port "$CAREER_OS_LOCAL_PORT" >> "$ATS_LOG" 2>&1 &
+          SERVER_PID=$!
+
+          ready=false
+          for _ in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:$CAREER_OS_LOCAL_PORT/api/career-os/health" > /dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" != "true" ]; then
+            echo "::error::Local server did not become healthy on port $CAREER_OS_LOCAL_PORT within 30s." | tee -a "$ATS_LOG"
+            echo "ats_run_ok=false" >> "$GITHUB_OUTPUT"
+            echo "ats_status=server_not_ready" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "=== EXECUTE GREENHOUSE/WORKDAY/ORACLE DISCOVERY ===" | tee -a "$ATS_LOG"
+          http_status=$(curl -s -o "$ATS_JSON" -w "%{http_code}" \
+            --max-time 1800 \
+            -H "Authorization: Bearer ${CAREER_OS_CRON_SECRET}" \
+            "http://127.0.0.1:$CAREER_OS_LOCAL_PORT/api/career-os/daily-run/execute")
+          cat "$ATS_JSON" >> "$ATS_LOG"
+
+          ats_ok=$(node -e "try{const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(d.ok===true?'true':'false')}catch(e){console.log('false')}" "$ATS_JSON")
+          ats_postings=$(node -e "try{const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(Number(d.discovery?.postingsPersisted||0))}catch(e){console.log(0)}" "$ATS_JSON")
+          ats_reviewed=$(node -e "try{const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(Number(d.discovery?.postingsReviewed||0))}catch(e){console.log(0)}" "$ATS_JSON")
+          ats_errors=$(node -e "try{const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log((d.discovery?.errors||[]).length)}catch(e){console.log(-1)}" "$ATS_JSON")
+
+          {
+            echo "ats_log=$ATS_LOG"
+            echo "ats_http_status=$http_status"
+            echo "ats_ok=$ats_ok"
+            echo "ats_postings=$ats_postings"
+            echo "ats_reviewed=$ats_reviewed"
+            echo "ats_errors=$ats_errors"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$http_status" != "200" ] || [ "$ats_ok" != "true" ]; then
+            echo "::error::Greenhouse/Workday/Oracle discovery did not complete successfully (http_status=$http_status ats_ok=$ats_ok). See the archived log artifact for detail."
+            echo "ats_run_ok=false" >> "$GITHUB_OUTPUT"
+            echo "ats_status=execute_failed" >> "$GITHUB_OUTPUT"
+          else
+            echo "ats_run_ok=true" >> "$GITHUB_OUTPUT"
+            echo "ats_status=ok" >> "$GITHUB_OUTPUT"
+            echo "Greenhouse/Workday/Oracle discovery validated OK. postings_persisted=$ats_postings postings_reviewed=$ats_reviewed"
+          fi
+
+      # Stale-discovery detection: alerts explicitly when no fresh posting has
+      # landed within the expected window, instead of relying on the workflow
+      # simply being green (a green run with zero fresh postings for days is
+      # itself a silent failure mode this makes visible).
+      - name: Check for stale discovery
+        id: staleness
+        if: always()
+        shell: bash
+        run: |
+          cd "$CAREER_OS_RUNTIME"
+          set -a; source .env.local 2>/dev/null || true; set +a
+          latest=$(curl -s "${SUPABASE_URL}/rest/v1/career_os_job_postings?select=created_at&order=created_at.desc&limit=1" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            | node -e "try{const d=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(d[0]?.created_at||'')}catch(e){console.log('')}")
+          if [ -z "$latest" ]; then
+            echo "stale=unknown" >> "$GITHUB_OUTPUT"
+            echo "hours_since_fresh=unknown" >> "$GITHUB_OUTPUT"
+          else
+            hours=$(node -e "console.log(Math.floor((Date.now()-new Date(process.argv[1]).getTime())/3600000))" "$latest")
+            echo "hours_since_fresh=$hours" >> "$GITHUB_OUTPUT"
+            if [ "$hours" -ge 26 ]; then
+              echo "stale=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "stale=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
 
       - name: Publish today queue notification
         if: always()
@@ -112,7 +227,7 @@ jobs:
         env:
           INBOX_LOG: ${{ steps.discover.outputs.log }}
           DASHBOARD_URL: ${{ env.CAREER_OS_DASHBOARD_URL }}
-          DISCOVER_OUTCOME: ${{ steps.discover.outcome }}
+          LINKEDIN_RUN_OK: ${{ steps.discover.outputs.linkedin_run_ok }}
           LINKEDIN_STATUS: ${{ steps.discover.outputs.linkedin_status }}
           LINKEDIN_OK: ${{ steps.discover.outputs.linkedin_ok }}
           LINKEDIN_FINAL_STATUS: ${{ steps.discover.outputs.linkedin_final_status }}
@@ -121,27 +236,35 @@ jobs:
           REPORT_STATUS: ${{ steps.discover.outputs.report_status }}
           REPORT_OK: ${{ steps.discover.outputs.report_ok }}
           RUN_TIMESTAMP: ${{ steps.discover.outputs.run_timestamp }}
+          ATS_RUN_OK: ${{ steps.discover_ats.outputs.ats_run_ok }}
+          ATS_STATUS: ${{ steps.discover_ats.outputs.ats_status }}
+          ATS_POSTINGS: ${{ steps.discover_ats.outputs.ats_postings }}
+          ATS_REVIEWED: ${{ steps.discover_ats.outputs.ats_reviewed }}
+          STALE: ${{ steps.staleness.outputs.stale }}
+          HOURS_SINCE_FRESH: ${{ steps.staleness.outputs.hours_since_fresh }}
         with:
           script: |
             const fs = require('fs');
-            const outcome = process.env.DISCOVER_OUTCOME || 'unknown';
-            const failed = outcome !== 'success';
-            const linkedinOk = process.env.LINKEDIN_OK === 'true';
-            const reportOk = process.env.REPORT_OK === 'true';
+            const linkedinOk = process.env.LINKEDIN_RUN_OK === 'true';
+            const atsOk = process.env.ATS_RUN_OK === 'true';
+            const stale = process.env.STALE === 'true';
+            const anyFailed = !linkedinOk || !atsOk;
 
-            const statusLine = failed
-              ? `DISCOVERY RUN FAILED (outcome: ${outcome})`
+            const statusLine = anyFailed
+              ? 'DISCOVERY RUN FAILED (see sources below)'
               : 'Discovery run status: PASSED (validated, not just green-by-default)';
 
             const summaryLines = [
               statusLine,
+              stale ? `STALE DISCOVERY ALERT: ${process.env.HOURS_SINCE_FRESH} hours since the last fresh posting (threshold: 26h)` : `Freshness OK: ${process.env.HOURS_SINCE_FRESH ?? 'unknown'} hours since last fresh posting`,
               '',
-              `Sources attempted: linkedin${process.env.REPORT_STATUS !== 'not_attempted' ? ', production-report' : ''}`,
-              `Sources succeeded: ${[linkedinOk && 'linkedin', reportOk && 'production-report'].filter(Boolean).join(', ') || 'none'}`,
-              `Sources failed: ${[!linkedinOk && 'linkedin', !reportOk && 'production-report'].filter(Boolean).join(', ') || 'none'}`,
+              'Sources attempted: linkedin, greenhouse/workday/oracle, production-report',
+              `Sources succeeded: ${[linkedinOk && 'linkedin', atsOk && 'greenhouse/workday/oracle'].filter(Boolean).join(', ') || 'none'}`,
+              `Sources failed: ${[!linkedinOk && 'linkedin', !atsOk && 'greenhouse/workday/oracle'].filter(Boolean).join(', ') || 'none'}`,
               `LinkedIn discovery status: ${process.env.LINKEDIN_FINAL_STATUS || 'unknown'} (script step: ${process.env.LINKEDIN_STATUS})`,
-              `Postings found this run: ${process.env.POSTINGS_FOUND ?? 'unknown'}`,
-              `Qualified (fit >= 85) found this run: ${process.env.QUALIFIED_FOUND ?? 'unknown'}`,
+              `Greenhouse/Workday/Oracle status: ${process.env.ATS_STATUS || 'unknown'} (postings persisted: ${process.env.ATS_POSTINGS ?? 'unknown'}, reviewed: ${process.env.ATS_REVIEWED ?? 'unknown'})`,
+              `LinkedIn postings found this run: ${process.env.POSTINGS_FOUND ?? 'unknown'}`,
+              `LinkedIn qualified (fit >= 85) found this run: ${process.env.QUALIFIED_FOUND ?? 'unknown'}`,
               `This run's timestamp: ${process.env.RUN_TIMESTAMP || new Date().toISOString()}`,
               `Run: ${context.runId}`,
               `Dashboard: ${process.env.DASHBOARD_URL}`,
@@ -156,7 +279,7 @@ jobs:
               core.warning(`Could not read inbox log: ${e.message}`);
             }
 
-            const title = failed ? 'CAREER_OS_JOB_INBOX_FAILED' : 'CAREER_OS_JOB_INBOX_READY';
+            const title = anyFailed ? 'CAREER_OS_JOB_INBOX_FAILED' : (stale ? 'CAREER_OS_JOB_INBOX_STALE' : 'CAREER_OS_JOB_INBOX_READY');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -169,6 +292,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: career-os-job-inbox-${{ github.run_id }}
-          path: ${{ steps.discover.outputs.log }}
+          path: |
+            ${{ steps.discover.outputs.log }}
+            ${{ steps.discover_ats.outputs.ats_log }}
           if-no-files-found: warn
           retention-days: 14
