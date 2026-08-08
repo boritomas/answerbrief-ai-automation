@@ -45,9 +45,10 @@ test('JobCopilotService never calls the queue processor, browser worker, or any 
   assert.doesNotMatch(serviceSource, /AtsAdapterRegistry/);
 });
 
-test('JobCopilotService.discover only persists to career_os_job_postings', () => {
-  const persistCalls = [...serviceSource.matchAll(/careerOsUpsertRows\('([^']+)'/g)].map((match) => match[1]);
-  assert.deepEqual(persistCalls, ['career_os_job_postings']);
+test('JobCopilotService.discover only persists to career_os_source_runs and career_os_job_postings, via persistRows (which allowlists columns for that table, same as runDailyGreenhouseDiscovery) -- never career_os_opportunities or career_os_applications', () => {
+  const persistCalls = [...serviceCode.matchAll(/persistRows\('([^']+)'/g)].map((match) => match[1]);
+  assert.deepEqual(persistCalls, ['career_os_source_runs', 'career_os_job_postings']);
+  assert.doesNotMatch(serviceCode, /careerOsUpsertRows/);
 });
 
 test('JobCopilotService.handoffToCareerOS delegates to approveReviewedJobPosting -- it does not duplicate the approval/promotion logic', () => {

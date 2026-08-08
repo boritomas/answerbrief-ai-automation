@@ -701,7 +701,7 @@ function buildAutoApplyPromotionRows(
   return { applications: nextApplications, opportunities: nextOpportunities };
 }
 
-function buildAutoApplyPackageArtifacts(
+export function buildAutoApplyPackageArtifacts(
   ownerEmail: string,
   qualifiedPostings: JsonRecord[],
   evidence: Partial<DailyCycleEvidence> | undefined,
@@ -2435,7 +2435,7 @@ function buildDailySearchConfig(
   };
 }
 
-async function persistRows(table: string, rows: JsonRecord | JsonRecord[]) {
+export async function persistRows(table: string, rows: JsonRecord | JsonRecord[]) {
   const supabaseUrl = cleanEnv(process.env.SUPABASE_URL);
   const serviceRoleKey = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
   if (!supabaseUrl || !serviceRoleKey || serviceRoleKey.startsWith('[')) {
@@ -2730,7 +2730,7 @@ function cleanEnv(value: unknown) {
   return trimmed.replace(/^"|"$/g, '');
 }
 
-function deterministicUuid(input: string) {
+export function deterministicUuid(input: string) {
   const hash = crypto.createHash('sha1').update(input).digest();
   hash[6] = (hash[6] & 0x0f) | 0x50;
   hash[8] = (hash[8] & 0x3f) | 0x80;

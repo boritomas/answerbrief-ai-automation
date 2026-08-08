@@ -32,12 +32,14 @@ import { buildCareerOsDiscoveryPlan } from './career-os-market-universe';
 import {
   AUTO_APPLY_PROMOTION_THRESHOLD,
   dedupePostings,
+  deterministicUuid,
   fetchGreenhouseSourceBatches,
   fetchOracleSourceResults,
   fetchWorkdaySourceResults,
   normalizeOraclePosting,
   normalizePosting,
   normalizeWorkdayPosting,
+  persistRows,
   qualifiesForCurrentProductionLane,
 } from './career-os-daily-cycle';
 import { toCanonicalJob, type CanonicalJob } from './career-os-canonical-job';
@@ -45,7 +47,7 @@ import {
   approveReviewedJobPosting,
   type ApproveReviewedJobPostingResult,
 } from './career-os-review-approval';
-import { careerOsSelectRows, careerOsUpsertRows } from './career-os-supabase';
+import { careerOsSelectRows } from './career-os-supabase';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -95,7 +97,11 @@ export class JobCopilotService {
     const executedAt = new Date().toISOString();
     const minFitScore = options.minFitScore ?? AUTO_APPLY_PROMOTION_THRESHOLD;
     const maxGreenhouseBoards = Math.max(0, options.maxGreenhouseBoards ?? DEFAULT_MAX_GREENHOUSE_BOARDS);
-    const sourceRunId = `job-copilot-discovery-${deterministicSlug(this.ownerEmail)}-${executedAt}`;
+    // career_os_source_runs.id (and the source_run_id column this feeds on
+    // career_os_job_postings) is a uuid column -- use the same
+    // deterministicUuid() runDailyGreenhouseDiscovery uses for the same
+    // column, not an arbitrary string.
+    const sourceRunId = deterministicUuid(`job-copilot-discovery:${this.ownerEmail}:${executedAt}`);
     const errors: string[] = [];
     let reviewed = 0;
 
@@ -140,9 +146,31 @@ export class JobCopilotService {
 
     const dedupedPostings = dedupePostings(postings)
       .sort((a, b) => numberValue(b.fit_score) - numberValue(a.fit_score));
+    const qualifiedCount = dedupedPostings.filter((posting) => qualifiesForCurrentProductionLane(posting, minFitScore)).length;
 
     if (dedupedPostings.length) {
-      await careerOsUpsertRows('career_os_job_postings', dedupedPostings);
+      // career_os_job_postings.source_run_id is a foreign key into
+      // career_os_source_runs -- the parent row must exist first, exactly
+      // as runDailyGreenhouseDiscovery already creates one for its own
+      // sourceRunId before persisting postings.
+      await persistRows('career_os_source_runs', {
+        executed_at: executedAt,
+        id: sourceRunId,
+        number_accepted: qualifiedCount,
+        number_reviewed: reviewed,
+        number_skipped: Math.max(reviewed - qualifiedCount, 0),
+        owner_email: this.ownerEmail,
+        source_name: 'Job Copilot orchestrated discovery (Workday + bounded Greenhouse + Oracle)',
+        source_type: 'job_copilot_service_discover',
+        source_url: 'job-copilot-service:discover',
+        status: reviewed > 0 ? 'succeeded' : 'error',
+      });
+      // persistRows (not careerOsUpsertRows directly) -- it allowlists
+      // columns for career_os_job_postings the same way
+      // runDailyGreenhouseDiscovery already does, since the in-memory
+      // normalized posting shape includes fields (e.g.
+      // deterministic_filter_reason) that aren't real columns on that table.
+      await persistRows('career_os_job_postings', dedupedPostings);
     }
 
     return {
@@ -198,8 +226,4 @@ export class JobCopilotService {
 function numberValue(value: unknown): number {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
-}
-
-function deterministicSlug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
