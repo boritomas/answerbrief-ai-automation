@@ -9,8 +9,10 @@ export type EmployerAuthExceptionView = {
   applicationIds: string[];
   employer: string;
   exactAction: string;
+  guidance?: { reason: string; suggestedActions: string[] };
   lastResetRequestedAt: string | null;
   lastSuccessfulLogin: string | null;
+  rejectionClassification?: string | null;
   status: string;
   tenant: string;
 };
@@ -133,7 +135,10 @@ export function EmployerAuthControls({ actionToken, exceptions, keychainWriteAva
             <article className={styles.actionControl} key={exception.tenant}>
               <strong>{exception.employer}</strong>
               <small>{exception.tenant} · {exception.applicationCount} application{exception.applicationCount === 1 ? '' : 's'} waiting</small>
-              <p><small>Status: {STATUS_LABEL[exception.status] || exception.status}</small></p>
+              <p><strong>{exception.guidance?.reason || STATUS_LABEL[exception.status] || exception.status}</strong></p>
+              {exception.guidance?.suggestedActions.length ? (
+                <p><small>Suggested: {exception.guidance.suggestedActions.join(' · ')}</small></p>
+              ) : null}
               {exception.lastResetRequestedAt ? <p><small>Last reset requested: {exception.lastResetRequestedAt}</small></p> : null}
               {exception.lastSuccessfulLogin ? <p><small>Last successful login: {exception.lastSuccessfulLogin}</small></p> : null}
               <p><small>{exception.exactAction}</small></p>

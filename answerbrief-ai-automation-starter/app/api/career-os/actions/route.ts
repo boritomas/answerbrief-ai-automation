@@ -20,7 +20,7 @@ import {
   persistDailyCycleReport,
   runDailyGreenhouseDiscovery,
 } from '@/lib/career-os-daily-cycle';
-import { keychainServiceFor, updateEmployerCredentialAndResume, verifyWorkdayCredential } from '@/lib/career-os-employer-auth';
+import { keychainServiceFor, recordEmployerAuthVerification, updateEmployerCredentialAndResume, verifyWorkdayCredential } from '@/lib/career-os-employer-auth';
 
 export const dynamic = 'force-dynamic';
 // Credential verification launches a real browser and waits for a live
@@ -202,7 +202,8 @@ export async function POST(request: NextRequest) {
     if (!body.applicationId || !body.accountEmail) {
       return NextResponse.json({ ok: false, error: 'Missing applicationId or accountEmail.' }, { status: 400 });
     }
-    const rows = await careerOsSelectRows('career_os_applications', `select=raw_record&owner_email=eq.${encodeURIComponent(ownerEmail)}&id=eq.${encodeURIComponent(body.applicationId)}&limit=1`);
+    const rows = await careerOsSelectRows('career_os_applications', `select=employer,raw_record&owner_email=eq.${encodeURIComponent(ownerEmail)}&id=eq.${encodeURIComponent(body.applicationId)}&limit=1`);
+    const employer = String(rows[0]?.employer || 'Employer');
     const raw = (rows[0]?.raw_record || {}) as Record<string, unknown>;
     const applicationUrl = String(raw.application_url || '');
     if (!applicationUrl) {
@@ -226,7 +227,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: false, error: 'No credential is currently stored in the Keychain for this employer account.' }, { status: 400 });
       }
       const verified = await verifyWorkdayCredential({ accountEmail: body.accountEmail, applicationUrl, password });
-      return NextResponse.json({ ok: verified.ok, reason: verified.reason, status: verified.ok ? 'authenticated' : 'credential_invalid' });
+      await recordEmployerAuthVerification({ accountEmail: body.accountEmail, classification: verified.classification, employer, ok: verified.ok, ownerEmail, tenant });
+      return NextResponse.json(
+        { classification: verified.classification, ok: verified.ok, reason: verified.reason, status: verified.ok ? 'authenticated' : 'credential_invalid' },
+        { status: verified.ok ? 200 : 400 },
+      );
     } catch {
       return NextResponse.json({ ok: false, error: 'No credential is currently stored in the Keychain for this employer account, or it is locked/unavailable.' }, { status: 400 });
     }
