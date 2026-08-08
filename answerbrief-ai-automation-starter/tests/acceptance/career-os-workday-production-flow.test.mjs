@@ -365,6 +365,14 @@ test('Workday page classifier distinguishes auth, email, expired, CAPTCHA, and a
   assert.equal(classifyWorkdayPageText('This job is no longer accepting applications').status, 'not_qualified');
   assert.equal(classifyWorkdayPageText('Verify you are human CAPTCHA').category, 'captcha');
   assert.equal(classifyWorkdayPageText('My Information Application Questions Review Submit').state, 'application');
+  // Confirmed in production 2026-08-08: Sedgwick's canonical apply URL
+  // resolved to Workday's own 404 page, which reads as a bare navigation
+  // shell (Skip to main content / Search for Jobs) -- identical to a page
+  // that's still hydrating -- and without this classification it silently
+  // "waited for hydration" for the entire 20-step budget before reporting
+  // an unhelpful unsupported_workday_state.
+  assert.equal(classifyWorkdayPageText("The page you are looking for doesn't exist. Search for Jobs").status, 'not_qualified');
+  assert.equal(classifyWorkdayPageText("The page you are looking for doesn't exist. Search for Jobs").state, 'expired_job');
 });
 
 test('Workday canary stops at review without exact job approval', async () => {
@@ -1527,6 +1535,97 @@ test('Workday-first mode stops after one rejected password and starts reset emai
   assert.doesNotMatch(JSON.stringify(testRuntime.reports), /DO_NOT_LEAK_REJECTED_PASSWORD/);
 });
 
+test('Workday-first mode skips a second password reset while one is already on cooldown for the same employer account', async () => {
+  const workdayTask = task({ employer: 'Newfold Digital' });
+  const env = { CAREER_OS_EXECUTION_MODE: 'workday_first_submit' };
+  const policy = resolveProductionExecutionPolicy({ adapterId: 'workday', env, task: workdayTask });
+  const protectedSentinel = 'DO_NOT_LEAK_COOLDOWN_PASSWORD';
+  const accountMetadata = [];
+  const page = {
+    clicked: [],
+    currentUrl: '',
+    emailValue: '',
+    signInAttempted: false,
+    stage: 'sign_in',
+    async clickActionLabel(label) {
+      this.clicked.push(label);
+      if (/^sign in$/i.test(label)) this.signInAttempted = true;
+      return true;
+    },
+    async evaluate() {
+      return {
+        actions: [
+          { enabled: true, label: 'Sign In', tagName: 'button' },
+          { enabled: true, label: 'Forgot your password?', tagName: 'a' },
+        ],
+        errors: [],
+        fields: [
+          { currentValue: '', filled: false, label: 'Email Address', required: true, tagName: 'input', type: 'email' },
+          { currentValue: '', filled: false, label: 'Password', required: true, tagName: 'input', type: 'password' },
+        ],
+      };
+    },
+    async fillAccountField(_patterns, value) {
+      this.emailValue = value;
+      return true;
+    },
+    async fillAccountPassword(value) {
+      this.protectedValueFilled = value === protectedSentinel;
+      return true;
+    },
+    async goto(url) {
+      this.currentUrl = url;
+    },
+    async hasVisiblePasswordField() {
+      return this.stage === 'sign_in';
+    },
+    async textContent() {
+      if (this.signInAttempted) return 'You may have entered the wrong email address or password or your account might be locked. Forgot your password?';
+      return 'Sign In Email Address Password Forgot your password?';
+    },
+    async visiblePasswordFieldCount() {
+      return this.stage === 'sign_in' ? 1 : 0;
+    },
+    async waitForTimeout() {},
+    url() {
+      return this.currentUrl || workdayTask.applicationUrl;
+    },
+  };
+  const testRuntime = {
+    ...runtime(),
+    async recordEmployerAccountMetadata(payload) {
+      accountMetadata.push(payload);
+      return { ok: true };
+    },
+    async resolveEmployerAccountCredential() {
+      return {
+        createdNow: false,
+        ok: true,
+        password: protectedSentinel,
+        reference: 'macos-keychain service=career-os-workday:web-wd1; account=tomas@example.com',
+        resetCooldownReason: 'A Workday password reset for this employer account was already requested at 2026-08-08T00:03:00.000Z (~20h of the reset link\'s validity window remaining). Complete that reset -- or store the current, known-good password in the Keychain -- instead of starting another one.',
+        resetOnCooldown: true,
+        store: 'macos_keychain',
+        tenant: 'web-wd1',
+      };
+    },
+  };
+
+  const result = await runWorkdayProductionFlow(page, workdayTask, testRuntime, policy, { env });
+
+  assert.equal(result, true);
+  // Must sign in and see the rejection, but must NOT click "Forgot your
+  // password?" or start another reset -- that's the whole point of the
+  // cooldown.
+  assert.deepEqual(page.clicked, ['Sign In']);
+  assert.ok(!accountMetadata.some((entry) => entry.resetRequestedNow));
+  const waitingReport = testRuntime.reports.find((report) => report.status === 'waiting_for_sign_in');
+  assert.ok(waitingReport, 'expected a waiting_for_sign_in report referencing the shared cooldown');
+  assert.match(waitingReport.evidenceText, /already requested/);
+  assert.equal(waitingReport.details?.classification, 'workday_employer_auth_recovery_shared');
+  assert.doesNotMatch(JSON.stringify(testRuntime.reports), /DO_NOT_LEAK_COOLDOWN_PASSWORD/);
+});
+
 test('Workday-first mode retries repeated email account path once before gating', async () => {
   const workdayTask = task({ employer: 'Yahoo' });
   const env = { CAREER_OS_EXECUTION_MODE: 'workday_first_submit' };
@@ -1832,6 +1931,93 @@ test('Workday-first mode waits and reloads a completely blank Workday page befor
   assert.equal(page.reloaded, true);
   assert.ok(testRuntime.reports.some((report) => report.details?.classification === 'workday_hydration_wait' && report.details?.hydrationKind === 'blank_page'));
   assert.ok(testRuntime.reports.some((report) => report.status === 'submitted_confirmed'));
+});
+
+test('Workday canary classifies a 404 apply URL as expired_job within a few steps instead of exhausting the step budget', async () => {
+  // Reproduces the exact Sedgwick production failure: the canonical apply
+  // URL resolves to Workday's own "the page you are looking for doesn't
+  // exist" 404, which looks identical (bare nav shell, no matching fields
+  // or actions) to a page that's still hydrating. Before this fix, the
+  // canary silently waited for hydration on every single step and only
+  // reported a generic unsupported_workday_state after exhausting the
+  // full 20-step budget.
+  const workdayTask = task({ employer: 'Sedgwick' });
+  const env = { CAREER_OS_EXECUTION_MODE: 'workday_first_submit' };
+  const policy = resolveProductionExecutionPolicy({ adapterId: 'workday', env, task: workdayTask });
+  let evaluateCalls = 0;
+  const page = {
+    currentUrl: '',
+    async clickActionLabel() {
+      return false;
+    },
+    async evaluate() {
+      evaluateCalls += 1;
+      return {
+        actions: [{ enabled: true, label: 'Search for Jobs', tagName: 'a' }],
+        errors: [],
+        fields: [],
+      };
+    },
+    async goto(url) {
+      this.currentUrl = url;
+    },
+    async textContent() {
+      return "The page you are looking for doesn't exist.Search for Jobs";
+    },
+    async waitForTimeout() {},
+    url() {
+      return this.currentUrl || workdayTask.applicationUrl;
+    },
+  };
+  const testRuntime = runtime();
+
+  const result = await runWorkdayProductionFlow(page, workdayTask, testRuntime, policy, { env });
+
+  assert.equal(result, true);
+  const finalReport = testRuntime.reports.at(-1);
+  assert.equal(finalReport.status, 'not_qualified');
+  assert.equal(finalReport.details?.classification, 'expired_job');
+  // Must not have burned anywhere near the full 20-step budget getting there.
+  assert.ok(evaluateCalls < 10, `expected to classify well before the step ceiling, saw ${evaluateCalls} inspection calls`);
+  assert.ok(!testRuntime.reports.some((report) => /exceeded the 20-step budget/.test(report.evidenceText || '')));
+});
+
+test('Workday canary breaks out of a repeated hydration-wait loop after 3 identical page states even when the text is not explicitly recognized', async () => {
+  // General safety net for any future dead-end page shape that
+  // classifyWorkdayPageText doesn't explicitly recognize: hydration waits
+  // must be bounded per distinct page signature, not infinite.
+  const workdayTask = task({ employer: 'Newfold Digital' });
+  const env = { CAREER_OS_EXECUTION_MODE: 'workday_first_submit' };
+  const policy = resolveProductionExecutionPolicy({ adapterId: 'workday', env, task: workdayTask });
+  const page = {
+    currentUrl: '',
+    async clickActionLabel() {
+      return false;
+    },
+    async evaluate() {
+      return { actions: [], errors: [], fields: [] };
+    },
+    async goto(url) {
+      this.currentUrl = url;
+    },
+    async textContent() {
+      return 'Skip to main content Search for Jobs Introduce Yourself';
+    },
+    async waitForTimeout() {},
+    url() {
+      return this.currentUrl || workdayTask.applicationUrl;
+    },
+  };
+  const testRuntime = runtime();
+
+  const result = await runWorkdayProductionFlow(page, workdayTask, testRuntime, policy, { env });
+
+  assert.equal(result, true);
+  assert.ok(testRuntime.reports.some((report) => report.details?.classification === 'workday_hydration_wait_exhausted'));
+  // Once the streak breaker fires it must fall through to a terminal report
+  // (unsupported/unknown), not keep waiting indefinitely.
+  const finalReport = testRuntime.reports.at(-1);
+  assert.notEqual(finalReport.details?.classification, 'workday_hydration_wait');
 });
 
 test('Workday-first mode signs in instead of re-clicking an already selected email path', async () => {
