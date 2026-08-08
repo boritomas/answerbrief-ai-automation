@@ -20,12 +20,18 @@ import {
   persistDailyCycleReport,
   runDailyGreenhouseDiscovery,
 } from '@/lib/career-os-daily-cycle';
+import { keychainServiceFor, updateEmployerCredentialAndResume, verifyWorkdayCredential } from '@/lib/career-os-employer-auth';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Credential verification launches a real browser and waits for a live
+// Workday sign-in round-trip; the default 60s can be tight on a slow
+// network. Only exercised locally (see keychainWriteAvailable()), never on
+// a Vercel-hosted instance of this route.
+export const maxDuration = 120;
 export const runtime = 'nodejs';
 
 type ActionBody = {
+  accountEmail?: string;
   action?: string;
   adminPassword?: string;
   actionToken?: string;
@@ -35,7 +41,12 @@ type ActionBody = {
   employer?: string;
   ownerEmail?: string;
   opportunityId?: string;
+  // Never logged, never persisted to Supabase, never echoed in a response --
+  // used only in-memory to write the macOS Keychain entry and to drive one
+  // live Playwright sign-in check. See lib/career-os-employer-auth.ts.
+  password?: string;
   reviewAction?: 'approve' | 'hide' | 'reject_similar' | 'save' | 'skip' | 'tailor' | 'watch';
+  tenant?: string;
 };
 
 export async function POST(request: NextRequest) {
@@ -163,6 +174,80 @@ export async function POST(request: NextRequest) {
       ownerEmail,
     });
     return NextResponse.json(result, { status: result.ok ? 200 : result.status === 'blocked' ? 409 : 400 });
+  }
+
+  if (body.action === 'update_employer_credential') {
+    if (!body.employer || !body.tenant || !body.accountEmail || !body.password) {
+      return NextResponse.json({ ok: false, error: 'Missing employer, tenant, accountEmail, or password.' }, { status: 400 });
+    }
+    try {
+      const result = await updateEmployerCredentialAndResume({
+        accountEmail: body.accountEmail,
+        employer: body.employer,
+        ownerEmail,
+        password: body.password,
+        tenant: body.tenant,
+      });
+      return NextResponse.json(result, { status: result.ok ? 200 : result.status === 'blocked' ? 503 : 400 });
+    } catch (error) {
+      return NextResponse.json({
+        error: error instanceof Error ? error.message : 'Credential update failed.',
+        ok: false,
+        status: 'error',
+      }, { status: 502 });
+    }
+  }
+
+  if (body.action === 'verify_employer_login') {
+    if (!body.applicationId || !body.accountEmail) {
+      return NextResponse.json({ ok: false, error: 'Missing applicationId or accountEmail.' }, { status: 400 });
+    }
+    const rows = await careerOsSelectRows('career_os_applications', `select=raw_record&owner_email=eq.${encodeURIComponent(ownerEmail)}&id=eq.${encodeURIComponent(body.applicationId)}&limit=1`);
+    const raw = (rows[0]?.raw_record || {}) as Record<string, unknown>;
+    const applicationUrl = String(raw.application_url || '');
+    if (!applicationUrl) {
+      return NextResponse.json({ ok: false, error: 'Application has no known Workday URL to verify against.' }, { status: 400 });
+    }
+    // Re-verifies against whatever password is CURRENTLY stored in the
+    // Keychain (does not accept a password in this action) -- this is the
+    // "check if the existing credential still works" button, distinct from
+    // "store a new one." Reads the current secret only long enough to run
+    // the check; never returns it.
+    const tenant = new URL(applicationUrl).hostname.replace(/\.myworkdayjobs\.com$/i, '');
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileAsync = promisify(execFile);
+    const keychainPath = process.env.CAREER_OS_WORKDAY_KEYCHAIN_PATH;
+    try {
+      const args = ['find-generic-password', '-s', keychainServiceFor(tenant), '-a', body.accountEmail, '-w', ...(keychainPath ? [keychainPath] : [])];
+      const { stdout } = await execFileAsync('security', args, { maxBuffer: 1024 * 32, timeout: 10000 });
+      const password = String(stdout || '').trim();
+      if (!password) {
+        return NextResponse.json({ ok: false, error: 'No credential is currently stored in the Keychain for this employer account.' }, { status: 400 });
+      }
+      const verified = await verifyWorkdayCredential({ accountEmail: body.accountEmail, applicationUrl, password });
+      return NextResponse.json({ ok: verified.ok, reason: verified.reason, status: verified.ok ? 'authenticated' : 'credential_invalid' });
+    } catch {
+      return NextResponse.json({ ok: false, error: 'No credential is currently stored in the Keychain for this employer account, or it is locked/unavailable.' }, { status: 400 });
+    }
+  }
+
+  if (body.action === 'resume_employer_applications') {
+    if (!body.employer) {
+      return NextResponse.json({ ok: false, error: 'Missing employer.' }, { status: 400 });
+    }
+    const rows = await careerOsSelectRows(
+      'career_os_applications',
+      `select=id&owner_email=eq.${encodeURIComponent(ownerEmail)}&lifecycle_stage=eq.waiting_on_tomas_browser_worker&employer=ilike.*${encodeURIComponent(body.employer)}*`,
+    );
+    let resumed = 0;
+    const errors: string[] = [];
+    for (const row of rows) {
+      const result = await recordCareerOsAction({ action: 'resume_application', applicationId: String(row.id), ownerEmail });
+      if (result.ok) resumed += 1;
+      else errors.push(`${row.id}: ${result.message || 'unknown error'}`);
+    }
+    return NextResponse.json({ ok: true, resumed, errors, status: 'success' });
   }
 
   if (body.action === 'review_opportunity') {

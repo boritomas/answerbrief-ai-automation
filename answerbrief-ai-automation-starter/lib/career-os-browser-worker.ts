@@ -257,6 +257,7 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
     'career_os_applications',
     `select=*&owner_email=eq.${encodeURIComponent(input.ownerEmail)}&order=updated_at.asc.nullslast,created_at.asc.nullslast`,
   ) as QueueApplication[];
+  const blockedTenants = await blockedEmployerAuthTenants(input.ownerEmail);
   const skip = (application: QueueApplication, reason: string, details: JsonRecord = {}) => {
     debugClaimSkip(application, reason, details);
     input.debugSkips?.push(claimSkipRecord(application, reason, details));
@@ -266,6 +267,23 @@ export async function claimNextBrowserWorkerTask(input: BrowserWorkerClaimReques
     try {
       if (queuePaused && !isExplicitlyResumedApplication(application)) {
         skip(application, 'queue_paused');
+        continue;
+      }
+      // Employer/tenant/account is known (from career_os_employer_accounts,
+      // written by the credential-update flow and the browser worker's
+      // reset-storm circuit breaker) to be credential_invalid or
+      // manual_auth_required -- skip the claim entirely rather than
+      // launching a real browser to rediscover the same known-broken
+      // credential. This is what actually protects the shared daily
+      // attempt budget: the reset-storm circuit breaker (PR #80) stops
+      // duplicate resets *within* an attempt, but every claim still
+      // consumed one of the 25 daily slots. Applications for an employer
+      // in this state don't get claimed at all until Tomas updates the
+      // credential and it verifies, so the budget isn't spent rediscovering
+      // a blocker CareerOS already knows about.
+      const tenant = workdayTenantForApplication(application);
+      if (tenant && blockedTenants.has(tenant)) {
+        skip(application, 'employer_auth_blocked', { tenant, status: blockedTenants.get(tenant) });
         continue;
       }
       const eligibility = browserWorkerEligibilityDetails(application, input.companionId, input.production);
@@ -688,6 +706,7 @@ export async function browserWorkerHealth(ownerEmail: string) {
     eligible,
     production: {
       dailyLimit: productionDailyLimit(),
+      dailySubmissionLimit: productionDailySubmissionLimit(),
       executionMode: productionExecutionMode() || 'missing',
       executionModeValid: Boolean(normalizeProductionExecutionMode(productionExecutionMode())),
       greenhouseCanaryApplicationIdConfigured: Boolean(cleanEnv(process.env.CAREER_OS_GREENHOUSE_CANARY_APPLICATION_ID)),
@@ -1951,6 +1970,23 @@ function productionClaimGate(application: QueueApplication, applications: QueueA
     };
   }
 
+  const dailySubmissionLimit = productionDailySubmissionLimit();
+  if (canonicalQueueState(application, overrides) === 'review_ready' && productionSubmittedToday(applications) >= dailySubmissionLimit && !authorizedGreenhouseCanary) {
+    return {
+      dailyLimit,
+      executionMode,
+      ok: false,
+      // Not persisted for the same reason the attempt-limit gate above
+      // isn't: this reflects today's evidence-based submission count, not
+      // a durable per-application fact, and must be re-evaluated fresh on
+      // every claim attempt (including after local-midnight reset).
+      persist: false,
+      platform,
+      reason: `Career OS daily submission limit of ${dailySubmissionLimit} confirmed submission(s) is already reached today (separate from the ${dailyLimit}-attempt browser-activity limit).`,
+      status: 'canary_stopped',
+    };
+  }
+
   if (!executionMode || !normalizedMode) {
     return {
       dailyLimit,
@@ -2627,6 +2663,32 @@ function productionDailyLimit() {
   return Number.isFinite(value) && value > 0 ? Math.min(Math.floor(value), 25) : 5;
 }
 
+// Separate from productionDailyLimit(): that number bounds total
+// browser-worker ATTEMPTS (a safety limit on live-site activity volume --
+// a blocked login, a dead page, a retry all count against it, by design).
+// This bounds ATTEMPTS at the review_ready -> submit boundary specifically
+// with a distinct counter based on genuine submission evidence, so a day
+// where most of the 25 attempts are known credential/field blockers still
+// leaves real submission capacity for whatever *does* reach final review --
+// audited 2026-08-08 per explicit request to stop failed attempts from
+// silently exhausting submission capacity. Defaults equal to the attempt
+// limit (no behavior change) unless configured tighter.
+function productionDailySubmissionLimit() {
+  const configured = cleanEnv(process.env.CAREER_OS_DAILY_SUBMISSION_LIMIT);
+  if (!configured) return productionDailyLimit();
+  const value = Number(configured);
+  return Number.isFinite(value) && value > 0 ? Math.min(Math.floor(value), 25) : productionDailyLimit();
+}
+
+function productionSubmittedToday(applications: QueueApplication[]) {
+  return applications.filter((application) => {
+    if (!applicationTouchedByBrowserWorkerToday(application)) return false;
+    const raw = asRecord(application.raw_record);
+    return Boolean(application.confirmation_number || application.submission_evidence)
+      || cleanEnv(raw.production_outcome) === 'submitted_confirmed';
+  }).length;
+}
+
 function greenhouseSubmitCanaryLimit() {
   const value = Number(cleanEnv(process.env.CAREER_OS_GREENHOUSE_SUBMIT_CANARY_LIMIT) || '1');
   return Number.isFinite(value) && value > 0 ? Math.min(Math.floor(value), 5) : 1;
@@ -2689,6 +2751,51 @@ function workdayTenant(host: string) {
   if (/careers\.cisco\.com$/i.test(host)) return 'cisco';
   if (/myworkdayjobs\.com$/i.test(host)) return host.replace(/\.myworkdayjobs\.com$/i, '');
   return host.split('.')[0] || host;
+}
+
+function workdayTenantForApplication(application: JsonRecord): string {
+  const raw = asRecord(application.raw_record);
+  const applicationUrl = cleanEnv(raw.application_url);
+  if (!applicationUrl) return '';
+  try {
+    return workdayTenant(new URL(applicationUrl).hostname.toLowerCase());
+  } catch {
+    return '';
+  }
+}
+
+// New taxonomy names (credential_invalid, manual_auth_required, written by
+// lib/career-os-employer-auth.ts's verification flow) plus the legacy
+// status strings the browser worker itself has been writing all along
+// (recordEmployerAccountMetadata in scripts/career-os-browser-companion.mjs)
+// -- both must gate claiming, since most employer accounts in this state
+// today predate the new credential-update UI.
+const EMPLOYER_AUTH_BLOCKED_STATUSES = new Set([
+  'account_locked_or_password_rejected',
+  'credential_invalid',
+  'manual_auth_required',
+  'password_rejected',
+]);
+
+// career_os_employer_accounts.metadata.tenant is written by both the
+// browser worker (scripts/career-os-browser-companion.mjs's
+// recordEmployerAccountMetadata) and the credential-update API
+// (lib/career-os-employer-auth.ts) -- same tenant identity the claim loop
+// derives from each application's own Workday URL, so this lookup lines up
+// exactly with workdayTenantForApplication() above.
+async function blockedEmployerAuthTenants(ownerEmail: string): Promise<Map<string, string>> {
+  const rows = await selectAll(
+    'career_os_employer_accounts',
+    `select=status,metadata&owner_email=eq.${encodeURIComponent(ownerEmail)}`,
+  );
+  const blocked = new Map<string, string>();
+  for (const row of rows) {
+    const status = cleanEnv(row.status);
+    if (!EMPLOYER_AUTH_BLOCKED_STATUSES.has(status)) continue;
+    const tenant = cleanEnv(asRecord(row.metadata).tenant);
+    if (tenant) blocked.set(tenant, status);
+  }
+  return blocked;
 }
 
 function workdayPathJobId(pathname: string) {
