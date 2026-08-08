@@ -25,6 +25,28 @@ const userDataDir = path.join(stateDir, 'chrome-profile');
 const screenshotDir = path.join(stateDir, 'screenshots');
 const tempDir = path.join(stateDir, 'tmp');
 const pollIntervalMs = Number(process.env.CAREER_OS_WORKER_POLL_MS || '15000');
+// Workday's own password-reset emails are typically valid for roughly a
+// day; while the most recent reset for this exact employer+tenant+account
+// is still within that window, no other application should independently
+// trigger a second one. Confirmed in production on 2026-08-08: 6 different
+// Capital One applications and 2 different USAA applications each clicked
+// "Forgot Password" and re-triggered a brand-new reset within the same
+// run-batch, one per application, for the same account -- a reset storm
+// that both spams Tomas's inbox and makes it ambiguous which (if any) of
+// several reset emails is still the one to complete. This is a shared,
+// tenant-level cooldown, not a per-application one: applications B, C, D
+// for the same employer must see the SAME in-flight recovery state that
+// application A already started, not start their own.
+// Declared here (not near employerAuthResetCooldown() below, closer to
+// where it's used) because this module has top-level await in its
+// run-batch/run-once/start command dispatch further down -- a `const`
+// declared later in file-source-order is still in its temporal dead zone
+// when that top-level code runs immediately at import time, even though
+// the function that reads it is only ever *called* later. Confirmed by a
+// live "Cannot access 'WORKDAY_RESET_COOLDOWN_MS' before initialization"
+// failure across 6 Capital One applications when the const was originally
+// placed next to employerAuthResetCooldown() further down the file.
+const WORKDAY_RESET_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 let githubOidcTokenCache = { value: '', expiresAtMs: 0 };
 
 for (const dir of [stateDir, userDataDir, screenshotDir, tempDir]) {
@@ -663,20 +685,8 @@ async function isEmployerAccountInRecoveryHold(tenant, accountEmail) {
   return /password.?reset|recovery|needs_review|locked/.test(`${status} ${verificationStatus}`);
 }
 
-// Workday's own password-reset emails are typically valid for roughly a day;
-// while the most recent reset for this exact employer+tenant+account is
-// still within that window, no other application should independently
-// trigger a second one. Confirmed in production on 2026-08-08: 4 different
-// Capital One applications and 2 different USAA applications each clicked
-// "Forgot Password" and re-triggered a brand-new reset within the same
-// ~10 minute run-batch, one per application, for the same account -- a
-// reset storm that both spams Tomas's inbox and makes it ambiguous which
-// (if any) of several reset emails is still the one to complete. This is a
-// shared, tenant-level cooldown, not a per-application one: applications
-// B, C, D for the same employer must see the SAME in-flight recovery state
-// that application A already started, not start their own.
-const WORKDAY_RESET_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-
+// Shared, tenant-level cooldown -- see WORKDAY_RESET_COOLDOWN_MS above for
+// why this exists and what it protects against.
 async function employerAuthResetCooldown(tenant, accountEmail) {
   const supabaseUrl = clean(process.env.SUPABASE_URL);
   const key = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
