@@ -1828,7 +1828,26 @@ type CanonicalSubmittedApplication = {
   manualAttestation: boolean;
 };
 
+// Same redundant-call pattern as buildCanonicalOpportunityList above (this
+// function is itself called 3+ times per request with the same evidence)
+// -- memoized for the same reason.
+const authoritativeLedgerCache = new WeakMap<CareerOsEvidence, Map<number, AuthoritativeLedgerStatus>>();
+
 function buildAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): AuthoritativeLedgerStatus {
+  const cacheKey = preferredMinimumBaseSalaryUsd ?? -1;
+  let byThreshold = authoritativeLedgerCache.get(evidence);
+  if (!byThreshold) {
+    byThreshold = new Map();
+    authoritativeLedgerCache.set(evidence, byThreshold);
+  }
+  const cached = byThreshold.get(cacheKey);
+  if (cached) return cached;
+  const result = computeAuthoritativeLedger(evidence, preferredMinimumBaseSalaryUsd);
+  byThreshold.set(cacheKey, result);
+  return result;
+}
+
+function computeAuthoritativeLedger(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): AuthoritativeLedgerStatus {
   const canonical = buildCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd);
   const profileReady = missingFactsConsolidated(evidence);
   const canonicalSubmittedApplications = selectCanonicalSubmittedApplications(evidence);
@@ -2314,7 +2333,41 @@ export function selectReviewQueueItems(evidence: CareerOsEvidence, preferredMini
     .filter((item) => item.reviewDecision === 'none');
 }
 
+// Diagnosed 2026-08-08: normalizeStatus and its own helpers
+// (buildAuthoritativeLedger, buildCanonicalReleaseMetrics,
+// buildReviewQueueStatus, ...) call buildCanonicalOpportunityList
+// independently with the SAME evidence object, 4-8+ times per request --
+// and this function itself is O(groups x applications), recomputing
+// canonicalOpportunityIdentity() (regex/string-heavy) for every
+// application against every canonical group. With today's live data
+// (~500 job postings + 195 opportunities => up to ~700 groups, 204
+// applications) that multiplies out to hundreds of thousands of redundant
+// regex/string operations per request, which pegged the server at ~100%
+// CPU for minutes and made /founder-dashboard (and every other route,
+// since Node is single-threaded) completely unresponsive. Memoizing this
+// specific function's OUTPUT per (evidence, preferredMinimumBaseSalaryUsd)
+// pair -- the exact repeated inputs across the call graph -- removes the
+// 4-8x multiplication without touching the O(groups x applications) logic
+// itself. A WeakMap keyed on the evidence object is safe: each request
+// gets a fresh evidence object from getCareerOsStatus()'s own fetch, so
+// nothing here can leak or go stale across requests.
+const canonicalOpportunityListCache = new WeakMap<CareerOsEvidence, Map<number, CanonicalOpportunity[]>>();
+
 function buildCanonicalOpportunityList(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): CanonicalOpportunity[] {
+  const cacheKey = preferredMinimumBaseSalaryUsd ?? -1;
+  let byThreshold = canonicalOpportunityListCache.get(evidence);
+  if (!byThreshold) {
+    byThreshold = new Map();
+    canonicalOpportunityListCache.set(evidence, byThreshold);
+  }
+  const cached = byThreshold.get(cacheKey);
+  if (cached) return cached;
+  const result = computeCanonicalOpportunityList(evidence, preferredMinimumBaseSalaryUsd);
+  byThreshold.set(cacheKey, result);
+  return result;
+}
+
+function computeCanonicalOpportunityList(evidence: CareerOsEvidence, preferredMinimumBaseSalaryUsd?: number): CanonicalOpportunity[] {
   const keyed = [
     ...evidence.jobPostings.map((job) => normalizeOpportunityIdentity(job, 'posting')),
     ...evidence.seededOpportunities.map((job) => normalizeOpportunityIdentity(job, 'opportunity')),
