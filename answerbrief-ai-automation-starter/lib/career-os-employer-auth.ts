@@ -174,7 +174,20 @@ function normalizeAuthStatus(status: string, verificationStatus: string): Employ
   return 'credential_invalid';
 }
 
-type VerifyResult = { ok: boolean; reason: string };
+// Diagnostic classification only -- never the credential itself. Lets a
+// failed verification say WHICH kind of failure it saw (distinguishing
+// "Workday says invalid credential" from "Workday says locked" from "no
+// sign-in form found at all" from "submitted but nothing changed") so a
+// human can tell a genuinely bad password apart from an employer-side
+// account problem without needing to read raw page text.
+export type WorkdayAuthRejectionClassification =
+  | 'invalid_credential'
+  | 'account_locked'
+  | 'sign_in_form_not_found'
+  | 'no_change_after_submit'
+  | 'unexpected_error';
+
+type VerifyResult = { ok: boolean; classification?: WorkdayAuthRejectionClassification; reason: string };
 
 // A real, live check against the employer's own Workday sign-in -- not a
 // guess. Reuses the same rejection-text patterns the production flow uses
@@ -214,7 +227,7 @@ export async function verifyWorkdayCredential({
 
     const passwordField = page.locator('input[type="password"]').first();
     if (!(await passwordField.count().catch(() => 0))) {
-      return { ok: false, reason: 'Could not find a Workday sign-in form on this application URL to verify against.' };
+      return { classification: 'sign_in_form_not_found', ok: false, reason: 'Could not find a Workday sign-in form on this application URL to verify against.' };
     }
     const emailField = page.locator('input[type="email"]').first();
     if (await emailField.count().catch(() => 0)) {
@@ -232,17 +245,21 @@ export async function verifyWorkdayCredential({
     await page.waitForTimeout(3500);
 
     const bodyText = clean(await page.locator('body').innerText().catch(() => ''));
-    const rejected = /wrong email address or password|wrong password|invalid (?:email|username|user name|password|credentials)|incorrect password|password is incorrect|account (?:might be )?locked|locked out|too many failed|unable to sign in|we couldn't sign you in|could not sign you in/i.test(bodyText);
-    if (rejected) {
-      return { ok: false, reason: 'Workday rejected the new credential -- same rejection text as a real sign-in attempt.' };
+    const locked = /account (?:might be )?locked|locked out|too many failed/i.test(bodyText);
+    const invalidCredential = /wrong email address or password|wrong password|invalid (?:email|username|user name|password|credentials)|incorrect password|password is incorrect|unable to sign in|we couldn't sign you in|could not sign you in/i.test(bodyText);
+    if (locked) {
+      return { classification: 'account_locked', ok: false, reason: 'Workday indicates the account may be locked (same page text a real sign-in attempt would see) -- this is an employer-side account state, not something a different password can fix.' };
+    }
+    if (invalidCredential) {
+      return { classification: 'invalid_credential', ok: false, reason: 'Workday rejected the credential as invalid -- same rejection text as a real sign-in attempt.' };
     }
     const stillOnPasswordForm = await page.locator('input[type="password"]').count().catch(() => 0);
     if (stillOnPasswordForm) {
-      return { ok: false, reason: 'Sign-in did not complete; a password field is still visible after submit.' };
+      return { classification: 'no_change_after_submit', ok: false, reason: 'Sign-in did not complete; a password field is still visible after submit, with no visible rejection message.' };
     }
     return { ok: true, reason: 'Signed in successfully -- no rejection text, no password field remaining.' };
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : 'Verification failed unexpectedly.' };
+    return { classification: 'unexpected_error', ok: false, reason: error instanceof Error ? error.message : 'Verification failed unexpectedly.' };
   } finally {
     await browser.close().catch(() => {});
   }
@@ -303,14 +320,26 @@ export async function updateEmployerCredentialAndResume({
   const now = new Date().toISOString();
   if (!verified.ok) {
     // Fail closed: do not overwrite good prior state, do not trigger
-    // another password reset. The (now-stored) credential is simply wrong;
-    // leave the employer in a Tomas-actionable state and say why.
+    // another password reset. Store the diagnostic classification (never
+    // the password) so a repeated failure with the same classification is
+    // clearly an employer-side account problem, not "try yet another
+    // password" -- read via a PostgREST PATCH, which replaces JSONB
+    // columns wholesale, so the existing metadata (tenant,
+    // applications_associated, etc.) must be re-fetched and merged rather
+    // than overwritten.
+    const existingRows = await careerOsSelectRows('career_os_employer_accounts', `select=metadata&id=eq.${encodeURIComponent(accountId)}&limit=1`);
+    const existingMetadata = asRecord(existingRows[0]?.metadata);
     await careerOsPatchRowById('career_os_employer_accounts', accountId, {
       last_verified_at: now,
+      metadata: {
+        ...existingMetadata,
+        last_rejection_classification: verified.classification || 'unexpected_error',
+        last_verification_attempt_at: now,
+      },
       status: 'credential_invalid',
       updated_at: now,
     });
-    return { ok: false, reason: verified.reason, status: 'verification_failed' as const };
+    return { classification: verified.classification, ok: false, reason: verified.reason, status: 'verification_failed' as const };
   }
 
   await careerOsPatchRowById('career_os_employer_accounts', accountId, {
