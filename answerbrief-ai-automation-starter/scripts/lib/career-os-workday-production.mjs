@@ -97,7 +97,7 @@ export function validateWorkdayCanaryTask(task = {}, policy = {}, options = {}) 
 export function classifyWorkdayPageText(text = '') {
   const value = clean(text);
   if (CAPTCHA_PATTERN.test(value)) return { state: 'captcha', status: 'waiting_on_tomas', category: 'captcha' };
-  if (/no longer accepting applications|job is no longer available|job posting is no longer available|position has been filled|posting has expired|this job is closed/i.test(value)) {
+  if (/no longer accepting applications|job is no longer available|job posting is no longer available|position has been filled|posting has expired|this job is closed|the page you are looking for doesn.t exist|page not found|error 404|http error 404/i.test(value)) {
     return { state: 'expired_job', status: 'not_qualified', category: 'unknown' };
   }
   if (/session has expired|session expired|session timed out|you have been signed out/i.test(value)) {
@@ -370,11 +370,11 @@ export async function runWorkdayProductionFlow(page, task, runtime, policy, opti
       if (replayAfterAccount.gated) return true;
       continue;
     }
-    if (classification.state === 'unknown' && await maybeWaitForWorkdayHydration({ page, runtime, step })) {
+    if (classification.state === 'unknown' && await maybeWaitForWorkdayHydration({ page, runtime, step, task })) {
       continue;
     }
     if (await reportWorkdayPageGateIfNeeded({ classification, identity, page, policy, runtime, step, task })) return true;
-    if (await maybeWaitForWorkdayHydration({ page, runtime, step })) {
+    if (await maybeWaitForWorkdayHydration({ page, runtime, step, task })) {
       continue;
     }
 
@@ -1548,7 +1548,7 @@ async function refineWorkdayClassificationFromInspection(page, classification) {
   return classification;
 }
 
-async function maybeWaitForWorkdayHydration({ page, runtime, step }) {
+async function maybeWaitForWorkdayHydration({ page, runtime, step, task }) {
   const inspection = await inspectWorkdayPage(page);
   const actionText = labels(inspection.actions).join(' ');
   const body = await bodyText(page);
@@ -1558,7 +1558,20 @@ async function maybeWaitForWorkdayHydration({ page, runtime, step }) {
     && !(inspection.fields || []).length
     && !(inspection.actions || []).length;
   const hasTransientWorkdayError = /something went wrong|please refresh the page and then try again/i.test(text);
-  const hasOnlyShellNavigation = /skip to main content|search for jobs|introduce yourself/i.test(text)
+  // A Workday 404 ("the page you are looking for doesn't exist") renders as
+  // the exact same bare navigation shell (Skip to main content / Search for
+  // Jobs / Candidate Home) as a page that's still hydrating -- but no amount
+  // of waiting fixes a dead job posting. Confirmed in production: Sedgwick's
+  // canonical apply URL 404s, and without this check hasOnlyShellNavigation
+  // matched every single step, so the canary silently "waited for
+  // hydration" 20 times in a row and only then reported a generic,
+  // unhelpful unsupported_workday_state -- burning the entire step budget
+  // on a page that was never going to change. Terminal 404 text must win
+  // over the shell-navigation heuristic so classifyWorkdayPageText's
+  // expired_job handling gets a chance to run on step 1, not step 20.
+  const hasTerminalNotFoundError = /the page you are looking for doesn.t exist|page not found|error 404|http error 404/i.test(text);
+  const hasOnlyShellNavigation = !hasTerminalNotFoundError
+    && /skip to main content|search for jobs|introduce yourself/i.test(text)
     && !(inspection.fields || []).length
     && !enabledActions(inspection, /apply|create account|sign in|log in|login|next|continue|review|submit/i).length;
   const hasBlankApplicationStep = /autofill with resume|my information|my experience|application questions|voluntary disclosures|self identify|review/i.test(text)
@@ -1566,6 +1579,36 @@ async function maybeWaitForWorkdayHydration({ page, runtime, step }) {
     && !(inspection.fields || []).length
     && !enabledActions(inspection, /^(next|continue|save and continue|review|submit)$/i).length;
   if (!/workdayjobs/i.test(currentUrl(page)) || (!hasOnlyShellNavigation && !hasBlankApplicationStep && !hasCompletelyBlankSurface && !hasTransientWorkdayError)) return false;
+
+  // Repeated-page/loop detection: hydration waits are meant to be a
+  // short-lived accommodation for a genuinely still-loading page, not a
+  // silent retry loop. If the exact same (url, page-content) signature
+  // qualifies for a hydration wait 3 times in a row, the page has
+  // definitively stopped changing and no further waiting will help --
+  // fall through to real classification instead of consuming the rest of
+  // the step budget on a page that's already known to be stuck.
+  if (task) {
+    const signature = `${currentUrl(page)}::${clean(text).slice(0, 400)}`;
+    if (task.__workdayHydrationSignature === signature) {
+      task.__workdayHydrationStreak = (task.__workdayHydrationStreak || 0) + 1;
+    } else {
+      task.__workdayHydrationSignature = signature;
+      task.__workdayHydrationStreak = 1;
+    }
+    if (task.__workdayHydrationStreak > 3) {
+      await runtime.report({
+        status: 'heartbeat',
+        currentUrl: currentUrl(page),
+        evidenceText: 'Workday page state has not changed across repeated hydration waits; proceeding to classify it as-is instead of continuing to wait.',
+        details: {
+          classification: 'workday_hydration_wait_exhausted',
+          hydrationStreak: task.__workdayHydrationStreak,
+          step,
+        },
+      });
+      return false;
+    }
+  }
   await runtime.report({
     status: 'heartbeat',
     currentUrl: currentUrl(page),
@@ -1952,7 +1995,29 @@ async function maybeHandleAuthorizedWorkdayAccountGate({ classification, identit
       portalUrl: currentUrl(page) || task.applicationUrl,
       verificationStatus: accountRecovery.verificationStatus,
     });
-    if (accountRecovery.resetAvailable) {
+    if (accountRecovery.resetAvailable && credential.resetOnCooldown) {
+      // Circuit breaker: a reset for this exact employer+tenant+account was
+      // already requested recently by another application and is still
+      // within its validity window. Do NOT click "Forgot Password" again --
+      // that would spam a second reset email and make it ambiguous which
+      // link is still valid. Report the shared, tenant-level wait state
+      // instead so every application for this employer converges on one
+      // recovery instead of each starting its own.
+      await runtime.report({
+        status: 'heartbeat',
+        currentUrl: currentUrl(page),
+        evidenceText: `Skipped starting another ${task.employer} Workday password reset: one was already requested for this employer account and is still within its validity window.`,
+        details: {
+          accountEmail: email,
+          accountHandling: 'password_reset_skipped_on_cooldown',
+          classification: 'workday_password_reset_cooldown',
+          credentialReference: credential.reference,
+          protectedValuesPersisted: false,
+          step,
+          workdayIdentity: identity.ok ? publicIdentity(identity) : null,
+        },
+      });
+    } else if (accountRecovery.resetAvailable) {
       const reset = await maybeStartWorkdayPasswordReset({
         accountRecovery,
         credential,
@@ -1967,17 +2032,19 @@ async function maybeHandleAuthorizedWorkdayAccountGate({ classification, identit
     }
     await reportAccountRecoveryGate({
       category: 'login',
-      classification: accountRecovery.classification,
+      classification: credential.resetOnCooldown ? 'workday_employer_auth_recovery_shared' : accountRecovery.classification,
       confidence: accountRecovery.locked ? 0.92 : 0.88,
       credentialReference: credential.reference,
       fieldLabel: accountRecovery.locked ? 'Workday account locked' : 'Workday password rejected',
       identity,
-      outcomeStatus: accountRecovery.outcomeStatus,
+      outcomeStatus: credential.resetOnCooldown ? 'employer_auth_recovery_shared' : accountRecovery.outcomeStatus,
       page,
-      reason: accountRecovery.reason,
-      requiredAction: accountRecovery.locked
-        ? 'Recover or unlock the employer Workday account, then resume this exact application.'
-        : 'Complete employer Workday password recovery or update the secure credential, then resume this exact application.',
+      reason: credential.resetOnCooldown ? credential.resetCooldownReason : accountRecovery.reason,
+      requiredAction: credential.resetOnCooldown
+        ? `Tomas, ${task.employer} Workday authentication is already being recovered by another application for this same employer account -- complete that reset (or update the stored Keychain credential), then every waiting ${task.employer} application will resume automatically.`
+        : accountRecovery.locked
+          ? 'Recover or unlock the employer Workday account, then resume this exact application.'
+          : 'Complete employer Workday password recovery or update the secure credential, then resume this exact application.',
       runtime,
       sensitivity: 'human_only',
       status: 'waiting_for_sign_in',
@@ -2144,6 +2211,10 @@ async function maybeStartWorkdayPasswordReset({ accountRecovery, credential, ema
     employer: task.employer,
     identity: identity.ok ? publicIdentity(identity) : null,
     portalUrl: currentUrl(page) || task.applicationUrl,
+    // Stamps metadata.last_reset_requested_at so employerAuthResetCooldown()
+    // stops every other application for this same employer account from
+    // independently starting another reset while this one is still valid.
+    resetRequestedNow: true,
     verificationStatus: resetRequiresEmailAction ? 'password_reset_email_required' : 'password_reset_started_needs_review',
   });
   await reportAccountRecoveryGate({

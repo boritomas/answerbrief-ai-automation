@@ -25,6 +25,28 @@ const userDataDir = path.join(stateDir, 'chrome-profile');
 const screenshotDir = path.join(stateDir, 'screenshots');
 const tempDir = path.join(stateDir, 'tmp');
 const pollIntervalMs = Number(process.env.CAREER_OS_WORKER_POLL_MS || '15000');
+// Workday's own password-reset emails are typically valid for roughly a
+// day; while the most recent reset for this exact employer+tenant+account
+// is still within that window, no other application should independently
+// trigger a second one. Confirmed in production on 2026-08-08: 6 different
+// Capital One applications and 2 different USAA applications each clicked
+// "Forgot Password" and re-triggered a brand-new reset within the same
+// run-batch, one per application, for the same account -- a reset storm
+// that both spams Tomas's inbox and makes it ambiguous which (if any) of
+// several reset emails is still the one to complete. This is a shared,
+// tenant-level cooldown, not a per-application one: applications B, C, D
+// for the same employer must see the SAME in-flight recovery state that
+// application A already started, not start their own.
+// Declared here (not near employerAuthResetCooldown() below, closer to
+// where it's used) because this module has top-level await in its
+// run-batch/run-once/start command dispatch further down -- a `const`
+// declared later in file-source-order is still in its temporal dead zone
+// when that top-level code runs immediately at import time, even though
+// the function that reads it is only ever *called* later. Confirmed by a
+// live "Cannot access 'WORKDAY_RESET_COOLDOWN_MS' before initialization"
+// failure across 6 Capital One applications when the const was originally
+// placed next to employerAuthResetCooldown() further down the file.
+const WORKDAY_RESET_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 let githubOidcTokenCache = { value: '', expiresAtMs: 0 };
 
 for (const dir of [stateDir, userDataDir, screenshotDir, tempDir]) {
@@ -454,6 +476,7 @@ async function resolveEmployerAccountCredential(task, input = {}) {
   }
   const service = keychainServiceFor(tenant);
   const reference = keychainReference(service, accountEmail);
+  const resetGate = await employerAuthResetCooldown(tenant, accountEmail);
   const existing = await readKeychainSecret(service, accountEmail);
   if (existing.ok) {
     await recordEmployerAccountMetadata(task, {
@@ -471,7 +494,10 @@ async function resolveEmployerAccountCredential(task, input = {}) {
       ok: true,
       password: existing.value,
       reference,
+      resetCooldownReason: resetGate.reason,
+      resetOnCooldown: resetGate.onCooldown,
       store: 'macos_keychain',
+      tenant,
     };
   }
 
@@ -503,7 +529,9 @@ async function resolveEmployerAccountCredential(task, input = {}) {
     ok: true,
     password: generated,
     reference,
+    resetOnCooldown: false,
     store: 'macos_keychain',
+    tenant,
   };
 }
 
@@ -601,6 +629,11 @@ async function recordEmployerAccountMetadata(task, input = {}) {
       account_registry_version: 'career_os_workday_keychain_v1',
       applications_associated: applicationsAssociated,
       credential_store: 'macos_keychain',
+      // Set only when a reset was just actually requested (maybeStartWorkdayPasswordReset),
+      // never cleared implicitly -- this is the shared, tenant-level state
+      // employerAuthResetCooldown() reads to stop every other application for
+      // the same employer account from independently starting another reset.
+      last_reset_requested_at: input.resetRequestedNow ? now : clean(previousMetadata.last_reset_requested_at) || null,
       protected_values_persisted_in_career_os: false,
       tenant,
       updated_by: companionId,
@@ -650,6 +683,30 @@ async function isEmployerAccountInRecoveryHold(tenant, accountEmail) {
   const metadata = existing.metadata && typeof existing.metadata === 'object' ? existing.metadata : {};
   const verificationStatus = clean(metadata.verification_status).toLowerCase();
   return /password.?reset|recovery|needs_review|locked/.test(`${status} ${verificationStatus}`);
+}
+
+// Shared, tenant-level cooldown -- see WORKDAY_RESET_COOLDOWN_MS above for
+// why this exists and what it protects against.
+async function employerAuthResetCooldown(tenant, accountEmail) {
+  const supabaseUrl = clean(process.env.SUPABASE_URL);
+  const key = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if (!supabaseUrl || !key || !tenant || !accountEmail) return { onCooldown: false };
+  const id = deterministicUuid(`career-os-employer-account:${ownerEmail}:${tenant}:${accountEmail}`);
+  const existing = await selectEmployerAccount(id, supabaseUrl, key);
+  if (!existing) return { onCooldown: false };
+  const metadata = existing.metadata && typeof existing.metadata === 'object' ? existing.metadata : {};
+  const lastRequestedAt = clean(metadata.last_reset_requested_at);
+  if (!lastRequestedAt) return { onCooldown: false };
+  const requestedAtMs = new Date(lastRequestedAt).getTime();
+  if (!Number.isFinite(requestedAtMs)) return { onCooldown: false };
+  const elapsedMs = Date.now() - requestedAtMs;
+  if (elapsedMs < 0 || elapsedMs >= WORKDAY_RESET_COOLDOWN_MS) return { onCooldown: false };
+  const remainingHours = Math.max(1, Math.round((WORKDAY_RESET_COOLDOWN_MS - elapsedMs) / 3600000));
+  return {
+    lastRequestedAt,
+    onCooldown: true,
+    reason: `A Workday password reset for this employer account was already requested at ${lastRequestedAt} (~${remainingHours}h of the reset link's validity window remaining). Complete that reset -- or store the current, known-good password directly in the Keychain -- instead of starting another one.`,
+  };
 }
 
 function generateStrongPassword() {

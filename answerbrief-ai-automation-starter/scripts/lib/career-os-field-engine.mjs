@@ -738,9 +738,20 @@ function optionSetMatchesExpectedKind(options, kind) {
   return true;
 }
 
-async function visiblePromptOptionTexts(page) {
+// Workday tenants sometimes render two prompt controls close together (e.g.
+// Phone Device Type and Country Phone Code); an unscoped page-wide query for
+// visible option/menuitem nodes can pick up the OTHER control's
+// already-selected-value chip (a dialing code like "Angola (+244)") even
+// though only the intended popup was actually opened, producing a false
+// "wrong dropdown" rejection for a field CareerOS otherwise knows how to
+// fill correctly. clickPromptControlNearLabel() already marks the specific
+// control it opened (aria-controls/aria-owns/activePromptId), so scope the
+// option query to that popup first. Falls back to the old page-wide query
+// when scoping finds nothing, so this can only ever narrow results -- it
+// never makes an already-working case worse.
+async function visiblePromptOptionTexts(page, scopeId = '') {
   if (!page?.evaluate) return [];
-  return page.evaluate(() => {
+  return page.evaluate((scopeIdArg) => {
     const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
     const visible = (element) => {
       if (!(element instanceof HTMLElement)) return false;
@@ -748,12 +759,21 @@ async function visiblePromptOptionTexts(page) {
       const rect = element.getBoundingClientRect();
       return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
     };
-    return Array.from(document.querySelectorAll('[role="option"], [data-automation-id*="promptOption" i], [data-automation-id*="prompt-option" i], li[role="option"], [role="menuitem"]'))
+    const selector = '[role="option"], [data-automation-id*="promptOption" i], [data-automation-id*="prompt-option" i], li[role="option"], [role="menuitem"]';
+    const collect = (root) => Array.from(root.querySelectorAll(selector))
       .filter((element) => element instanceof HTMLElement && visible(element))
       .map((element) => normalize(element.textContent || ''))
       .filter((text) => text && text.length <= 160)
       .slice(0, 60);
-  }).catch(() => []);
+    if (scopeIdArg) {
+      const scopedRoot = document.getElementById(scopeIdArg);
+      if (scopedRoot) {
+        const scoped = collect(scopedRoot);
+        if (scoped.length) return scoped;
+      }
+    }
+    return collect(document);
+  }, scopeId).catch(() => []);
 }
 
 async function applyKnownPromptMapping(page, mapping, resolved) {
@@ -796,7 +816,7 @@ async function applyKnownPromptMapping(page, mapping, resolved) {
       await page.waitForTimeout(300);
 
       if (OPTION_SET_VALIDATED_KINDS.includes(spec.kind)) {
-        const visibleOptionTexts = await visiblePromptOptionTexts(page);
+        const visibleOptionTexts = await visiblePromptOptionTexts(page, prompt.ariaControls || prompt.ariaOwns || prompt.activePromptId);
         if (!optionSetMatchesExpectedKind(visibleOptionTexts, spec.kind)) {
           const screenshotPath = await captureProtectedPromptDiagnostics(page, mapping, resolved, spec, { visibleOptions: visibleOptionTexts });
           await closeOpenPromptMenus(page);

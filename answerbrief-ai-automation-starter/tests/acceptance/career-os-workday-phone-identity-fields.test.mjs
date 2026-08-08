@@ -276,6 +276,63 @@ test('Part B: option-set validation rejects a Country Phone Code search when onl
   }
 });
 
+test('Part B: option-set validation is scoped to the opened popup, not confused by an unrelated always-rendered option list elsewhere on the page', async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  try {
+    // Reproduces a real production false positive: Capital One's Workday
+    // tenant kept a Country Phone Code listbox's option nodes present with
+    // role="option" in the DOM (e.g. an always-mounted, off-canvas variant)
+    // even while only the Phone Device Type popup had actually been opened.
+    // An unscoped, page-wide option query then mixed both controls'
+    // options together, saw a dialing-code-shaped option ("Angola (+244)"),
+    // and rejected the perfectly correct Phone Device Type interaction as a
+    // "wrong control" mismatch. The fix scopes the option query to the
+    // control the resolver actually opened (via aria-controls).
+    await page.setContent(`
+      <body>
+        ${identityFieldsHtml()}
+        <div id="phone-section">
+          <label for="phoneDeviceTypeControl">Phone Device Type</label>
+          <button id="phoneDeviceTypeControl" role="combobox" aria-haspopup="listbox" aria-controls="phoneDeviceTypeListbox">Select One</button>
+          <div id="phoneDeviceTypeListbox" role="listbox" style="display:none">
+            <input type="text" placeholder="search" />
+            <div role="option">Mobile</div>
+            <div role="option">Personal</div>
+          </div>
+
+          <label for="countryPhoneCodeControl">Country Phone Code</label>
+          <button id="countryPhoneCodeControl" role="combobox" aria-haspopup="listbox" aria-controls="countryPhoneCodeListbox">Angola (+244)</button>
+        </div>
+        <!-- Always rendered, not display:none -- the real-world leak source. -->
+        <div id="countryPhoneCodeListbox" role="listbox">
+          <div role="option">Angola (+244)</div>
+        </div>
+        <script>
+          document.getElementById('phoneDeviceTypeControl').addEventListener('click', () => {
+            document.getElementById('phoneDeviceTypeListbox').style.display = 'block';
+          });
+          document.getElementById('phoneDeviceTypeListbox').addEventListener('click', (event) => {
+            const option = event.target.closest('[role="option"]');
+            if (!option) return;
+            document.getElementById('phoneDeviceTypeControl').textContent = option.textContent;
+            document.getElementById('phoneDeviceTypeListbox').style.display = 'none';
+          });
+        </script>
+      </body>
+    `);
+
+    const results = await applyFieldMappings(page, phoneDeviceTypeMapping(), {});
+
+    assert.equal(results[0]?.applied, true, 'the always-visible, unrelated Country Phone Code option list must not cause a false wrong-control rejection');
+    assert.equal(await page.locator('#phoneDeviceTypeControl').textContent(), 'Mobile');
+    assert.equal(await page.locator('#countryPhoneCodeControl').textContent(), 'Angola (+244)', 'Country Phone Code control must be untouched');
+    await assertIdentityFieldsUntouched(page);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('Part C: selecting Phone Device Type or Country Phone Code cannot alter First Name, Last Name, Email, Phone Number, or Phone Extension', async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();

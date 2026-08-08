@@ -225,9 +225,15 @@ function isSubmittedApplication(row) {
   if (isRejectedApplication(row)) return false;
   const raw = asRecord(row.raw_record);
   const text = applicationText(row);
+  // Deliberately no bare \bsubmitted\b/\bapplied\b/\bconfirmed\b fallback
+  // here: audited 2026-08-08 and found it produces real false positives --
+  // e.g. next_action text like "will not be submitted" or "before browser
+  // execution" contains the bare word "submitted"/"applied" while
+  // literally describing the opposite. Real evidence or an unambiguous
+  // phrase only; undercounting is the safe direction, overcounting
+  // silently hides applications that still need work.
   return Boolean(row.confirmation_number || row.submission_evidence || raw.confirmation_url)
-    || /submitted_confirmed|externally_submitted|externally_confirmed|application submitted|successfully applied|under consideration|in process/.test(text)
-    || /\bconfirmed\b|\bsubmitted\b|\bapplied\b/.test(text);
+    || /submitted_confirmed|externally_submitted|externally_confirmed|application submitted|successfully applied|under consideration|in process/.test(text);
 }
 
 function isRejectedApplication(row) {
