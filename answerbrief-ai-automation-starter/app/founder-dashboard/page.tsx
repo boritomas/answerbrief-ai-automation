@@ -1,6 +1,8 @@
 import { createCareerOsActionToken } from '@/lib/career-os-queue';
 import { browserWorkerHealth } from '@/lib/career-os-browser-worker';
 import { getCareerOsStatus } from '@/lib/career-os-status';
+import { getEmployerAuthExceptions, keychainWriteAvailable } from '@/lib/career-os-employer-auth';
+import { EmployerAuthControls } from './employer-auth-controls';
 import { FounderRunControls } from './founder-run-controls';
 import { QualifiedRoleControls } from './qualified-role-controls';
 import styles from './founder-dashboard.module.css';
@@ -40,6 +42,17 @@ export default async function FounderDashboardPage() {
     expiresAt: actionTokenExpiresAt,
     ownerEmail: status.evidence.ownerEmail,
   });
+  // 'career_os_page' is the established generic-action token: it verifies
+  // against ANY body.action per verifyCareerOsActionToken's fallback
+  // candidates, which this panel needs since it calls three different
+  // actions (update_employer_credential, verify_employer_login,
+  // resume_employer_applications) with the one token.
+  const employerAuthToken = createCareerOsActionToken({
+    action: 'career_os_page',
+    expiresAt: actionTokenExpiresAt,
+    ownerEmail: status.evidence.ownerEmail,
+  });
+  const employerAuthExceptions = await getEmployerAuthExceptions(status.evidence.ownerEmail).catch(() => []);
 
   const qualifiedRoles = status.evidence.jobPostings
     .map((posting) => asRecord(posting))
@@ -174,6 +187,14 @@ export default async function FounderDashboardPage() {
           tokenExpiresAt={actionTokenExpiresAt}
         />
       </section>
+
+      <EmployerAuthControls
+        actionToken={employerAuthToken}
+        exceptions={employerAuthExceptions}
+        keychainWriteAvailable={keychainWriteAvailable()}
+        ownerEmail={status.evidence.ownerEmail}
+        tokenExpiresAt={actionTokenExpiresAt}
+      />
 
       <section className={styles.panel} aria-label="Browser worker status">
         <div className={styles.sectionHeading}>
